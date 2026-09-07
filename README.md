@@ -54,6 +54,8 @@ index.html            page shell, fonts, favicon
 src/main.jsx          React entry point
 src/base.css          the layout utilities the game uses (see note below)
 src/ColdCoast.jsx     the game
+src/data/             the pure tables: techs, units, buildings, seat, seasons,
+                      warlords. No React in any of them.
 src/assets/           artwork, as real files
 tests/smoke.mjs       headless browser smoke test
 ```
@@ -63,8 +65,11 @@ it is worth doing, but it should be done a piece at a time with the smoke test
 run after each move, not in one go. Good first extractions, in order of how
 cleanly they separate:
 
-1. `src/data/` — `TECHS`, `UNITS`, `BUILDINGS`, `WORKS`, `SETTLEMENT`,
-   `WARLORDS`, `SEASONS`. These are pure tables with no React in them.
+1. ~~`src/data/` — `TECHS`, `UNITS`, `BUILDINGS`, `WORKS`, `SETTLEMENT`,
+   `WARLORDS`, `SEASONS`.~~ **Done.** Each moved verbatim in its own commit,
+   with the smoke test run against the built bundle after every one. The art
+   tables (`UNIT_ART`, `TERRAIN_ART`, `LORD_ART`) stayed behind, since they
+   hold the imported image files.
 2. `src/world/` — the map generation, `MAP_ROWS`, terrain and geometry helpers.
 3. `src/ui/` — one file per screen: the tech tree, the seat, the muster roll,
    the warlord screen, the battle screen.
