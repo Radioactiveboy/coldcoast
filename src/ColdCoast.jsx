@@ -19,6 +19,7 @@ import { SETTLEMENT, WORKS, WORK_IDS } from "./data/settlement.js";
 import { seasonOf, yearOf } from "./data/seasons.js";
 import { BUILDINGS } from "./data/buildings.js";
 import { WARLORDS, LORD_COMMAND, LEADERLESS } from "./data/warlords.js";
+import { writeSave, readSave, saveInfo } from "./game/save.js";
 
 /* ============================================================================
    COLD COAST — a turn-based grand strategy prototype
@@ -1873,8 +1874,37 @@ export default function ColdCoast() {
   // the same hooks in the same order, whichever screen is showing.
   const clearFocus = useCallback(() => setGame((g) => (g.focus ? { ...g, focus: null } : g)), []);
 
+  /* Autosave on the turn of the season. Keyed on game.turn rather than on the
+     whole state so it writes once a turn instead of on every click, and it
+     lives above the early returns because hooks must run in the same order on
+     every render whichever screen is showing. */
+  const [saved, setSaved] = useState(saveInfo);
+  /* A save that quietly does nothing is worse than none at all — the player
+     finds out when they come back and the game is gone. The position is ~1.2MB
+     against a ~5MB localStorage budget, so quota is not a worry today, but a
+     browser storing nothing (private windows, storage off by policy) is, and
+     that has to be visible rather than assumed. */
+  const [saveFailed, setSaveFailed] = useState(false);
+  useEffect(() => {
+    if (game.begun && game.player) {
+      setSaveFailed(!writeSave(game));
+      setSaved(saveInfo());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.turn, game.player, game.begun]);
+
+  const saveNow = useCallback(() => {
+    setGame((g) => {
+      const ok = writeSave(g);
+      setSaved(saveInfo());
+      setSaveFailed(!ok);
+      return { ...g, log: [{ turn: g.turn, m: ok ? "Position written down." : "Could not write the position — this browser is not storing it." }, ...g.log].slice(0, 60) };
+    });
+  }, []);
+
   if (!game.begun) return (
-    <TitleScreen sound={game.sound}
+    <TitleScreen sound={game.sound} saved={saved}
+      onContinue={() => { const s = readSave(); if (s) { Sound.wake(); setGame(s); } else setSaved(null); }}
       onSound={(which) => { Sound.wake(); setGame((g) => {
         const next = { ...g.sound, [which]: !g.sound[which] };
         if (which === "music") Sound.music(next.music); else Sound.sfx(next.sfx);
@@ -2928,7 +2958,8 @@ export default function ColdCoast() {
           if (which === "music") Sound.music(next.music); else Sound.sfx(next.sfx);
           return { ...g, sound: next };
         })}
-        onEnd={endTurn} onCodex={() => setGame((g) => ({ ...g, showCodex: true }))} />
+        onEnd={endTurn} onSave={saveNow} saveFailed={saveFailed}
+        onCodex={() => setGame((g) => ({ ...g, showCodex: true }))} />
 
       <div className="flex-1 flex flex-col cc-lg-flex-row min-h-0">
         <div className="flex-1 min-w-0 min-h-0 relative overflow-hidden cc-min-h-420px">
@@ -3005,7 +3036,7 @@ const RES_META = [
   { k: "men", label: "Recruits", Icon: Users, c: "#9db8c4" },
 ];
 
-function TopBar({ nat, income, turn, owned, armies, onEnd, onCodex, sound, onSound, onLords }) {
+function TopBar({ nat, income, turn, owned, armies, onEnd, onCodex, sound, onSound, onLords, onSave, saveFailed }) {
   return (
     <header className="shrink-0 border-b cc-border-28363f cc-bg-0a1015a90 backdrop-blur px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
       <div className="flex items-center gap-2.5 pr-5 border-r cc-border-28363f">
@@ -3057,6 +3088,15 @@ function TopBar({ nat, income, turn, owned, armies, onEnd, onCodex, sound, onSou
       <button type="button" onClick={() => onSound("sfx")} title="Sound effects"
         className={`cc-sndbtn ${sound.sfx ? "cc-sndon" : ""}`} aria-pressed={sound.sfx}>
         {sound.sfx ? <Volume2 size={15} /> : <VolumeX size={15} />}
+      </button>
+      <button onClick={onSave}
+        title={saveFailed
+          ? "This browser is not storing the game — it will be gone when you close the tab"
+          : "Write the position down (it also saves itself every season)"}
+        className={`cc-text-13px px-2 py-1 rounded border transition-colors ${saveFailed
+          ? "cc-text-e8b98a cc-border-8a4a38"
+          : "cc-text-a0b6c1 cc-hover-text-e5eef3 cc-border-22303a cc-hover-border-31424e"}`}>
+        {saveFailed ? "Not saving" : "Save"}
       </button>
       <button onClick={onCodex}
         className="cc-text-13px cc-text-a0b6c1 cc-hover-text-e5eef3 px-2 py-1 rounded border cc-border-22303a cc-hover-border-31424e transition-colors">
@@ -6155,7 +6195,7 @@ function Notices({ list, onGo, onDismiss }) {
 }
 
 /* ------------------------------- TITLE SCREEN ------------------------------ */
-function TitleScreen({ onBegin, sound, onSound }) {
+function TitleScreen({ onBegin, sound, onSound, saved, onContinue }) {
   const [t, setT] = useState(0);
   useEffect(() => {
     let raf, start = performance.now();
@@ -6238,8 +6278,19 @@ function TitleScreen({ onBegin, sound, onSound }) {
             stand where they settled, and seven realms are counting what is left.
           </p>
           <button type="button" onClick={onBegin} className="cc-beginbtn disp cc-text-19px">
-            <Play size={17} /> Begin
+            <Play size={17} /> {saved ? "Begin again" : "Begin"}
           </button>
+          {saved && (
+            <div className="mt-3">
+              <button type="button" onClick={onContinue}
+                className="disp cc-text-16px px-5 py-2 rounded cc-bg-1f4a52 cc-hover-bg-2a5f69 border cc-border-356b76 cc-text-d9f0f2 inline-flex items-center gap-2 transition-colors">
+                <Flag size={15} /> Continue as {FACTION[saved.player]?.short || "your realm"}
+              </button>
+              <p className="cc-text-12px cc-text-8399a6 mt-2">
+                {seasonOf(saved.turn).name} of year {yearOf(saved.turn)}, saved {new Date(saved.at).toLocaleString()}
+              </p>
+            </div>
+          )}
           <div className="flex items-center justify-center gap-2 mt-6">
             <button type="button" onClick={() => onSound("music")}
               className={`cc-sndbtn ${sound.music ? "cc-sndon" : ""}`} title="Score">

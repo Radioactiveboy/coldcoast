@@ -102,5 +102,19 @@ check("forty seasons pass", seasons === 40, `${seasons}`);
 check("no NaN on screen", !/NaN/.test(await page.evaluate(() => document.body.innerText)));
 check("no page errors", errors.length === 0, errors.slice(0, 2).join(" | "));
 
+// The position must survive the tab closing, which is the whole point of a
+// save. Compare the header — turn, holdings, warbands — across a real reload.
+const headerBefore = await page.evaluate(() => document.querySelector("header")?.innerText || "");
+await page.reload({ waitUntil: "networkidle0" });
+await wait(600);
+check("a saved game is offered on return", await page.evaluate(() =>
+  [...document.querySelectorAll("button")].some((b) => /Continue as/.test(b.textContent))));
+await click("Continue as");
+await page.waitForSelector("svg.cc-worldmap", { timeout: 30000 }).catch(() => {});
+await wait(1200);
+const headerAfter = await page.evaluate(() => document.querySelector("header")?.innerText || "");
+check("the position survives a reload", !!headerBefore && headerAfter === headerBefore,
+  headerAfter === headerBefore ? "" : `"${headerBefore.replace(/\n/g, " ")}" -> "${headerAfter.replace(/\n/g, " ")}"`);
+
 await browser.close();
 process.exit(failures ? 1 : 0);
