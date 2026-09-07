@@ -46,7 +46,36 @@ await page.goto(URL, { waitUntil: "networkidle0" });
 await wait(500);
 await click("Begin");
 await wait(400);
-await click("Take up the banner");
+
+// Deliberately NOT the click() helper above. element.click() succeeds on a
+// button no human could reach, and that is exactly what happened here: the
+// picker was pinned to 100vh with overflow:hidden, so "take up the banner"
+// sat below the fold on any screen under ~1050px with nothing to scroll.
+// The helper clicked it happily and the test passed while the game could not
+// be started at all. A handle click drives a real mouse, scrolling first.
+const banner = (await page.evaluateHandle(() =>
+  [...document.querySelectorAll("button")].find((b) => /Take up the banner/.test(b.textContent))
+)).asElement();
+check("the banner button exists", !!banner);
+
+// Scroll the way a player does — a real wheel — and not with scrollIntoView().
+// A box with overflow:hidden is still scrollable from script, so scrollIntoView
+// reaches a button the wheel never can, and the test passes on a screen the
+// player is stuck on. The wheel is the honest question: can a human get there?
+const vh = page.viewport().height;
+const onScreen = async () => {
+  const b = await banner.boundingBox();
+  return b && b.y >= 0 && b.y + b.height <= vh;
+};
+await page.mouse.move(page.viewport().width / 2, vh / 2);
+for (let i = 0; i < 12 && !(await onScreen()); i++) {
+  await page.mouse.wheel({ deltaY: 200 });
+  await wait(60);
+}
+const box = await banner.boundingBox();
+check("the banner button can be reached by scrolling", await onScreen(),
+  box ? `bottom ${Math.round(box.y + box.height)} of ${vh}` : "no box");
+await banner.click();
 await page.waitForSelector("svg.cc-worldmap", { timeout: 30000 });
 await wait(1500);
 

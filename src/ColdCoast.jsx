@@ -31,6 +31,12 @@ const UI_CSS = `@import url('https://fonts.googleapis.com/css2?family=Inter:wght
 html,body{height:100%;margin:0;padding:0;background:#080c10}
 #root{min-height:100%;display:flex;flex-direction:column}
 .cc-app{height:100vh;min-height:100vh;overflow:hidden;flex:1 1 auto}
+/* For screens that are documents rather than a fixed viewport: they grow past
+   the fold and scroll. cc-app pins to 100vh and clips, which is right for the
+   map but hid the nation picker's own "take up the banner" button on any
+   screen shorter than ~1050px. Do not put cc-app and cc-page on one element —
+   cc-app wins, because UI_CSS is injected after base.css. */
+.cc-page{min-height:100vh;height:auto;overflow-y:auto;flex:1 1 auto}
 .cc-root{color:#ffffff;background:#080c10;font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif}
 .cc-root *{border-color:inherit}
 .disp{font-family:'Barlow Condensed','Inter',system-ui,sans-serif;font-weight:600;letter-spacing:.01em}
@@ -6255,7 +6261,7 @@ function NationPicker({ onPick }) {
   const [sel, setSel] = useState("dogger");
   const n = NATIONS[sel];
   return (
-    <div className="cc-root cc-app w-full flex flex-col cc-text-e5eef3 overflow-auto"
+    <div className="cc-root cc-page w-full flex flex-col cc-text-e5eef3"
       style={{ background: "radial-gradient(1000px 600px at 50% -10%, #1a2c36 0%, #0b1116 65%, #070b0e 100%)", color: "#ffffff" }}>
       <style>{UI_CSS}</style>
       <div className="cc-max-w-1080px mx-auto px-5 cc-sm-px-8 py-10 cc-sm-py-12 w-full">
