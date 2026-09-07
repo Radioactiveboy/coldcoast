@@ -2959,6 +2959,7 @@ export default function ColdCoast() {
           return { ...g, sound: next };
         })}
         onEnd={endTurn} onSave={saveNow} saveFailed={saveFailed}
+        onScreen={(id) => setGame((g) => ({ ...g, screen: id }))}
         onCodex={() => setGame((g) => ({ ...g, showCodex: true }))} />
 
       <div className="flex-1 flex flex-col cc-lg-flex-row min-h-0">
@@ -3020,6 +3021,27 @@ export default function ColdCoast() {
         <SurveyModal sv={game.survey} prov={game.provinces[game.survey.k]}
           onChoose={resolveSurvey} onClose={() => setGame((g) => ({ ...g, survey: null }))} />
       )}
+      {game.screen && (() => {
+        const shut = () => setGame((g) => ({ ...g, screen: null }));
+        const openTree = () => setGame((g) => ({ ...g, screen: null, tree: true }));
+        if (game.screen === "realm") return (
+          <RealmScreen title="The realm" onClose={shut}>
+            <RealmPanel game={game} P={P} nat={nat} />
+          </RealmScreen>);
+        if (game.screen === "tech") return (
+          <RealmScreen title="Advances" onClose={shut}>
+            <AdvancesPanel game={game} P={P} onResearch={research} onOpenTree={openTree} />
+          </RealmScreen>);
+        if (game.screen === "make") return (
+          <RealmScreen title="The works" onClose={shut}>
+            <ProductionPanel game={game} P={P} onCraft={setCraft} />
+          </RealmScreen>);
+        if (game.screen === "world") return (
+          <RealmScreen title="Rivals" onClose={shut}>
+            <WorldPanel game={game} P={P} atWar={atWar} onWar={toggleWar} />
+          </RealmScreen>);
+        return null;
+      })()}
       {game.showCodex && <Codex onClose={() => setGame((g) => ({ ...g, showCodex: false }))} />}
       {game.over && <GameOver over={game.over} onRestart={() => setGame(initialState())} />}
     </div>
@@ -3036,7 +3058,7 @@ const RES_META = [
   { k: "men", label: "Recruits", Icon: Users, c: "#9db8c4" },
 ];
 
-function TopBar({ nat, income, turn, owned, armies, onEnd, onCodex, sound, onSound, onLords, onSave, saveFailed }) {
+function TopBar({ nat, income, turn, owned, armies, onEnd, onCodex, sound, onSound, onLords, onSave, saveFailed, onScreen }) {
   return (
     <header className="shrink-0 border-b cc-border-28363f cc-bg-0a1015a90 backdrop-blur px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
       <div className="flex items-center gap-2.5 pr-5 border-r cc-border-28363f">
@@ -3054,6 +3076,7 @@ function TopBar({ nat, income, turn, owned, armies, onEnd, onCodex, sound, onSou
           </div>
         </div>
       </div>
+
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 flex-1 min-w-0">
         {RES_META.map(({ k, label, Icon, c }) => {
@@ -3076,6 +3099,19 @@ function TopBar({ nat, income, turn, owned, armies, onEnd, onCodex, sound, onSou
         })}
       </div>
 
+      {/* Icons, not words: four text buttons here cost enough width to wrap the
+          bar onto three rows, and at 1280x720 that ate 36% of the screen the
+          map is meant to be on. Same 28px square as the warlord and sound
+          controls beside them. */}
+      <div className="flex items-center gap-1.5">
+        {[["realm", "The realm", Crown], ["tech", "Advances", Sparkles],
+          ["make", "The works", Anvil], ["world", "Rivals", Swords]].map(([id, label, Icon]) => (
+          <button key={id} type="button" onClick={() => onScreen(id)}
+            title={label} aria-label={label} className="cc-sndbtn">
+            <Icon size={15} />
+          </button>
+        ))}
+      </div>
       <button type="button" onClick={onLords}
         title={nat.lordDead ? "Your realm has no warlord" : "Your warlord"}
         className={`cc-lordbtn ${nat.lordDead ? "cc-lorddead" : ""}`} aria-label="Warlord">
@@ -4042,12 +4078,10 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
 /* -------------------------------- SIDEBAR --------------------------------- */
 function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft }) {
   const [tab, setTab] = useState("here");
+  // Only the two that are about what is in front of you. The realm-wide
+  // screens moved to the top bar; six tabs did not fit this column.
   const tabs = [
     { id: "here", label: "Here" },
-    { id: "realm", label: "Realm" },
-    { id: "tech", label: "Advances" },
-    { id: "make", label: "Works" },
-    { id: "world", label: "Rivals" },
     { id: "log", label: "Log" },
   ];
   return (
@@ -4068,10 +4102,6 @@ function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecr
             onMarch={onMarch} atWar={atWar} onSeat={onSeat} onRepair={onRepair}
             onTake={onTake} onMerge={onMerge} onReinforce={onReinforce} onCommand={onCommand} />
         )}
-        {tab === "realm" && <RealmPanel game={game} P={P} nat={nat} />}
-        {tab === "tech" && <AdvancesPanel game={game} P={P} onResearch={onResearch} onOpenTree={onOpenTree} />}
-        {tab === "make" && <ProductionPanel game={game} P={P} onCraft={onCraft} />}
-        {tab === "world" && <WorldPanel game={game} P={P} atWar={atWar} onWar={onWar} />}
         {tab === "log" && <LogPanel log={game.log} />}
       </div>
     </>
@@ -6392,6 +6422,25 @@ function NationPicker({ onPick }) {
 }
 
 /* -------------------------------- CODEX ----------------------------------- */
+/* The realm-wide panels used to be tabs in the sidebar, six of them sharing a
+   column narrow enough that "Advances" and "Works" were squeezed to a few
+   pixels each. They are reached from the top bar now, and each one opens in
+   the same overlay the tech tree and the seat already use. The panels
+   themselves are unchanged — this moves where they live, not what they say. */
+function RealmScreen({ title, onClose, children }) {
+  return (
+    <Overlay onClose={onClose}>
+      <div className="cc-w-720px cc-max-w-94vw cc-max-h-86vh rounded-lg border cc-border-31454f cc-bg-0d141a flex flex-col overflow-hidden">
+        <div className="px-5 py-3.5 border-b cc-border-28363f flex items-center justify-between">
+          <div className="disp cc-text-20px">{title}</div>
+          <button onClick={onClose} className="cc-text-93a9b5 cc-hover-text-e5eef3"><X size={20} /></button>
+        </div>
+        <div className="overflow-y-auto thin p-5">{children}</div>
+      </div>
+    </Overlay>
+  );
+}
+
 function Codex({ onClose }) {
   return (
     <Overlay onClose={onClose}>

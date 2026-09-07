@@ -24,6 +24,7 @@ export const SAVE_VERSION = 1;
 const TRANSIENT = {
   sel: null, tree: false, seat: null, lords: false, showCodex: false,
   recruit: null, survey: null, lair: null, focus: null, notices: [],
+  screen: null,
 };
 
 /* localStorage throws rather than returning null in a few real situations —
