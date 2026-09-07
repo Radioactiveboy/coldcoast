@@ -1,0 +1,57 @@
+/* The layout utilities Cold Coast uses.
+
+   The game was written against Tailwind's core utilities. Rather than pull in
+   the whole framework for a couple of dozen classes, this is exactly the set
+   the game actually uses — the same sheet the browser tests have run against
+   throughout development. Everything else the game needs it generates itself
+   into a <style> block at runtime (see UI_CSS in ColdCoast.jsx).
+
+   If you later want the full Tailwind, install it and delete this file; the
+   class names are all standard. */
+
+html, body { height: 100%; margin: 0; background: #05090c; }
+#root { min-height: 100%; display: flex; flex-direction: column; }
+body { font-family: Inter, system-ui, -apple-system, sans-serif; }
+
+button, input, select, textarea { font: inherit; color: inherit; background-color: transparent; border: 0; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; border: 0 solid #31454f; }
+
+.relative{position:relative}.absolute{position:absolute}.fixed{position:fixed}
+.inset-0{top:0;right:0;bottom:0;left:0}.z-50{z-index:50}
+.flex{display:flex}.grid{display:grid}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}
+.flex-col{flex-direction:column}.flex-wrap{flex-wrap:wrap}.flex-1{flex:1 1 0%}.shrink-0{flex-shrink:0}
+.min-h-0{min-height:0}.min-w-0{min-width:0}.w-full{width:100%}.h-full{height:100%}.h-px{height:1px}
+.overflow-auto{overflow:auto}.overflow-hidden{overflow:hidden}.overflow-y-auto{overflow-y:auto}
+.items-center{align-items:center}.items-baseline{align-items:baseline}
+.justify-between{justify-content:space-between}.justify-center{justify-content:center}
+.self-start{align-self:flex-start}.mx-auto{margin-left:auto;margin-right:auto}.ml-auto{margin-left:auto}
+.border{border-width:1px}.border-b{border-bottom-width:1px}.border-t{border-top-width:1px}
+.border-l-2{border-left-width:2px}.border-r{border-right-width:1px}
+.rounded{border-radius:.25rem}.rounded-lg{border-radius:.5rem}.rounded-sm{border-radius:.125rem}
+.text-center{text-align:center}.text-left{text-align:left}.text-right{text-align:right}
+.whitespace-nowrap{white-space:nowrap}.cursor-pointer{cursor:pointer}
+.gap-1{gap:.25rem}.gap-1\.5{gap:.375rem}.gap-2{gap:.5rem}.gap-2\.5{gap:.625rem}
+.gap-3{gap:.75rem}.gap-4{gap:1rem}.gap-5{gap:1.25rem}.gap-7{gap:1.75rem}
+.gap-x-4{column-gap:1rem}.gap-x-5{column-gap:1.25rem}.gap-y-1\.5{row-gap:.375rem}.gap-y-2{row-gap:.5rem}
+.p-3{padding:.75rem}.p-3\.5{padding:.875rem}.p-4{padding:1rem}.p-5{padding:1.25rem}.p-7{padding:1.75rem}
+.px-1{padding-left:.25rem;padding-right:.25rem}.px-1\.5{padding-left:.375rem;padding-right:.375rem}
+.px-2{padding-left:.5rem;padding-right:.5rem}.px-2\.5{padding-left:.625rem;padding-right:.625rem}
+.px-3{padding-left:.75rem;padding-right:.75rem}.px-3\.5{padding-left:.875rem;padding-right:.875rem}
+.px-4{padding-left:1rem;padding-right:1rem}.px-5{padding-left:1.25rem;padding-right:1.25rem}
+.px-6{padding-left:1.5rem;padding-right:1.5rem}
+.py-0\.5{padding-top:.125rem;padding-bottom:.125rem}.py-1{padding-top:.25rem;padding-bottom:.25rem}
+.py-1\.5{padding-top:.375rem;padding-bottom:.375rem}.py-2{padding-top:.5rem;padding-bottom:.5rem}
+.py-2\.5{padding-top:.625rem;padding-bottom:.625rem}.py-3{padding-top:.75rem;padding-bottom:.75rem}
+.py-3\.5{padding-top:.875rem;padding-bottom:.875rem}.py-10{padding-top:2.5rem;padding-bottom:2.5rem}
+.pb-1{padding-bottom:.25rem}.pl-2\.5{padding-left:.625rem}.pr-1{padding-right:.25rem}
+.pr-5{padding-right:1.25rem}.pt-2\.5{padding-top:.625rem}.pt-3{padding-top:.75rem}
+.mb-1{margin-bottom:.25rem}.mb-1\.5{margin-bottom:.375rem}.mb-2{margin-bottom:.5rem}
+.mb-3{margin-bottom:.75rem}.mb-4{margin-bottom:1rem}.mb-5{margin-bottom:1.25rem}
+.mb-6{margin-bottom:1.5rem}.mb-9{margin-bottom:2.25rem}
+.mt-0\.5{margin-top:.125rem}.mt-1{margin-top:.25rem}.mt-1\.5{margin-top:.375rem}
+.mt-2{margin-top:.5rem}.mt-2\.5{margin-top:.625rem}.mt-3{margin-top:.75rem}.mt-4{margin-top:1rem}
+.ml-3{margin-left:.75rem}.mr-1\.5{margin-right:.375rem}.my-2{margin-top:.5rem;margin-bottom:.5rem}
+.leading-none{line-height:1}.leading-tight{line-height:1.25}.leading-snug{line-height:1.375}
+.leading-relaxed{line-height:1.625}
+.transition-colors{transition:color .15s,background-color .15s,border-color .15s}
+.backdrop-blur{backdrop-filter:blur(8px)}
