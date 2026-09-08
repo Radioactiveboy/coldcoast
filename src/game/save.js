@@ -13,7 +13,11 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-export const SAVE_VERSION = 1;
+/* 2: nat.crafts went from a share of the workshops' output (a weight, 0-9,
+   normalised across the lines) to a count of craftsmen on each line. The same
+   numbers mean something different now, so a version 1 save would load into a
+   realm quietly working at a fraction of its strength. */
+export const SAVE_VERSION = 2;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight

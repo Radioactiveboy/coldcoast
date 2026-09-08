@@ -724,27 +724,45 @@ const ARMOUR_GRADES = [
    given kind every season, and a company cannot be raised until enough of its
    kind is on the rack. What your craftsmen work on is your decision.
    ------------------------------------------------------------------------ */
-const CRAFT_BASE = 55;                       // a seat's own workshops, per season
-const CRAFT_PER_HUT = 40;                    // each craftsmen's hut on top
+const HANDS_SEAT = 6;                        // craftsmen working out of a seat
+const HANDS_PER_HUT = 4;                     // each craftsmen's hut on top
+const ARMS_PER_HAND = 10;                    // what one of them turns out in a season
 
-function craftOutput(provinces, natId) {
-  let out = 0;
+/* How many pairs of hands a realm has. A hut that has been knocked about works
+   at half strength, rounded down — half a craftsman is no craftsman. */
+function craftHands(provinces, natId) {
+  let hands = 0;
   Object.values(provinces).forEach((p) => {
     if (p.owner !== natId) return;
-    if (p.capital) out += CRAFT_BASE;
-    if (p.building === "workshop" && !p.buildLeft) out += p.damaged ? CRAFT_PER_HUT / 2 : CRAFT_PER_HUT;
+    if (p.capital) hands += HANDS_SEAT;
+    if (p.building === "workshop" && !p.buildLeft) {
+      hands += p.damaged ? Math.floor(HANDS_PER_HUT / 2) : HANDS_PER_HUT;
+    }
   });
-  return Math.round(out);
+  return hands;
 }
-// Shares are whole numbers; the season's output is split between them.
-function craftSplit(nat, provinces, natId) {
-  const total = craftOutput(provinces, natId);
-  const shares = nat.crafts || {};
-  const open = unitsFor(nat).filter((id) => (shares[id] || 0) > 0);
-  const sum = open.reduce((n, id) => n + shares[id], 0);
-  const out = {};
-  open.forEach((id) => { out[id] = Math.round((total * shares[id]) / sum); });
-  return { total, per: out };
+
+/* nat.crafts is a count of craftsmen per line, not a share of the work. The
+   difference matters: hands you do not assign are idle and make nothing, so
+   the number on the screen is a decision rather than a ratio.
+
+   A realm can end up with more assigned than it has — a hut burns, a seat is
+   taken — and rather than silently dropping lines, everyone is scaled back
+   proportionally and the panel says so. */
+function craftPlan(nat, provinces, natId) {
+  const hands = craftHands(provinces, natId);
+  const crafts = nat.crafts || {};
+  const open = unitsFor(nat);
+  const assigned = open.reduce((n, id) => n + Math.max(0, crafts[id] || 0), 0);
+  const scale = assigned > hands && assigned > 0 ? hands / assigned : 1;
+  const per = {};
+  let working = 0;
+  open.forEach((id) => {
+    const on = Math.floor(Math.max(0, crafts[id] || 0) * scale);
+    if (on > 0) { per[id] = on * ARMS_PER_HAND; working += on; }
+  });
+  return { hands, assigned, working, idle: Math.max(0, hands - assigned),
+           over: assigned > hands, per, total: working * ARMS_PER_HAND };
 }
 
 const wGrade = (id) => WEAPON_GRADES.find((g) => g.id === id) || WEAPON_GRADES[0];
@@ -1468,7 +1486,7 @@ function buildWorld() {
       id, ...def,
       res: { food: 340, scrap: 200, metal: 0, fuel: 110, powder: 90, men: 300 },
       known: id === "dogger" ? { coastworks: true } : {}, research: null,
-      crafts: { spearmen: 2, axemen: 1, hunters: 1 },
+      crafts: { spearmen: 3, axemen: 2, hunters: 1 },   // six hands, the seat's full crew
       arms: { spearmen: 150, axemen: 120, hunters: 0 },
       dead: false,
     };
@@ -2222,10 +2240,15 @@ export default function ColdCoast() {
   function setCraft(type, d) {
     setGame((g) => {
       const n = g.nations[P];
+      const { hands, assigned } = craftPlan(n, g.provinces, P);
       const crafts = { ...(n.crafts || {}) };
-      const next = Math.max(0, Math.min(9, (crafts[type] || 0) + d));
+      const cur = Math.max(0, crafts[type] || 0);
+      // You cannot put on a craftsman you do not have. Taking them all off a
+      // line is allowed — idle hands are a choice the panel shows you.
+      const room = Math.max(0, hands - assigned);
+      const next = Math.max(0, cur + Math.min(d, room));
+      if (next === cur) return g;
       crafts[type] = next;
-      if (!Object.values(crafts).some((v) => v > 0)) return g;   // somebody must be working
       Sound.play("tick");
       return { ...g, nations: { ...g.nations, [P]: { ...n, crafts } } };
     });
@@ -2542,14 +2565,20 @@ export default function ColdCoast() {
           }
         }
 
-        // keep the craftsmen on whatever this realm can actually raise
+        // Keep the craftsmen on whatever this realm can actually raise, and
+        // keep all of them working — idle hands would quietly hand the player
+        // an advantage the AI never chose to give.
         {
           const nc = nations[id];
           const openU = unitsFor(nc);
-          const cur = Object.keys(nc.crafts || {});
-          if (openU.length && (cur.length !== openU.length || cur.some((x) => !openU.includes(x)))) {
+          const plan = craftPlan(nc, provinces, id);
+          const cur = Object.keys(nc.crafts || {}).filter((x) => (nc.crafts[x] || 0) > 0);
+          const stale = cur.some((x) => !openU.includes(x));
+          if (openU.length && (stale || plan.assigned !== plan.hands)) {
+            const lines = openU.slice(-3);
             const crafts = {};
-            openU.slice(-3).forEach((u, i) => { crafts[u] = i === 0 ? 1 : 2; });
+            lines.forEach((u) => { crafts[u] = 0; });
+            for (let i = 0; i < plan.hands; i++) crafts[lines[i % lines.length]] += 1;
             nations[id] = { ...nc, crafts };
           }
         }
@@ -2810,7 +2839,7 @@ export default function ColdCoast() {
       // --- the workshops turn out arms ---
       NATION_IDS.forEach((id) => {
         const n = nations[id];
-        const { per } = craftSplit(n, provinces, id);
+        const { per } = craftPlan(n, provinces, id);
         if (!Object.keys(per).length) return;
         // A rack only holds so much; work beyond three companies' worth is
         // wasted, so there is a reason to keep raising them.
@@ -4934,58 +4963,101 @@ function AdvancesPanel({ game, P, onResearch, onOpenTree }) {
 function ProductionPanel({ game, P, onCraft }) {
   const nat = game.nations[P];
   const open = unitsFor(nat);
-  const { total, per } = craftSplit(nat, game.provinces, P);
+  const { hands, assigned, idle, over, per, total } = craftPlan(nat, game.provinces, P);
   const huts = Object.values(game.provinces).filter(
     (p) => p.owner === P && p.building === "workshop" && !p.buildLeft).length;
   const seats = Object.values(game.provinces).filter((p) => p.owner === P && p.capital).length;
 
   return (
     <div>
-      <div className="rounded border cc-border-31454f cc-bg-131f27 px-3 py-2.5 mb-3">
-        <div className="flex items-baseline gap-2">
-          <span className="disp cc-text-17px flex-1">The workshops</span>
-          <span className="num cc-text-14d5px cc-text-8fe3d6">{total} a season</span>
+      <div className="rounded border cc-border-31454f cc-bg-131f27 px-3.5 py-3 mb-3">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span className="disp cc-text-18px flex-1">The workshops</span>
+          <span className="num cc-text-15px cc-text-8fe3d6">{total} arms a season</span>
         </div>
-        <div className="cc-text-12d5px cc-text-93a9b5 mt-1 leading-snug">
-          {seats ? `Your seat turns out ${CRAFT_BASE}` : "You hold no seat"}
-          {huts ? `, and ${huts} craftsmen's hut${huts === 1 ? "" : "s"} another ${huts * CRAFT_PER_HUT}` : ""}.
-          Arms pile up on the rack until there are enough to put a company in the field.
+        <div className="flex items-center gap-4 mt-2.5 flex-wrap">
+          <div className="leading-none">
+            <div className="num cc-text-20px">{hands}</div>
+            <div className="cc-text-11d5px cc-text-8399a6">craftsmen</div>
+          </div>
+          <div className="leading-none">
+            <div className="num cc-text-20px" style={{ color: over ? "#e0644a" : "#b6c2cc" }}>{assigned}</div>
+            <div className="cc-text-11d5px cc-text-8399a6">at a bench</div>
+          </div>
+          <div className="leading-none">
+            <div className="num cc-text-20px" style={{ color: idle > 0 ? "#e8b98a" : "#6fae8c" }}>{idle}</div>
+            <div className="cc-text-11d5px cc-text-8399a6">idle</div>
+          </div>
+          <div className="cc-text-12d5px cc-text-93a9b5 flex-1 min-w-0 leading-snug">
+            {seats ? `Your seat keeps ${HANDS_SEAT}` : "You hold no seat"}
+            {huts ? `, and ${huts} craftsmen's hut${huts === 1 ? "" : "s"} another ${huts * HANDS_PER_HUT}` : ""}.
+            Each turns out {ARMS_PER_HAND} a season.
+          </div>
         </div>
       </div>
 
+      {over && (
+        <div className="rounded border cc-border-8a4a38 px-3 py-2 mb-2.5 cc-text-12d5px cc-text-e8b98a leading-snug">
+          You have {assigned} at the benches and only {hands} craftsmen left. Every line is
+          working short until you take some off.
+        </div>
+      )}
+      {!over && idle > 0 && (
+        <div className="rounded border cc-border-3d6470 px-3 py-2 mb-2.5 cc-text-12d5px cc-text-cfe0e8 leading-snug">
+          <span className="num">{idle}</span> {idle === 1 ? "craftsman is" : "craftsmen are"} standing
+          about making nothing. Put them on a line below.
+        </div>
+      )}
+
       <p className="cc-text-12d5px cc-text-93a9b5 mb-2 leading-relaxed">
-        Give each kind a share of the work. A company cannot be raised until its own arms
-        are made — no amount of scrap will conjure a bow.
+        Put your craftsmen on the arms you mean to use. A company cannot be raised until its
+        own arms are made — no amount of scrap will conjure a bow.
       </p>
 
       <div className="grid gap-1.5">
         {open.map((id) => {
           const u = UNITS[id];
-          const share = (nat.crafts || {})[id] || 0;
+          const on = Math.max(0, (nat.crafts || {})[id] || 0);
           const rack = (nat.arms || {})[id] || 0;
           const rate = per[id] || 0;
+          const cap = u.size * 3;
+          const companies = Math.floor(rack / u.size);
           const short = Math.max(0, u.size - rack);
           const eta = rate > 0 ? Math.ceil(short / rate) : null;
+          const full = rack >= cap;
           return (
-            <div key={id} className={`rounded border px-3 py-2.5 ${share
+            <div key={id} className={`rounded border px-3 py-2.5 ${on
               ? "cc-border-31454f cc-bg-131f27" : "cc-border-25313a"}`}>
               <div className="flex items-baseline gap-2">
-                <span className={`cc-text-13d5px flex-1 ${share ? "" : "cc-text-95aab6"}`}>{u.name}</span>
-                <span className="num cc-text-12px cc-text-a0b6c1">{rack}/{u.size}</span>
+                <span className={`cc-text-14px flex-1 ${on ? "" : "cc-text-95aab6"}`}>{u.name}</span>
+                <span className="num cc-text-12d5px cc-text-a0b6c1">{rack} on the rack</span>
+                <span className="cc-text-11d5px cc-text-8399a6">of {cap} max</span>
               </div>
-              <div className="mt-1.5 cc-h-5px cc-bg-26333c rounded overflow-hidden">
-                <div className="h-full cc-bar" style={{ width: `${Math.min(100, (rack / u.size) * 100)}%`,
-                  background: rack >= u.size ? "#9fd6b4" : "#8fe3d6" }} />
+
+              {/* The bar is marked off in companies, so "enough to raise one"
+                  is something you can see rather than divide out. */}
+              <div className="mt-1.5 cc-h-5px cc-bg-26333c rounded overflow-hidden relative">
+                <div className="h-full cc-bar" style={{ width: `${Math.min(100, (rack / cap) * 100)}%`,
+                  background: companies >= 1 ? "#9fd6b4" : "#8fe3d6" }} />
+                <span style={{ position: "absolute", top: 0, bottom: 0, left: "33.33%", width: 1, background: "#0d141a" }} />
+                <span style={{ position: "absolute", top: 0, bottom: 0, left: "66.66%", width: 1, background: "#0d141a" }} />
               </div>
-              <div className="flex items-center gap-2 mt-2">
-                <button type="button" onClick={() => onCraft(id, -1)} disabled={share === 0}
-                  className={`cc-craftbtn ${share === 0 ? "cc-text-78909e" : ""}`}>−</button>
-                <span className="num cc-text-13px cc-w-28px text-center">{share}</span>
-                <button type="button" onClick={() => onCraft(id, 1)} className="cc-craftbtn">+</button>
-                <span className="cc-text-12px cc-text-93a9b5 flex-1 min-w-0">
-                  {rack >= u.size * 3 ? "the rack is full — raise them or move the works on"
-                    : rack >= u.size ? "ready to raise"
-                    : rate > 0 ? `${rate} a season · ready in ${eta} season${eta === 1 ? "" : "s"}`
+
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <button type="button" onClick={() => onCraft(id, -1)} disabled={on === 0}
+                  className={`cc-craftbtn ${on === 0 ? "cc-text-78909e" : ""}`}>−</button>
+                <span className="num cc-text-13px cc-w-28px text-center">{on}</span>
+                <button type="button" onClick={() => onCraft(id, 1)} disabled={idle === 0}
+                  className={`cc-craftbtn ${idle === 0 ? "cc-text-78909e" : ""}`}>+</button>
+                <span className="cc-text-11d5px cc-text-8399a6">
+                  {on === 1 ? "craftsman" : "craftsmen"}
+                  {rate > 0 ? ` · ${rate} a season` : ""}
+                </span>
+                <span className="cc-text-12px flex-1 min-w-0 text-right"
+                  style={{ color: full ? "#e8b98a" : companies >= 1 ? "#9fd6b4" : "#93a9b5" }}>
+                  {full ? "the rack is full — raise them or move the works on"
+                    : companies >= 1 ? `enough for ${companies} ${companies === 1 ? "company" : "companies"}`
+                    : rate > 0 ? `ready in ${eta} season${eta === 1 ? "" : "s"}`
                     : "no one is working on these"}
                 </span>
               </div>
