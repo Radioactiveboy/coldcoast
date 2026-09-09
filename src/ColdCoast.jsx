@@ -20,7 +20,8 @@ import { seasonOf, yearOf } from "./data/seasons.js";
 import { BUILDINGS } from "./data/buildings.js";
 import { WARLORDS, LORD_COMMAND, LEADERLESS } from "./data/warlords.js";
 import { writeSave, readSave, saveInfo } from "./game/save.js";
-import { startingPop, popRecruits, popSlots, popRank, popCostOf, POP_LAIR } from "./data/population.js";
+import { startingPop, popRecruits, popSlots, popRank, popCostOf, popCeiling, popGrow,
+         POP_LAIR, POP_INVEST } from "./data/population.js";
 
 /* ============================================================================
    COLD COAST — a turn-based grand strategy prototype
@@ -2406,6 +2407,25 @@ export default function ColdCoast() {
     });
   }
 
+  /* Rations into a ward, and people over the following winters. Deliberately
+     slow: a company raised today is worth more than thirty people next spring,
+     and the whole point is that the long bet has to be made early. */
+  function investPop(k) {
+    setGame((g) => {
+      const p = g.provinces[k];
+      if (!p || p.owner !== P || p.grow) return g;
+      const n = g.nations[P];
+      if (n.res.food < POP_INVEST.food) return g;
+      Sound.play("tick");
+      return {
+        ...g,
+        nations: { ...g.nations, [P]: { ...n, res: { ...n.res, food: n.res.food - POP_INVEST.food } } },
+        provinces: { ...g.provinces, [k]: { ...p, grow: { left: POP_INVEST.seasons, per: POP_INVEST.per } } },
+        log: [{ turn: g.turn, m: `${POP_INVEST.food} rations go to ${p.name} — ${POP_INVEST.seasons} winters of feeding.` }, ...g.log].slice(0, 60),
+      };
+    });
+  }
+
   function build(k, bid) {
     setGame((g) => {
       const p = g.provinces[k];
@@ -2868,6 +2888,29 @@ export default function ColdCoast() {
         nations[id] = { ...n, arms };
       });
 
+      // --- the wards grow, and any that are being fed grow faster ---
+      {
+        const sea = seasonOf(g.turn).id;
+        Object.keys(provinces).forEach((pk) => {
+          const q = provinces[pk];
+          if (!q.owner || isMinor(q.owner)) return;      // only realms tend their ground
+          const ceil = popCeiling(pk, q.t);
+          let pop = popGrow(q.pop, ceil, sea);
+          let grow = q.grow;
+          if (grow && grow.left > 0) {
+            // Rations already paid for. This lands whatever the season does,
+            // and it is allowed to push a ward past what the land would carry
+            // on its own — that is what the rations are buying.
+            pop = pop + grow.per;
+            grow = grow.left <= 1 ? null : { ...grow, left: grow.left - 1 };
+            if (!grow && q.owner === g.player) {
+              newLog.push({ turn: g.turn, m: `The ward at ${q.name} is fed through. It stands at ${Math.round(pop)}.` });
+            }
+          }
+          if (pop !== q.pop || grow !== q.grow) provinces[pk] = { ...q, pop, grow };
+        });
+      }
+
       // --- a winter of study ---
       NATION_IDS.forEach((id) => {
         const n = nations[id];
@@ -3027,7 +3070,7 @@ export default function ColdCoast() {
             onSeat={(k) => setGame((g) => ({ ...g, seat: k }))} onResearch={research}
             onOpenTree={() => setGame((g) => ({ ...g, tree: true }))} onRepair={repair}
             onTake={takeCommand} onMerge={mergeInto} onReinforce={reinforce} onCommand={setCommander}
-            onCraft={setCraft}
+            onCraft={setCraft} onInvestPop={investPop}
             onDisband={(aid, uid) => setGame((g) => ({
               ...g,
               armies: g.armies.map((a) => a.id === aid ? { ...a, units: a.units.filter((u) => u.id !== uid) } : a).filter((a) => a.units.length),
@@ -4124,7 +4167,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
 }
 
 /* -------------------------------- SIDEBAR --------------------------------- */
-function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft }) {
+function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop }) {
   const [tab, setTab] = useState("here");
   // Only the two that are about what is in front of you. The realm-wide
   // screens moved to the top bar; six tabs did not fit this column.
@@ -4148,7 +4191,8 @@ function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecr
             onBuild={onBuild} onRecruitOpen={onRecruitOpen} onDisband={onDisband}
             onDeselect={onDeselect} onInvestigate={onInvestigate} onClaim={onClaim}
             onMarch={onMarch} atWar={atWar} onSeat={onSeat} onRepair={onRepair}
-            onTake={onTake} onMerge={onMerge} onReinforce={onReinforce} onCommand={onCommand} />
+            onTake={onTake} onMerge={onMerge} onReinforce={onReinforce} onCommand={onCommand}
+            onInvestPop={onInvestPop} />
         )}
         {tab === "log" && <LogPanel log={game.log} />}
       </div>
@@ -4176,7 +4220,7 @@ function buildingEffect(bid) {
   return out;
 }
 
-function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft }) {
+function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop }) {
   if (!selProv) return (
     <div className="cc-text-13d5px cc-text-93a9b5 leading-relaxed">
       <p className="mb-3">Pick a hex to see what it grows and what it hides.</p>
@@ -4243,6 +4287,28 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
           </span>
           <span className="cc-text-11d5px cc-text-8399a6">recruits a season</span>
         </div>
+        {mine && (() => {
+          const ceil = popCeiling(key(selProv.c, selProv.r), selProv.t);
+          const room = ceil > 0 && (selProv.pop || 0) < ceil;
+          if (selProv.grow) return (
+            <div className="cc-text-12px cc-text-9fd6b4 mt-1.5">
+              Being fed — <span className="num">{selProv.grow.per}</span> a season for
+              {" "}<span className="num">{selProv.grow.left}</span> more
+              {selProv.grow.left === 1 ? " winter" : " winters"}.
+            </div>
+          );
+          return (
+            <button type="button" onClick={() => onInvestPop(key(selProv.c, selProv.r))}
+              disabled={!room || game.nations[P].res.food < POP_INVEST.food}
+              className={`w-full mt-1.5 py-1.5 rounded border cc-text-12d5px transition-colors ${
+                room && game.nations[P].res.food >= POP_INVEST.food
+                  ? "cc-border-31454f cc-text-cfe0e8 cc-hover-border-4d7488"
+                  : "cc-border-25313a cc-text-78909e"}`}>
+              {!room ? "This ground will not carry any more"
+                : `Feed the ward — ${POP_INVEST.food} rations over ${POP_INVEST.seasons} winters`}
+            </button>
+          );
+        })()}
       </div>
 
       {selArmy && (() => {

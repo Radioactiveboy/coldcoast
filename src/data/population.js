@@ -115,6 +115,43 @@ export const POP_LANDMARK = {
   "74,129": 360,  // Athina Stone
 };
 
+/* People arrive, and are born, and mostly they do neither quickly. Growth is
+   a percentage of what is already there, so an empty moor fills very slowly
+   and a town fills fast — which is the wrong way round for fairness and the
+   right way round for how places actually work. The season decides whether
+   anyone is having children at all: nothing grows in a Cold Coast winter. */
+export const POP_GROWTH = 0.02;
+export const POP_GROWTH_SEASON = { spring: 1.4, summer: 1.0, autumn: 0.6, winter: 0 };
+
+/* No tile grows forever. The ceiling is what the ground can carry — a
+   multiple of what was there when the world was made, so good land and the
+   old cities stay ahead of a moor no matter how long you feed them. */
+export const POP_CEILING_MULT = 2.5;
+export const POP_CEILING_FLOOR = 150;
+
+/* Feeding a ward through the winters. Rations up front, and people arrive
+   over several seasons rather than the moment you pay — the whole point is
+   that it is a long bet against a short one. */
+export const POP_INVEST = { food: 100, seasons: 6, per: 30 };
+
+export function popCeiling(k, terrain) {
+  const base = POP_LANDMARK[k] ?? POP_TERRAIN[terrain] ?? 0;
+  if (base <= 0) return 0;                 // nobody is ever going to live on a glacier
+  return Math.max(POP_CEILING_FLOOR, Math.round(base * POP_CEILING_MULT));
+}
+
+/* One season of natural change for one tile. Returns the new head count. */
+export function popGrow(pop, ceiling, season) {
+  const n = Math.max(0, Math.floor(pop || 0));
+  if (n <= 0 || ceiling <= 0 || n >= ceiling) return n;
+  const rate = POP_GROWTH * (POP_GROWTH_SEASON[season] ?? 1);
+  if (rate <= 0) return n;
+  // Always at least one when anything is growing at all, or a hamlet of 20
+  // rounds to nothing every season and never moves.
+  const add = Math.max(1, Math.round(n * rate));
+  return Math.min(ceiling, n + add);
+}
+
 /* Recruits a season from a given head count. See the note on POP_CLOSE for
    why there are two rates. */
 export function popRecruits(pop) {
