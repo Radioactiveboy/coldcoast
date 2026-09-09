@@ -105,6 +105,32 @@ const oneBand = await page.evaluate(() =>
   !/Merge .* into this warband/.test(document.querySelector("aside").innerText));
 check("the two warbands become one", oneBand);
 
+// A warband keeps the name you give it, and a company can be peeled off into
+// one of its own — which is the only way out of a warband sitting at the
+// eight-company limit. Split and then merge back, so the rest of this test
+// starts from the same position it did before.
+await click("^rename$");
+await wait(200);
+await page.evaluate(() => {
+  const i = document.querySelector("aside input.cc-namefield");
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+  setter.call(i, "The Thames Wolves");
+  i.dispatchEvent(new Event("input", { bubbles: true }));
+});
+await click("Name it");
+await wait(300);
+check("a warband can be renamed",
+  /The Thames Wolves/.test(await page.evaluate(() => document.querySelector("aside").innerText)));
+
+await click("March out alone");
+await wait(350);
+const splitOk = /Merge .* into this warband/.test(
+  await page.evaluate(() => document.querySelector("aside").innerText));
+check("a company can march out on its own", splitOk,
+  splitOk ? "" : "no second warband appeared to merge back");
+await click("Merge .* into this warband");
+await wait(350);
+
 // Pick a fight on purpose. The battle screen carried two undefined symbols
 // (stanceChips, CompanyRow) for the whole life of the project and this test
 // never noticed, because across forty seasons the AI happens never to attack —

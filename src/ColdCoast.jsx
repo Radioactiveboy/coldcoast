@@ -201,7 +201,7 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-zoombtn{width:26px;height:26px;border:1px solid #31454f;border-radius:4px;background:#131f27;color:#dfeaf0;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center}
 .cc-zoombtn:hover{border-color:#4d7488;background:#1b2a34}
 .cc-w-auto{width:auto}
-.cc-sndbtn{width:28px;height:28px;border:1px solid #31454f;border-radius:5px;background:#131f27;color:#7b8f9b;display:flex;align-items:center;justify-content:center}
+.cc-namefield{background:#0d161c;border:1px solid #4d7488;border-radius:4px;color:#e5eef3;padding:3px 7px;outline:none}\n.cc-namefield:focus{border-color:#8fe3d6}\n.cc-sndbtn{width:28px;height:28px;border:1px solid #31454f;border-radius:5px;background:#131f27;color:#7b8f9b;display:flex;align-items:center;justify-content:center}
 .cc-sndbtn:hover{border-color:#4d7488;color:#dfeaf0}
 .cc-sndon{color:#8fe3d6;border-color:#3d6470}
 .cc-seatart{display:block;width:100%;height:auto;aspect-ratio:200/44}
@@ -2474,6 +2474,46 @@ export default function ColdCoast() {
   /* Rations into a ward, and people over the following seasons. Deliberately
      slow: a company raised today is worth more than thirty people next spring,
      and the whole point is that the long bet has to be made early. */
+  /* A warband keeps whatever you call it. Names are yours — the generated
+     ones exist only so a new company has something on it. */
+  function renameArmy(id, raw) {
+    const name = String(raw || "").replace(/\s+/g, " ").trim().slice(0, 40);
+    if (!name) return;
+    setGame((g) => ({
+      ...g,
+      armies: g.armies.map((a) => (a.id === id && a.owner === P ? { ...a, name } : a)),
+    }));
+  }
+
+  /* Peel one company off into a warband of its own, standing where it already
+     stands. Without this a warband at the eight-company limit was a dead end:
+     you could not add to it and you could not take anything out of it except
+     by standing the company down for good. The new band keeps the movement
+     the old one had left, so splitting is not a way to buy a free march. */
+  function splitUnit(armyId, unitId) {
+    setGame((g) => {
+      const src = g.armies.find((a) => a.id === armyId);
+      if (!src || src.owner !== P || src.units.length < 2) return g;
+      const unit = src.units.find((u) => u.id === unitId);
+      if (!unit) return g;
+      const n = g.armies.filter((a) => a.owner === P).length + 1;
+      Sound.play("tick");
+      return {
+        ...g,
+        uid: g.uid + 1,
+        armies: [
+          ...g.armies.map((a) => (a.id === armyId
+            ? { ...a, units: a.units.filter((u) => u.id !== unitId) } : a)),
+          { id: `s${g.uid}x`, owner: P, c: src.c, r: src.r,
+            name: `${NATIONS[P].short} Warband ${n}`,
+            units: [unit], mp: src.mp, maxMp: src.maxMp ?? baseMove(P) },
+        ],
+        sel: { armyId: `s${g.uid}x`, k: key(src.c, src.r) },
+        log: [{ turn: g.turn, m: `${unitName(unit)} march out of ${src.name} on their own.` }, ...g.log].slice(0, 60),
+      };
+    });
+  }
+
   function investPop(k) {
     setGame((g) => {
       const p = g.provinces[k];
@@ -3159,6 +3199,7 @@ export default function ColdCoast() {
             onOpenTree={() => setGame((g) => ({ ...g, tree: true }))} onRepair={repair}
             onTake={takeCommand} onMerge={mergeInto} onReinforce={reinforce} onCommand={setCommander}
             onCraft={setCraft} onInvestPop={investPop}
+            onRename={renameArmy} onSplit={splitUnit}
             onDisband={(aid, uid) => setGame((g) => ({
               ...g,
               armies: g.armies.map((a) => a.id === aid ? { ...a, units: a.units.filter((u) => u.id !== uid) } : a).filter((a) => a.units.length),
@@ -4371,7 +4412,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
 }
 
 /* -------------------------------- SIDEBAR --------------------------------- */
-function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop }) {
+function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit }) {
   const [tab, setTab] = useState("here");
   // Only the two that are about what is in front of you. The realm-wide
   // screens moved to the top bar; six tabs did not fit this column.
@@ -4396,7 +4437,7 @@ function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecr
             onDeselect={onDeselect} onInvestigate={onInvestigate} onClaim={onClaim}
             onMarch={onMarch} atWar={atWar} onSeat={onSeat} onRepair={onRepair}
             onTake={onTake} onMerge={onMerge} onReinforce={onReinforce} onCommand={onCommand}
-            onInvestPop={onInvestPop} />
+            onInvestPop={onInvestPop} onRename={onRename} onSplit={onSplit} />
         )}
         {tab === "log" && <LogPanel log={game.log} />}
       </div>
@@ -4424,7 +4465,7 @@ function buildingEffect(bid) {
   return out;
 }
 
-function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop }) {
+function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit }) {
   if (!selProv) return (
     <div className="cc-text-13d5px cc-text-93a9b5 leading-relaxed">
       <p className="mb-3">Pick a hex to see what it grows and what it hides.</p>
@@ -4787,7 +4828,8 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
       {armiesHere.map((a) => (
         <ArmyCard key={a.id} army={a} game={game} P={P} onDisband={onDisband}
           held={selArmy?.id === a.id} heldArmy={selArmy}
-          onTake={onTake} onMerge={onMerge} onReinforce={onReinforce} onCommand={onCommand} />
+          onTake={onTake} onMerge={onMerge} onReinforce={onReinforce} onCommand={onCommand}
+          onRename={onRename} onSplit={onSplit} />
       ))}
 
       {selArmy && (
@@ -4800,7 +4842,9 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
   );
 }
 
-function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, onReinforce, onCommand }) {
+function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, onReinforce, onCommand, onRename, onSplit }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(army.name);
   const standingOn = game.provinces[key(army.c, army.r)];
   const friendly = !!standingOn && standingOn.owner === P;
   const muster = musteringGround(standingOn);
@@ -4814,11 +4858,37 @@ function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, o
 
   return (
     <Section title={own ? (held ? "In hand" : "Also standing here") : "Warband sighted"}>
-      <div className="disp cc-text-15px flex items-center gap-2" style={{ color: nat.color }}>
-        <Swords size={14} /> {army.name}
-        {held && <span className="cc-text-11d5px cc-text-8fe3d6">· selected</span>}
-        {army.lord && <Crown size={13} className="cc-text-f0e2b8" />}
-      </div>
+      {own && editing ? (
+        <form className="flex items-center gap-1.5"
+          onSubmit={(e) => { e.preventDefault(); onRename(army.id, draft); setEditing(false); }}>
+          <input autoFocus value={draft} maxLength={40}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") { setDraft(army.name); setEditing(false); } }}
+            className="cc-namefield disp cc-text-15px flex-1 min-w-0" />
+          <button type="submit" className="cc-text-11d5px cc-text-8fe3d6 px-1.5 py-1 rounded border cc-border-4d9aa6">Name it</button>
+          <button type="button" onClick={() => { setDraft(army.name); setEditing(false); }}
+            className="cc-text-11d5px cc-text-93a9b5 px-1.5 py-1">Leave it</button>
+        </form>
+      ) : (
+        <div className="disp cc-text-15px flex items-center gap-2" style={{ color: nat.color }}>
+          <Swords size={14} className="shrink-0" />
+          <span className="min-w-0 truncate">{army.name}</span>
+          {held && <span className="cc-text-11d5px cc-text-8fe3d6 shrink-0">· selected</span>}
+          {army.lord && <Crown size={13} className="cc-text-f0e2b8 shrink-0" />}
+          {own && (
+            <button type="button" title="Give this warband a name"
+              onClick={() => { setDraft(army.name); setEditing(true); }}
+              className="shrink-0 cc-text-11d5px cc-text-93a9b5 cc-hover-text-e5eef3 px-1 transition-colors">
+              rename
+            </button>
+          )}
+        </div>
+      )}
+      {own && army.units.length >= 8 && (
+        <div className="cc-text-11d5px cc-text-e8b98a mt-1">
+          Full at eight companies. March one out on its own to make room.
+        </div>
+      )}
       <div className="cc-text-12d5px cc-text-93a9b5 mb-2">
         <span className="num">{totalStr}</span> strong
         {own && <> · <span className="num">{army.mp}</span>/{army.maxMp} movement left · eats <span className="num">{upkeep.food}</span> rations{upkeep.fuel > 0 && <>, <span className="num">{upkeep.fuel}</span> fuel</>}</>}
@@ -4847,11 +4917,22 @@ function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, o
               </div>
               {own && (() => {
                 const rc = reinforceCost(u, P, muster);
-                if (!rc) return (
-                  <button onClick={() => onDisband(army.id, u.id)}
-                    className="mt-1.5 cc-text-11d5px cc-text-93a9b5 cc-hover-text-e0644a transition-colors">
-                    Stand down
+                const canSplit = army.units.length > 1;
+                const splitBtn = canSplit && (
+                  <button type="button" onClick={() => onSplit(army.id, u.id)}
+                    title="They become a warband of their own, standing where they are"
+                    className="cc-text-11d5px cc-text-93a9b5 cc-hover-text-8fe3d6 transition-colors">
+                    March out alone
                   </button>
+                );
+                if (!rc) return (
+                  <div className="mt-1.5 flex items-center gap-3">
+                    {splitBtn}
+                    <button onClick={() => onDisband(army.id, u.id)}
+                      className="cc-text-11d5px cc-text-93a9b5 cc-hover-text-e0644a transition-colors">
+                      Stand down
+                    </button>
+                  </div>
                 );
                 const afford = game.nations[P].res.men >= rc.men && game.nations[P].res.scrap >= rc.scrap;
                 const ok = friendly && afford;
@@ -4870,10 +4951,13 @@ function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, o
                         Field replacements. At a muster hall or your seat the same men cost far less.
                       </div>
                     )}
-                    <button onClick={() => onDisband(army.id, u.id)}
-                      className="mt-1 cc-text-11d5px cc-text-93a9b5 cc-hover-text-e0644a transition-colors">
-                      Stand down
-                    </button>
+                    <div className="mt-1 flex items-center gap-3">
+                      {splitBtn}
+                      <button onClick={() => onDisband(army.id, u.id)}
+                        className="cc-text-11d5px cc-text-93a9b5 cc-hover-text-e0644a transition-colors">
+                        Stand down
+                      </button>
+                    </div>
                   </div>
                 );
               })()}
