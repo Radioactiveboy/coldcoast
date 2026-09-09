@@ -20,6 +20,7 @@ import { seasonOf, yearOf } from "./data/seasons.js";
 import { BUILDINGS } from "./data/buildings.js";
 import { WARLORDS, LORD_COMMAND, LEADERLESS } from "./data/warlords.js";
 import { writeSave, readSave, saveInfo } from "./game/save.js";
+import { startingPop, popRecruits, popSlots, popRank, popCostOf, POP_LAIR } from "./data/population.js";
 
 /* ============================================================================
    COLD COAST — a turn-based grand strategy prototype
@@ -1473,7 +1474,7 @@ function buildWorld() {
         nameCount[reg] = (nameCount[reg] || 0) + 1;
         nm = `${reg} ${ROMAN[nameCount[reg]] || nameCount[reg]}`;
       }
-      provinces[k] = { c, r, t, name: nm, owner: null, building: null, capital: false, seat: null, explored: false, feature: null };
+      provinces[k] = { c, r, t, name: nm, owner: null, building: null, capital: false, seat: null, explored: false, feature: null, pop: startingPop(k, t, null) };
     }
   }
 
@@ -1516,10 +1517,11 @@ function buildWorld() {
   // Some ruins are occupied. Which ones is not visible until surveyed.
   Object.values(provinces).forEach((q) => {
     const named = NAMED_LAIRS[key(q.c, q.r)];
-    if (named) { q.lair = named; return; }
+    if (named) { q.lair = named; q.pop += POP_LAIR[named] || 0; return; }
     if (q.t !== "r" || q.owner) return;
     if (noise(q.c * 11.3, q.r * 7.7, 31) < 0.34) {
       q.lair = noise(q.r * 5.1, q.c * 9.4, 32) < 0.42 ? "changed" : "wasters";
+      q.pop += POP_LAIR[q.lair] || 0;
     }
   });
 
@@ -1569,7 +1571,10 @@ function moveInfo(game, army, prov, P, atWar) {
 /* ------------------------------- ECONOMY ---------------------------------- */
 function provinceYield(p, natId, nat) {
   const t = TERRAIN[p.t];
-  const y = { food: t.food, scrap: t.scrap, metal: 0, fuel: t.fuel, powder: t.powder, men: t.men };
+  // men comes from who lives here rather than from the terrain itself. The
+  // population table is set so an ordinary tile yields exactly what its
+  // terrain used to; a named place yields more, because more people are on it.
+  const y = { food: t.food, scrap: t.scrap, metal: 0, fuel: t.fuel, powder: t.powder, men: popRecruits(p.pop) };
   if (p.building && !p.buildLeft && BUILDINGS[p.building].yield) {
     Object.entries(BUILDINGS[p.building].yield).forEach(([k, v]) => {
       y[k] += p.damaged ? Math.floor(v / 2) : v;
@@ -2423,12 +2428,17 @@ export default function ColdCoast() {
       const res = n0.res;
       const need = UNITS[type].size;
       const have = (n0.arms || {})[type] || 0;
+      // Half the company is drawn off this province for good. The other half
+      // is reckoned to be drifters and people who were passing through.
+      const popCost = popCostOf(need);
       if (res.scrap < cost.scrap || res.men < cost.men || (res.metal || 0) < cost.metal) return g;
       if (have < need) return g;                       // no arms on the rack
+      if ((p.pop || 0) < popCost) return g;            // nobody left here to take
       const nations = { ...g.nations };
       nations[P] = { ...n0,
         res: { ...res, scrap: res.scrap - cost.scrap, metal: (res.metal || 0) - cost.metal, men: res.men - cost.men },
         arms: { ...(n0.arms || {}), [type]: have - need } };
+      const provinces = { ...g.provinces, [k]: { ...p, pop: Math.max(0, (p.pop || 0) - popCost) } };
       let uid = g.uid;
       const u = makeUnit(type, P, uid++, wg, ag);
       let armies = [...g.armies];
@@ -2442,7 +2452,7 @@ export default function ColdCoast() {
           units: [u], mp: 0, maxMp: baseMove(P),
         });
       }
-      return { ...g, nations, armies, uid, recruit: null, log: [{ turn: g.turn, m: `${UNITS[type].name} mustered at ${p.name}.` }, ...g.log].slice(0, 60) };
+      return { ...g, nations, armies, provinces, uid, recruit: null, log: [{ turn: g.turn, m: `${UNITS[type].name} mustered at ${p.name} — ${popCost} of its people go with them.` }, ...g.log].slice(0, 60) };
     });
   }
 
@@ -2534,7 +2544,14 @@ export default function ColdCoast() {
         const ba = gradesFor(nat2, ARMOUR_GRADES).slice(-1)[0].id;
         const cost = unitCost(type, id, nat2, bw, ba);
         const rack = (nat2.arms || {})[type] || 0;
-        if (rack >= UNITS[type].size && (r2.metal || 0) >= cost.metal
+        // The AI musters from its seat, and pays the same in people the player
+        // does. Letting it raise companies out of nowhere would quietly hand it
+        // every province the player has to spend to fill.
+        const seatP = myProv.find((p) => p.capital);
+        const seatK = seatP ? key(seatP.c, seatP.r) : null;
+        const seatPop = seatK ? (provinces[seatK].pop || 0) : 0;
+        const popCost = popCostOf(UNITS[type].size);
+        if (rack >= UNITS[type].size && (r2.metal || 0) >= cost.metal && seatK && seatPop >= popCost
             && r2.scrap > cost.scrap * (1.6 / style.host) && r2.men > cost.men * (1.4 / style.host)) {
           const host = armies.find((a) => a.owner === id && a.units.length < 8);
           const u = makeUnit(type, id, Math.random().toString(36).slice(2), bw, ba);
@@ -2547,6 +2564,7 @@ export default function ColdCoast() {
               units: [u], mp: 0, maxMp: baseMove(id),
             });
           }
+          provinces[seatK] = { ...provinces[seatK], pop: Math.max(0, seatPop - popCost) };
           nations[id] = { ...nations[id],
             res: { ...r2, scrap: r2.scrap - cost.scrap, metal: (r2.metal || 0) - cost.metal, men: r2.men - cost.men },
             arms: { ...(nat2.arms || {}), [type]: rack - UNITS[type].size } };
@@ -3021,6 +3039,7 @@ export default function ColdCoast() {
       {game.recruit && (
         <RecruitPanel
           natId={P} nat={nat} provName={game.provinces[game.recruit]?.name}
+          prov={game.provinces[game.recruit]}
           onClose={() => setGame((g) => ({ ...g, recruit: null }))}
           onConfirm={(type, wg, ag) => recruitUnit(game.recruit, type, wg, ag)}
         />
@@ -4209,6 +4228,21 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
           {terr.name}
           {ownerNat ? <> · held by <span style={{ color: ownerNat.color }}>{ownerNat.short}</span></> : " · unclaimed"}
         </div>
+        {/* Who is actually on this ground. Everything downstream — the recruits
+            it pays, how much can be built here, what a raider can carry off —
+            comes off this number, so it sits with the name rather than buried
+            in a yield list. */}
+        <div className="flex items-baseline gap-2 mt-2 rounded border cc-border-25313a px-2.5 py-1.5">
+          <Users size={13} className="cc-text-a0b6c1" />
+          <span className="num cc-text-15px">{Math.round(selProv.pop || 0).toLocaleString()}</span>
+          <span className="cc-text-12px cc-text-8399a6 flex-1">
+            live here · {popRank(selProv.pop)}
+          </span>
+          <span className="num cc-text-12d5px cc-text-a0b6c1">
+            {popRecruits(selProv.pop)}
+          </span>
+          <span className="cc-text-11d5px cc-text-8399a6">recruits a season</span>
+        </div>
       </div>
 
       {selArmy && (() => {
@@ -5102,7 +5136,7 @@ const Section = ({ title, children }) => (
 );
 
 /* ------------------------------ RECRUIT ----------------------------------- */
-function RecruitPanel({ natId, nat, provName, onClose, onConfirm }) {
+function RecruitPanel({ natId, nat, provName, prov, onClose, onConfirm }) {
   const open = unitsFor(nat);
   const [type, setType] = useState(open[0] || "spearmen");
   const wOpts = gradesFor(nat, WEAPON_GRADES), aOpts = gradesFor(nat, ARMOUR_GRADES);
@@ -5114,6 +5148,11 @@ function RecruitPanel({ natId, nat, provName, onClose, onConfirm }) {
   const armed = rack >= d.size;
   const afford = nat.res.scrap >= cost.scrap && nat.res.men >= cost.men
     && (nat.res.metal || 0) >= cost.metal;
+  // Half of them never come back to this ground, so the province has to have
+  // them in the first place.
+  const popCost = popCostOf(d.size);
+  const here = Math.round(prov?.pop || 0);
+  const peopled = here >= popCost;
   const st = unitStats({ type, wg, ag });
   const byTier = UNIT_TIERS
     .map((t) => ({ t, ids: open.filter((id) => UNITS[id].tier === t.id) }))
@@ -5234,13 +5273,17 @@ function RecruitPanel({ natId, nat, provName, onClose, onConfirm }) {
               <Row label="Recruits" value={cost.men} tint={nat.res.men < cost.men ? "#e0644a" : undefined} />
               <Row label="Arms on the rack" value={`${rack} of ${d.size}`}
                 tint={armed ? "#9fd6b4" : "#e0644a"} />
+              <Row label={`People of ${provName || "this holding"}`}
+                value={`${popCost} of ${here.toLocaleString()}`}
+                tint={peopled ? undefined : "#e0644a"} />
             </div>
 
-            <button type="button" disabled={!afford || !armed} onClick={() => onConfirm(type, wg, ag)}
-              className={`w-full mt-3 py-2.5 rounded disp cc-text-15px border transition-colors ${afford && armed
+            <button type="button" disabled={!afford || !armed || !peopled} onClick={() => onConfirm(type, wg, ag)}
+              className={`w-full mt-3 py-2.5 rounded disp cc-text-15px border transition-colors ${afford && armed && peopled
                 ? "cc-bg-2b3f2c cc-hover-bg-37502f cc-border-4a6b45 cc-text-d7ecc9"
                 : "cc-border-25313a cc-text-78909e"}`}>
               {!armed ? `Only ${rack} of ${d.size} armed — set the works to it`
+                : !peopled ? "Not enough people on this ground"
                 : afford ? `Raise the ${d.name.toLowerCase()}` : "Not enough to raise them"}
             </button>
           </div>

@@ -13,11 +13,13 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 2: nat.crafts went from a share of the workshops' output (a weight, 0-9,
+/* 3: provinces carry a pop. A version 2 save has none, and popRecruits(undefined)
+   is 0, so every province in it would quietly stop paying recruits.
+   2: nat.crafts went from a share of the workshops' output (a weight, 0-9,
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight
