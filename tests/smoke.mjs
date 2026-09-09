@@ -128,8 +128,26 @@ const splitOk = /Merge .* into this warband/.test(
   await page.evaluate(() => document.querySelector("aside").innerText));
 check("a company can march out on its own", splitOk,
   splitOk ? "" : "no second warband appeared to merge back");
-await click("Merge .* into this warband");
+
+// Merging two warbands standing on NEIGHBOURING hexes is its own path, and
+// it broke once already: making every click switch which warband is in hand
+// meant you could never hold one and look at another, so the order had
+// nowhere to appear. March the splinter next door and put them back together
+// from there — which also leaves the host back on 25,77 for the march below.
+await page.evaluate((c, r) => window.__ccPick(c, r), 24, 77);
+await wait(200);
+await click("March here|March in and take it");
 await wait(350);
+await page.evaluate((c, r) => window.__ccPick(c, r), 24, 77);
+await wait(200);
+await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77);
+await wait(250);
+const adjacentOrder = /Merge forces with/.test(
+  await page.evaluate(() => document.querySelector("aside").innerText));
+check("two warbands a hex apart can be combined", adjacentOrder,
+  adjacentOrder ? "" : "no merge order offered from the neighbouring hex");
+await click("Merge forces with");
+await wait(400);
 
 // Pick a fight on purpose. The battle screen carried two undefined symbols
 // (stanceChips, CompanyRow) for the whole life of the project and this test

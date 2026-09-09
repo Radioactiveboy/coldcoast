@@ -2018,11 +2018,25 @@ export default function ColdCoast() {
      up, and nothing moves until you press an order. */
   function selectHex(c, r) {
     const k = key(c, r);
-    if (!game.provinces[k]) return;
+    const prov = game.provinces[k];
+    if (!prov) return;
     setGame((g) => {
-      const mine = g.armies.find((a) => a.c === c && a.r === r && a.owner === P);
-      if (mine) return { ...g, sel: { armyId: mine.id, k } };
+      const clicked = g.armies.find((a) => a.c === c && a.r === r && a.owner === P);
       const held = g.sel?.armyId ? g.armies.find((a) => a.id === g.sel.armyId) : null;
+      // Holding one warband and clicking a neighbouring one of your own is how
+      // you put them together, so the first stays in hand and the order shows
+      // up in the panel. Making every click switch — which is what fixed being
+      // unable to change warbands at all — had quietly taken this away, since
+      // you could never hold one and look at another.
+      if (held && clicked && held.id !== clicked.id) {
+        const war = (a, b) => (isMinor(a) || isMinor(b) ? true : !!g.war[warKey(a, b)]);
+        const info = moveInfo(g, held, prov, P, war);
+        if (info && info.ok && info.kind === "merge") return { ...g, sel: { armyId: held.id, k } };
+      }
+      // Otherwise your own warband under the cursor is the one you pick up.
+      // Switching away from a warband you are merging is one press on the
+      // other one's card.
+      if (clicked) return { ...g, sel: { armyId: clicked.id, k } };
       return { ...g, sel: { armyId: held ? held.id : null, k } };
     });
   }
@@ -3715,55 +3729,82 @@ function warbandKind(a) {
   return ["spear", "blade", "bow", "gun"][top];
 }
 
-function WarbandGlyph({ kind, col }) {
-  const body = <path d="M-2.6 4.6L-2.3 0.9Q-2.3 -0.6 -1 -0.8L1 -0.8Q2.3 -0.6 2.3 0.9L2.6 4.6Z" fill={col} />;
-  const head = <path d="M-1.5 -2.1Q-1.7 -5.2 0 -5.2Q1.7 -5.2 1.5 -2.1Z" fill={col} />;
+/* Warbands on the map.
+
+   These were little stick figures inside a dark disc almost as wide as the
+   hex itself, with a second disc for the company count and a halo on top of
+   that — three rings of furniture around a shape you could not read anyway.
+
+   They are the arms themselves now, in the same language as the buildings:
+   one filled silhouette, a dark outline so it holds over any terrain, a small
+   ground shadow, and nothing else. Drawn inside about 11 wide against a hex
+   of 27, so the ground stays visible underneath them. */
+function WarbandGlyph({ kind }) {
   switch (kind) {
+    // A shield and a levelled spear.
     case "spear": return (<>
-      <path d="M-3.4 5.4L2.6 -6.6" stroke={col} strokeWidth="1" strokeLinecap="round" fill="none" />
-      <path d="M2.6 -6.6l-1.2 2.1 2.2 0.2z" fill={col} />
-      {body}{head}</>);
+      <path d="M-4.8-2.6h4v3q0 2.6-2 3.6-2-1-2-3.6z" />
+      <path d="M1 4.4L3.6-4.2" fill="none" strokeWidth="1.3" />
+      <path d="M3.6-4.6l1.3 1.9-2.4.5z" />
+    </>);
+    // An axe on its haft.
     case "blade": return (<>
-      <path d="M3.2 4.4L4.6 -3.4" stroke={col} strokeWidth="1.1" strokeLinecap="round" fill="none" />
-      <path d="M2.6 -1.4h3.6" stroke={col} strokeWidth="0.9" strokeLinecap="round" fill="none" />
-      {body}{head}
-      <path d="M-2.4 -0.6Q-4.6 0.4 -4.2 3" fill={col} /></>);
+      <path d="M0-6.2l.9 1.6v4.4h-1.8v-4.4z" />
+      <path d="M-2.8.2h5.6v1.2h-5.6z" />
+      <path d="M-.6 1.6h1.2v2.6h-1.2z" />
+      <circle cx="0" cy="4.8" r="0.95" />
+    </>);
+    // A recurve, strung, with the arrow on it.
     case "bow": return (<>
-      <path d="M-3.8 -5.2a7 7 0 0 1 0 10.4" stroke={col} strokeWidth="1" fill="none" strokeLinecap="round" />
-      <path d="M-3.8 -5.2L-3.8 5.2" stroke={col} strokeWidth="0.6" fill="none" />
-      <path d="M-3.4 0h6" stroke={col} strokeWidth="0.9" strokeLinecap="round" fill="none" />
-      {body}{head}</>);
+      <path d="M-1.4-4.8a6 6 0 0 1 0 9.6" fill="none" strokeWidth="1.3" />
+      <path d="M-1.4-4.8v9.6" fill="none" strokeWidth="0.6" />
+      <path d="M-3.2 0h5.6" fill="none" strokeWidth="1" />
+      <path d="M2.8 0l-1.6-1v2z" />
+    </>);
+    // A musket, angled as if shouldered.
     case "gun": return (<>
-      <path d="M-3.6 3.6L4.2 -5.4" stroke={col} strokeWidth="1.2" strokeLinecap="round" fill="none" />
-      <path d="M2.6 -3.6l1.6 -1.8" stroke={col} strokeWidth="1.8" strokeLinecap="round" fill="none" />
-      {body}{head}</>);
+      <path d="M-3.2 4.2L3.2-4.2" fill="none" strokeWidth="1.3" />
+      <path d="M-3 3.8l-1.8 1.1 1.1 1.6 1.6-1.4z" />
+      <path d="M0.2 0.6l1.6.9" fill="none" strokeWidth="1.7" />
+    </>);
+    // A shoe, for the horse under it.
     case "horse": return (<>
-      <path d="M-5 4.4L-4.4 0.4Q-3.4 -1.2 -1 -1.2L3 -1.2Q4.6 -1.2 5 0.4L5.4 4.4"
-        fill="none" stroke={col} strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M3 -1.2L5.2 -4.2L4 -5.4" fill="none" stroke={col} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M-1.6 -1.6L-1.2 -4.4" stroke={col} strokeWidth="1.2" strokeLinecap="round" fill="none" />
-      <circle cx="-1.2" cy="-5.6" r="1.5" fill={col} /></>);
+      <path d="M-3.8 4.6A4.2 5 0 1 1 3.8 4.6H1.9A2.4 3.1 0 1 0-1.9 4.6z" />
+      <circle cx="-3" cy="3.4" r="0.5" fill="#0a1015" stroke="none" />
+      <circle cx="3" cy="3.4" r="0.5" fill="#0a1015" stroke="none" />
+    </>);
+    // A running chassis.
     case "vehicle": return (<>
-      <path d="M-5.2 2.2L-4.4 -1.4L0.6 -1.4L2.2 -3.6L4.4 -3.6L5.2 2.2Z" fill={col} />
-      <circle cx="-2.8" cy="3.4" r="1.7" fill="none" stroke={col} strokeWidth="1.1" />
-      <circle cx="3" cy="3.4" r="1.7" fill="none" stroke={col} strokeWidth="1.1" /></>);
+      <path d="M-5 2.2v-2.6h4.6l1.6-2.2h2.6l1.2 2.2v2.6z" />
+      <circle cx="-2.6" cy="3.4" r="1.6" fill="none" strokeWidth="1.1" />
+      <circle cx="2.8" cy="3.4" r="1.6" fill="none" strokeWidth="1.1" />
+    </>);
+    // A barrel on its carriage.
     case "cannon": return (<>
-      <path d="M-4.6 1.4L4.8 -1.8" stroke={col} strokeWidth="2.1" strokeLinecap="round" fill="none" />
-      <path d="M-4.4 1.8L-1.6 4.4" stroke={col} strokeWidth="1.1" strokeLinecap="round" fill="none" />
-      <circle cx="-3.4" cy="4" r="2" fill="none" stroke={col} strokeWidth="1.2" /></>);
-    default: return <>{body}{head}</>;
+      <path d="M-3.6 0.6L4.4-1.8" fill="none" strokeWidth="2.1" strokeLinecap="round" />
+      <path d="M-3.8 1.2L-1 4" fill="none" strokeWidth="1.1" strokeLinecap="round" />
+      <circle cx="-2.6" cy="3.2" r="2" fill="none" strokeWidth="1.2" />
+    </>);
+    default: return <path d="M-4.4-2.6h4v3q0 2.6-2 3.6-2-1-2-3.6z" />;
   }
 }
 
 function WarbandMark({ col, n, hostile, chosen, kind }) {
-  const edge = chosen ? "#ffffff" : col;
   return (
     <g>
-      <circle r="8.6" fill="#0b1219" stroke={edge}
-        strokeWidth={chosen ? 1.9 : hostile ? 1.7 : 1.2} />
-      <g transform="translate(0,0.4)"><WarbandGlyph kind={kind} col={col} /></g>
-      <circle cx="7" cy="6.6" r="4.2" fill="#0b1219" stroke={edge} strokeWidth="1" />
-      <text x="7" y="8.4" textAnchor="middle" className="cc-armycount" fill={edge}>{n}</text>
+      <ellipse cx="0" cy="5" rx="5.4" ry="1.3" fill="#060b0f" opacity="0.5" />
+      <g fill={col} stroke={chosen ? "#ffffff" : "#0a1015"}
+         strokeWidth={chosen ? 1.1 : hostile ? 1 : 0.85}
+         strokeLinejoin="round" strokeLinecap="round">
+        <WarbandGlyph kind={kind} />
+      </g>
+      {/* How many companies, on a chip small enough to sit beside the arms
+          rather than on top of them. */}
+      <g transform="translate(5.4,4.4)">
+        <circle r="3.2" fill="#0b1219" stroke={chosen ? "#ffffff" : col} strokeWidth="0.9" />
+        <text y="1.6" textAnchor="middle" className="cc-armycount"
+          style={{ fontSize: "6.6px" }} fill={chosen ? "#ffffff" : col}>{n}</text>
+      </g>
     </g>
   );
 }
@@ -4360,9 +4401,11 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
                       strokeWidth="0.8" opacity="0.45" />
                   </g>
                 )}
-                    {chosen && <circle className="cc-halo" r="12.5" fill="none" stroke={col} strokeWidth="2.4" />}
-                    {chosen && <circle className="cc-ants" r="12.8" fill="none" stroke="#ffffff"
-                      strokeWidth="1.4" strokeDasharray="5 4" opacity="0.95" />}
+                    {/* Sized to the mark it is around. It used to be drawn for
+                        a warband glyph half again as wide as the one there now. */}
+                    {chosen && <circle className="cc-halo" r="8.6" fill="none" stroke={col} strokeWidth="1.8" />}
+                    {chosen && <circle className="cc-ants" r="8.9" fill="none" stroke="#ffffff"
+                      strokeWidth="1.1" strokeDasharray="3.6 3" opacity="0.95" />}
                     <WarbandMark col={col} n={a.units.length} hostile={hostile} chosen={chosen} kind={warbandKind(a)} />
                     {a.lord && (
                       <path d="M-4.4 -12.6l1.8 3 2.6 -3.6 2.6 3.6 1.8 -3 0.7 4.4h-10.2z"
