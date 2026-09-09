@@ -85,6 +85,26 @@ await wait(300);
 check("a province can be selected",
   /Lunden/.test(await page.evaluate(() => document.querySelector("aside").innerText)));
 
+// Merging two warbands was reported as "basically impossible": holding one
+// warband made every later click keep that first one in hand, so clicking
+// another of your own did not select it and there was no visible way to
+// switch. Both starting warbands share the capital hex, so this is cheap to
+// check and worth keeping honest.
+await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77);
+await wait(300);
+const bandsBefore = await page.evaluate(() =>
+  (document.querySelector("aside").innerText.match(/Merge .* into this warband/) || []).length);
+check("a merge is offered for two warbands on one hex", bandsBefore > 0);
+await click("Put this warband in hand");
+await wait(250);
+check("clicking another warband hands you that one",
+  /in hand/.test(await page.evaluate(() => document.querySelector("aside").innerText)));
+await click("Merge .* into this warband");
+await wait(400);
+const oneBand = await page.evaluate(() =>
+  !/Merge .* into this warband/.test(document.querySelector("aside").innerText));
+check("the two warbands become one", oneBand);
+
 // Pick a fight on purpose. The battle screen carried two undefined symbols
 // (stanceChips, CompanyRow) for the whole life of the project and this test
 // never noticed, because across forty seasons the AI happens never to attack —

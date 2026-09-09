@@ -1916,11 +1916,27 @@ export default function ColdCoast() {
     [game.provinces, game.armies, P]
   );
   const income = useMemo(() => (P ? nationIncome(game, P) : null), [game, P]);
+  /* The figure under every other resource in the top bar is what it will do
+     next season, so the one under People has to be the same thing: heads
+     gained or lost, not rations eaten. Showing the ration cost there read as
+     a population in permanent decline. What they eat is in the tooltip, and
+     is already priced into the Rations figure two boxes along.
+
+     This mirrors the growth the turn loop will actually apply — same season,
+     same ceiling, same feeding — rather than estimating it. */
   const realmPop = useMemo(() => {
-    let total = 0;
-    Object.values(game.provinces).forEach((p) => { if (p.owner === P) total += p.pop || 0; });
-    return { total: Math.round(total), eats: popFood(total) };
-  }, [game.provinces, P]);
+    let total = 0, after = 0;
+    const season = seasonOf(game.turn).id;
+    Object.values(game.provinces).forEach((p) => {
+      if (p.owner !== P) return;
+      const now = p.pop || 0;
+      total += now;
+      let then = popGrow(now, popCeiling(key(p.c, p.r), p.t), season);
+      if (p.grow && p.grow.left > 0) then += p.grow.per;
+      after += then;
+    });
+    return { total: Math.round(total), grow: Math.round(after - total), eats: popFood(total) };
+  }, [game.provinces, P, game.turn]);
 
   const atWar = useCallback((a, b) => (isMinor(a) || isMinor(b) ? true : !!game.war[warKey(a, b)]), [game.war]);
 
@@ -1989,28 +2005,26 @@ export default function ColdCoast() {
   /* --------------------------- ACTION HANDLERS --------------------------- */
   const push = (m) => setGame((g) => ({ ...g, log: [{ turn: g.turn, m }, ...g.log].slice(0, 60) }));
 
+  /* Clicking the map only ever looks at things. Orders are the labelled
+     buttons in the panel.
+
+     What was here before: a second click on a hex you were already looking at
+     silently carried out whatever order was on offer, and holding a warband
+     made every later click keep that first one in hand — so clicking another
+     of your own warbands did not select it, and there was no visible way to
+     switch. The only escape was clicking the held warband's own hex twice.
+     That is what made moving and merging feel impossible rather than merely
+     fiddly. Now: your own warband under the cursor is always the one you pick
+     up, and nothing moves until you press an order. */
   function selectHex(c, r) {
     const k = key(c, r);
-    const p = game.provinces[k];
-    if (!p) return;
-    const army = game.armies.find((a) => a.c === c && a.r === r);
-    const mine = army && army.owner === P;
-    const sel = game.sel || {};
-    const held = sel.armyId ? game.armies.find((a) => a.id === sel.armyId) : null;
-
-    // Clicking a hex you are already looking at, with a warband in hand and the
-    // move legal, is the confirmation. The first click only offers it.
-    if (held && sel.k === k) {
-      const info = moveInfo(game, held, p, P, atWar);
-      if (info && info.ok) { attemptMove(held, p); return; }
-      if (held.c === c && held.r === r) { setGame((g) => ({ ...g, sel: { armyId: null, k } })); return; }
-    }
-    // Holding a warband and clicking another of your own keeps the first in
-    // hand, so the panel can offer to merge them. Switching is explicit.
-    setGame((g) => ({
-      ...g,
-      sel: { armyId: held ? held.id : (mine ? army.id : null), k },
-    }));
+    if (!game.provinces[k]) return;
+    setGame((g) => {
+      const mine = g.armies.find((a) => a.c === c && a.r === r && a.owner === P);
+      if (mine) return { ...g, sel: { armyId: mine.id, k } };
+      const held = g.sel?.armyId ? g.armies.find((a) => a.id === g.sel.armyId) : null;
+      return { ...g, sel: { armyId: held ? held.id : null, k } };
+    });
   }
 
   function attemptMove(army, target) {
@@ -3246,13 +3260,16 @@ function TopBar({ nat, income, turn, owned, armies, pop, onEnd, onCodex, sound, 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 flex-1 min-w-0">
         {/* People, not a resource: you do not spend them, they eat, and the
             recruits they yield are counted separately two boxes along. */}
-        <div className="flex items-center gap-2" title="Everyone living under your banner">
+        <div className="flex items-center gap-2"
+          title={`Everyone living under your banner. They eat ${pop.eats} rations a season, already counted in what the land brings in.`}>
           <Users size={15} style={{ color: "#d3b98a" }} strokeWidth={1.8} />
           <div className="leading-none">
             <div className="num cc-text-15px">{pop.total.toLocaleString()}</div>
             <div className="cc-text-11d5px cc-text-8399a6 flex items-center gap-1">
               People
-              <span className="num" style={{ color: "#c3cf7a" }}>-{pop.eats}</span>
+              <span className="num" style={{ color: pop.grow < 0 ? "#e0644a" : pop.grow > 0 ? "#6fae8c" : "#a7bac6" }}>
+                {pop.grow > 0 ? "+" : ""}{pop.grow}
+              </span>
             </div>
           </div>
         </div>
@@ -4322,8 +4339,15 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
   if (!selProv) return (
     <div className="cc-text-13d5px cc-text-93a9b5 leading-relaxed">
       <p className="mb-3">Pick a hex to see what it grows and what it hides.</p>
-      <p className="mb-1.5">Click one of your warbands, then click a neighbouring hex to march there.</p>
-      <p>Moving onto unclaimed or enemy ground takes it. Moving onto an enemy warband starts a battle.</p>
+      <p className="mb-1.5">
+        Click one of your warbands to take it in hand, then click a neighbouring hex.
+        The order appears here — nothing moves until you press it.
+      </p>
+      <p className="mb-1.5">
+        Clicking another of your warbands hands you that one instead.
+      </p>
+      <p>Marching onto unclaimed or enemy ground takes it. Marching onto an enemy warband starts a battle.
+        Two of your own on one hex can be merged from the second one's card.</p>
     </div>
   );
 
@@ -4360,6 +4384,26 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
 
   return (
     <div>
+      {/* Which warband is in hand used to be invisible state you could only
+          infer from a card further down the panel. It travels with you now,
+          says where it is, and can always be put down. */}
+      {selArmy && (
+        <div className="rounded border cc-border-4d9aa6 cc-bg-152a30 px-2.5 py-2 mb-2.5 flex items-center gap-2">
+          <Swords size={14} className="cc-text-8fe3d6 shrink-0" />
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="cc-text-13px truncate">{selArmy.name}</div>
+            <div className="cc-text-11d5px cc-text-93a9b5">
+              in hand · <span className="num">{selArmy.units.length}</span> compan{selArmy.units.length === 1 ? "y" : "ies"}
+              {" · "}<span className="num">{selArmy.mp}</span>/{selArmy.maxMp} movement
+              {(selArmy.c !== selProv.c || selArmy.r !== selProv.r) && " · standing elsewhere"}
+            </div>
+          </div>
+          <button type="button" onClick={onDeselect}
+            className="shrink-0 cc-text-11d5px cc-text-93a9b5 cc-hover-text-e5eef3 px-1.5 py-1 rounded border cc-border-31454f transition-colors">
+            Put down
+          </button>
+        </div>
+      )}
       <TerrainArt t={selProv.t} height={112} caption={TERRAIN[selProv.t].name} />
       <div className="mb-3">
         <div className="disp cc-text-19px leading-tight flex items-center gap-2">
@@ -4424,7 +4468,6 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
                 </button>
                 <div className="cc-text-12d5px cc-text-95aab6 mt-1.5">
                   Costs <span className="num">{info.cost}</span> of <span className="num">{selArmy.mp}</span> movement.
-                  Clicking this hex again does the same thing.
                 </div>
               </>
             ) : (
@@ -4764,7 +4807,7 @@ function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, o
                 ? "cc-border-25313a cc-text-78909e"
                 : lordHere ? "cc-bg-5a2f26 cc-hover-bg-6e3a2e cc-border-8a4a38 cc-text-f3d9cf"
                 : "cc-bg-2a3a4a cc-hover-bg-35495c cc-border-4d7488 cc-text-dfeaf0"}`}>
-              {transit ? "You are on the road — you reach them next winter"
+              {transit ? "You are on the road — you reach them next season"
                 : !friendly ? "You can only join or leave a warband on your own ground"
                 : lordHere ? "Leave them and return to your seat"
                 : lordElsewhere ? "Ride over and take command of this warband"
@@ -4803,7 +4846,7 @@ function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, o
             )}
             <button type="button" onClick={() => onTake(army.id)}
               className="w-full py-2 rounded border cc-border-31454f cc-hover-border-3d6470 cc-text-c6d6de cc-text-13px transition-colors">
-              Take command of this warband
+              Put this warband in hand
             </button>
           </div>
         );
