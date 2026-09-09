@@ -1561,6 +1561,34 @@ function buildWorld() {
 const warKey = (a, b) => [a, b].sort().join("|");
 
 
+/* What a warband may march this season, and why that is not simply its base.
+   The turn loop tops movement up with the season, the standing edict and the
+   warlord folded in, so a host with a base of five shows six all summer and
+   reads as a bug unless the extra is named. Mirrors the sum the turn loop
+   does; if that changes, this has to change with it. */
+function moveAllowance(game, army) {
+  const nat = game.nations?.[army.owner];
+  const ed = EDICTS[nat?.edict || "none"] || EDICTS.none;
+  const sea = seasonOf(game.turn);
+  const seaMove = sea.move || 0;
+  const edMove = ed.move || 0;
+  const lordMove = lordMul(army.owner, nat).move || 0;
+  const sign = (n) => `${n > 0 ? "+" : "\u2212"}${Math.abs(n)}`;
+  const from = [];
+  if (seaMove) from.push(`${sea.name.toLowerCase()} ${sign(seaMove)}`);
+  if (edMove) from.push(`${ed.name.toLowerCase()} ${sign(edMove)}`);
+  if (lordMove) from.push(`your warlord ${sign(lordMove)}`);
+  const total = Math.max(1, (army.maxMp || 0) + seaMove + edMove + lordMove);
+  // Movement was granted at the end of last season. Change an edict now and
+  // these modifiers no longer describe what the warband is carrying — it has
+  // more than the sum says, and the change bites at the turn of the season.
+  const pending = (army.mp || 0) > total;
+  return {
+    total: Math.max(total, army.mp || 0),
+    note: from.length ? from.join(", ") + (pending ? ", from next season" : "") : "",
+  };
+}
+
 function moveInfo(game, army, prov, P, atWar) {
   if (!army || !prov || army.owner !== P) return null;
   if (army.c === prov.c && army.r === prov.r) return { here: true };
@@ -4567,7 +4595,14 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
             <div className="cc-text-13px truncate">{selArmy.name}</div>
             <div className="cc-text-11d5px cc-text-93a9b5">
               in hand · <span className="num">{selArmy.units.length}</span> compan{selArmy.units.length === 1 ? "y" : "ies"}
-              {" · "}<span className="num">{selArmy.mp}</span>/{selArmy.maxMp} movement
+              {(() => {
+                const allow = moveAllowance(game, selArmy);
+                return (
+                  <>{" · "}<span className="num">{selArmy.mp}</span> of{" "}
+                    <span className="num">{allow.total}</span> movement
+                    {allow.note && <span className="cc-text-9fd6b4"> ({allow.note})</span>}</>
+                );
+              })()}
               {(selArmy.c !== selProv.c || selArmy.r !== selProv.r) && " · standing elsewhere"}
             </div>
           </div>
@@ -4934,7 +4969,14 @@ function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, o
       )}
       <div className="cc-text-12d5px cc-text-93a9b5 mb-2">
         <span className="num">{totalStr}</span> strong
-        {own && <> · <span className="num">{army.mp}</span>/{army.maxMp} movement left · eats <span className="num">{upkeep.food}</span> rations{upkeep.fuel > 0 && <>, <span className="num">{upkeep.fuel}</span> fuel</>}</>}
+        {own && (() => {
+          const allow = moveAllowance(game, army);
+          return (
+            <> · <span className="num">{army.mp}</span> of <span className="num">{allow.total}</span> movement
+              {allow.note && <span className="cc-text-9fd6b4"> ({allow.note})</span>}
+              {" "}· eats <span className="num">{upkeep.food}</span> rations{upkeep.fuel > 0 && <>, <span className="num">{upkeep.fuel}</span> fuel</>}</>
+          );
+        })()}
       </div>
       <div className="grid gap-1.5">
         {army.units.map((u) => {
