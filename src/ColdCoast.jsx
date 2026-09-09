@@ -1679,6 +1679,28 @@ const STANCES = {
   withdraw: { name: "Break off",        deal: 0.4,  take: 1.4,  morale: 1.15,  ranged: 0.5, desc: "Quit the field and eat one parting volley." },
 };
 
+/* The short labels under each order in the battle screen. Every stance is a
+   trade and this is the trade, in the fewest words that still say which way it
+   runs. Note the polarity on morale: the multiplier scales how much nerve a
+   company LOSES, so under one is the good direction — the same reading the
+   warlord screen already uses when it says "nerve holds -12%". */
+function stanceChips(id) {
+  const s = STANCES[id];
+  if (!s) return [];
+  const pct = (v) => `${v > 1 ? "+" : "\u2212"}${Math.round(Math.abs(v - 1) * 100)}%`;
+  const out = [];
+  if (s.deal && s.deal !== 1) out.push({ t: `${pct(s.deal)} dealt`, good: s.deal > 1 });
+  if (s.take && s.take !== 1) out.push({ t: `${pct(s.take)} taken`, good: s.take < 1 });
+  if (s.ranged && s.ranged !== 1) out.push({ t: `${pct(s.ranged)} shooting`, good: s.ranged > 1 });
+  if (s.melee && s.melee !== 1) out.push({ t: `${pct(s.melee)} in the press`, good: s.melee > 1 });
+  if (s.morale && s.morale !== 1) {
+    out.push({ t: `nerve ${s.morale < 1 ? "holds" : "breaks"} ${pct(s.morale)}`, good: s.morale < 1 });
+  }
+  if (s.ignoresGround) out.push({ t: "halves their ground", good: true });
+  if (s.powder) out.push({ t: `${s.powder}\u00d7 powder`, good: false });
+  return out;
+}
+
 function resolveRound(bt) {
   const b = { ...bt, log: [...bt.log] };
   const aStance = STANCES[b.aStance], dStance = STANCES[b.dStance];
@@ -5424,6 +5446,42 @@ function RecruitPanel({ natId, nat, provName, prov, onClose, onConfirm }) {
         </div>
       </div>
     </Overlay>
+  );
+}
+
+/* One company in the line of battle: what it is, what it carries, how much of
+   it is still standing and whether its nerve is going. The loss is shown only
+   while an exchange is on screen, so the number always refers to something the
+   player has just watched happen rather than to history. */
+function CompanyRow({ u, col, showLoss }) {
+  const strFrac = Math.max(0, Math.min(1, u.str / (u.max || 1)));
+  const morFrac = Math.max(0, Math.min(1, u.morale / (u.maxMorale || 1)));
+  const spent = u.str <= 0 || u.morale <= 0;
+  return (
+    <div className={`rounded border px-2.5 py-2 ${spent ? "cc-border-25313a" : "cc-border-31454f cc-bg-131f27"}`}>
+      <div className="flex items-center gap-2">
+        <UnitArt type={u.type} size={26} />
+        <div className="min-w-0 flex-1">
+          <div className="cc-text-13px truncate" style={{ color: spent ? "#78909e" : col }}>{unitName(u)}</div>
+          <div className="cc-text-11d5px cc-text-8399a6 truncate">{unitKit(u)}</div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="num cc-text-13px">
+            {u.str}<span className="cc-text-11d5px cc-text-8399a6">/{u.max}</span>
+          </div>
+          {showLoss && u.lastLoss > 0 && (
+            <div className="num cc-text-11d5px cc-text-e0644a">\u2212{u.lastLoss}</div>
+          )}
+        </div>
+      </div>
+      <div className="mt-1.5 cc-h-3px cc-bg-26333c rounded overflow-hidden">
+        <div className="h-full" style={{ width: `${strFrac * 100}%`, background: col }} />
+      </div>
+      <div className="mt-1 cc-h-3px cc-bg-26333c rounded overflow-hidden" title="nerve">
+        <div className="h-full" style={{ width: `${morFrac * 100}%`,
+          background: morFrac > 0.5 ? "#9fd6b4" : morFrac > 0.25 ? "#e8b98a" : "#e0644a" }} />
+      </div>
+    </div>
   );
 }
 

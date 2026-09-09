@@ -85,6 +85,64 @@ await wait(300);
 check("a province can be selected",
   /Lunden/.test(await page.evaluate(() => document.querySelector("aside").innerText)));
 
+// Pick a fight on purpose. The battle screen carried two undefined symbols
+// (stanceChips, CompanyRow) for the whole life of the project and this test
+// never noticed, because across forty seasons the AI happens never to attack —
+// so the branch that renders it was simply never entered. A game whose combat
+// screen cannot open is not a working game, so we now walk to the waster lair
+// west of Lunden and hit it.
+let ac = 25, ar = 77;
+for (let step = 0; step < 30 && ac > 20; step++) {
+  await page.evaluate((c, r) => window.__ccPick(c, r), ac, ar);
+  await wait(120);
+  await page.evaluate((c, r) => window.__ccPick(c, r), ac - 1, ar);
+  await wait(140);
+  const moved = await click("March here|March in and take it");
+  if (moved) { ac -= 1; await wait(160); }
+  else { await click("End (spring|summer|autumn|winter)"); await wait(320); }
+}
+check("the host can march to the lair", ac === 20, `stopped at ${ac},${ar}`);
+
+// Investigate it — that is what puts a waster warband in the ruin.
+for (let i = 0; i < 8; i++) {
+  await page.evaluate((c, r) => window.__ccPick(c, r), 20, 77);
+  await wait(140);
+  if (await click("Send them in|Investigate|Survey")) break;
+  await click("End (spring|summer|autumn|winter)"); await wait(320);
+}
+await wait(500);
+await page.evaluate(() => {
+  const ov = document.querySelector(".fixed.inset-0.z-50");
+  if (ov) [...ov.querySelectorAll("button")].pop()?.click();
+});
+await wait(300);
+await click("End (spring|summer|autumn|winter)"); await wait(600);
+
+// Stand next to it and attack.
+await page.evaluate(() => window.__ccPick(21, 77)); await wait(140);
+await page.evaluate(() => window.__ccPick(20, 77)); await wait(200);
+const canAttack = await click("Attack the");
+await wait(700);
+const battle = await page.evaluate(() => ({
+  open: !!document.querySelector(".fixed.inset-0.z-50"),
+  kids: document.getElementById("root")?.children.length ?? 0,
+  orders: /Give the order/.test(document.body.innerText),
+}));
+check("a battle can be started", canAttack && battle.open, canAttack ? "" : "no attack order offered");
+check("the battle screen renders", battle.kids > 0 && battle.orders,
+  `#root children ${battle.kids}, orders ${battle.orders}`);
+if (battle.open) {
+  await click("Give the order"); await wait(500);
+  await click("Count the cost|Fight it out|Press on"); await wait(400);
+  await page.evaluate(() => {
+    const ov = document.querySelector(".fixed.inset-0.z-50");
+    if (ov) [...ov.querySelectorAll("button")].pop()?.click();
+  });
+  await wait(400);
+}
+check("the game survives the battle", await page.evaluate(() =>
+  (document.getElementById("root")?.children.length ?? 0) > 0));
+
 let seasons = 0;
 for (let i = 0; i < 200 && seasons < 40; i++) {
   const text = await page.evaluate(() => document.body.innerText);
