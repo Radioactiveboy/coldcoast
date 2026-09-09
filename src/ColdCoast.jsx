@@ -21,7 +21,7 @@ import { BUILDINGS } from "./data/buildings.js";
 import { WARLORDS, LORD_COMMAND, LEADERLESS } from "./data/warlords.js";
 import { writeSave, readSave, saveInfo } from "./game/save.js";
 import { startingPop, popRecruits, popSlots, popRank, popCostOf, popCeiling, popGrow,
-         POP_LAIR, POP_INVEST } from "./data/population.js";
+         popFood, POP_LAIR, POP_INVEST, POP_PER_MOUTH } from "./data/population.js";
 
 /* ============================================================================
    COLD COAST — a turn-based grand strategy prototype
@@ -597,7 +597,7 @@ const NATIONS = {
     cap: [45, 97],
     blurb:
       "Vault-keepers under the Alps. They still have working rifles, and they still know how to make more.",
-    trait: "They kept the manuals and can still read them: every advance takes 30% fewer winters, and +35% defence in hills and mountains.",
+    trait: "They kept the manuals and can still read them: every advance takes 30% fewer seasons, and +35% defence in hills and mountains.",
   },
   karst: {
     cue: "Free cities",
@@ -1571,7 +1571,7 @@ function moveInfo(game, army, prov, P, atWar) {
   if (other && !atWar(P, other.owner))
     return { ok: false, cost, why: `${game.nations[other.owner].short} stands there. Declare war first.` };
   if (army.mp < cost)
-    return { ok: false, cost, why: `Needs ${cost} movement; ${army.mp} left this winter.` };
+    return { ok: false, cost, why: `Needs ${cost} movement; ${army.mp} left this season.` };
   if (other) return { ok: true, cost, kind: "attack", label: `Attack the ${game.nations[other.owner].short} warband` };
   const friend = game.armies.find((a) => a.c === prov.c && a.r === prov.r && a.owner === P);
   if (friend) {
@@ -1625,11 +1625,16 @@ function provinceYield(p, natId, nat) {
 function nationIncome(state, natId, turn) {
   const ed = EDICTS[state.nations?.[natId]?.edict || "none"] || EDICTS.none;
   const gross = { food: 0, scrap: 0, metal: 0, fuel: 0, powder: 0, men: 0 };
+  let mouths = 0;
   Object.values(state.provinces).forEach((p) => {
     if (p.owner !== natId) return;
+    mouths += p.pop || 0;
     const y = provinceYield(p, natId, state.nations?.[natId]);
     Object.keys(gross).forEach((k) => { gross[k] += y[k]; });
   });
+  // Mouths first, and before the season is applied: what the land gives swings
+  // with the year but what people eat does not, which is what makes winter bite.
+  gross.food -= popFood(mouths);
   // the standing edict and the warlord both apply to what the land brings in...
   const lord = lordMul(natId, state.nations?.[natId]);
   const sea = seasonOf(turn ?? state.turn ?? 1);
@@ -1911,6 +1916,11 @@ export default function ColdCoast() {
     [game.provinces, game.armies, P]
   );
   const income = useMemo(() => (P ? nationIncome(game, P) : null), [game, P]);
+  const realmPop = useMemo(() => {
+    let total = 0;
+    Object.values(game.provinces).forEach((p) => { if (p.owner === P) total += p.pop || 0; });
+    return { total: Math.round(total), eats: popFood(total) };
+  }, [game.provinces, P]);
 
   const atWar = useCallback((a, b) => (isMinor(a) || isMinor(b) ? true : !!game.war[warKey(a, b)]), [game.war]);
 
@@ -2199,7 +2209,7 @@ export default function ColdCoast() {
         ...g,
         nations: { ...g.nations, [P]: { ...n, res: { ...n.res, scrap: n.res.scrap - t.scrap } } },
         provinces: { ...g.provinces, [k]: { ...p, project: { kind: "tier", left: t.turns } } },
-        log: [{ turn: g.turn, m: `Work begins on a ${t.name.toLowerCase()} at ${p.name} — ${t.turns} winters.` }, ...g.log].slice(0, 60),
+        log: [{ turn: g.turn, m: `Work begins on a ${t.name.toLowerCase()} at ${p.name} — ${t.turns} seasons.` }, ...g.log].slice(0, 60),
       };
     });
   }
@@ -2277,7 +2287,7 @@ export default function ColdCoast() {
         armies: g.armies.map((a) => (a.owner !== P ? a : { ...a, lord: false })),
         nations: { ...g.nations, [P]: { ...n, lordTransit: { to: armyId || null } } },
         log: [{ turn: g.turn, m: armyId
-          ? `You set out to join ${target.name}, and will reach them next winter.`
+          ? `You set out to join ${target.name}, and will reach them next season.`
           : "You start back for your seat." }, ...g.log].slice(0, 60),
       };
     });
@@ -2447,7 +2457,7 @@ export default function ColdCoast() {
     });
   }
 
-  /* Rations into a ward, and people over the following winters. Deliberately
+  /* Rations into a ward, and people over the following seasons. Deliberately
      slow: a company raised today is worth more than thirty people next spring,
      and the whole point is that the long bet has to be made early. */
   function investPop(k) {
@@ -2461,7 +2471,7 @@ export default function ColdCoast() {
         ...g,
         nations: { ...g.nations, [P]: { ...n, res: { ...n.res, food: n.res.food - POP_INVEST.food } } },
         provinces: { ...g.provinces, [k]: { ...p, grow: { left: POP_INVEST.seasons, per: POP_INVEST.per } } },
-        log: [{ turn: g.turn, m: `${POP_INVEST.food} rations go to ${p.name} — ${POP_INVEST.seasons} winters of feeding.` }, ...g.log].slice(0, 60),
+        log: [{ turn: g.turn, m: `${POP_INVEST.food} rations go to ${p.name} — ${POP_INVEST.seasons} seasons of feeding.` }, ...g.log].slice(0, 60),
       };
     });
   }
@@ -2478,7 +2488,7 @@ export default function ColdCoast() {
       nations[P] = { ...nations[P], res: { ...nations[P].res, scrap: nations[P].res.scrap - price } };
       Sound.play("tick");
       const provinces = { ...g.provinces, [k]: { ...p, builds: [...buildsOf(p), { id: bid, left: b.turns }] } };
-      return { ...g, nations, provinces, log: [{ turn: g.turn, m: `Work begins on a ${b.name.toLowerCase()} at ${p.name} — ${b.turns} winters.` }, ...g.log].slice(0, 60) };
+      return { ...g, nations, provinces, log: [{ turn: g.turn, m: `Work begins on a ${b.name.toLowerCase()} at ${p.name} — ${b.turns} seasons.` }, ...g.log].slice(0, 60) };
     });
   }
 
@@ -3071,8 +3081,8 @@ export default function ColdCoast() {
       else if (g.turn >= 150) {
         const best = NATION_IDS.reduce((a, b) => (counts[a] > counts[b] ? a : b));
         over = { win: best === g.player, why: best === g.player
-          ? "A hundred and fifty winters on, you hold more than anyone."
-          : `A hundred and fifty winters on, ${NATIONS[best].name} holds more than you.` };
+          ? "A hundred and fifty seasons on, you hold more than anyone."
+          : `A hundred and fifty seasons on, ${NATIONS[best].name} holds more than you.` };
       }
 
       // Anything the AI threw at the player is fought out one field at a time.
@@ -3105,7 +3115,7 @@ export default function ColdCoast() {
       <style>{UI_CSS}</style>
 
       <TopBar nat={nat} income={income} turn={game.turn} owned={owned.length}
-        armies={game.armies.filter((a) => a.owner === P).length}
+        armies={game.armies.filter((a) => a.owner === P).length} pop={realmPop}
         sound={game.sound} onLords={() => setGame((g) => ({ ...g, lords: true }))}
         onSound={(which) => setGame((g) => {
           const next = { ...g.sound, [which]: !g.sound[which] };
@@ -3213,7 +3223,7 @@ const RES_META = [
   { k: "men", label: "Recruits", Icon: Users, c: "#9db8c4" },
 ];
 
-function TopBar({ nat, income, turn, owned, armies, onEnd, onCodex, sound, onSound, onLords, onSave, saveFailed, onScreen }) {
+function TopBar({ nat, income, turn, owned, armies, pop, onEnd, onCodex, sound, onSound, onLords, onSave, saveFailed, onScreen }) {
   return (
     <header className="shrink-0 border-b cc-border-28363f cc-bg-0a1015a90 backdrop-blur px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
       <div className="flex items-center gap-2.5 pr-5 border-r cc-border-28363f">
@@ -3234,6 +3244,18 @@ function TopBar({ nat, income, turn, owned, armies, onEnd, onCodex, sound, onSou
 
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 flex-1 min-w-0">
+        {/* People, not a resource: you do not spend them, they eat, and the
+            recruits they yield are counted separately two boxes along. */}
+        <div className="flex items-center gap-2" title="Everyone living under your banner">
+          <Users size={15} style={{ color: "#d3b98a" }} strokeWidth={1.8} />
+          <div className="leading-none">
+            <div className="num cc-text-15px">{pop.total.toLocaleString()}</div>
+            <div className="cc-text-11d5px cc-text-8399a6 flex items-center gap-1">
+              People
+              <span className="num" style={{ color: "#c3cf7a" }}>-{pop.eats}</span>
+            </div>
+          </div>
+        </div>
         {RES_META.map(({ k, label, Icon, c }) => {
           const v = nat.res[k];
           const d = income[k];
@@ -4289,7 +4311,7 @@ function buildingEffect(bid) {
   const out = [];
   Object.entries(b.yield || {}).forEach(([k, v]) => {
     const label = RES_META.find((r) => r.k === k)?.label.toLowerCase() || k;
-    out.push(`+${v} ${label} every winter`);
+    out.push(`+${v} ${label} every season`);
   });
   if (b.def) out.push(`+${b.def}% to anyone defending here`);
   if (bid === "muster") out.push("lets you raise warbands here");
@@ -4370,7 +4392,7 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
             <div className="cc-text-12px cc-text-9fd6b4 mt-1.5">
               Being fed — <span className="num">{selProv.grow.per}</span> a season for
               {" "}<span className="num">{selProv.grow.left}</span> more
-              {selProv.grow.left === 1 ? " winter" : " winters"}.
+              {selProv.grow.left === 1 ? " season" : " seasons"}.
             </div>
           );
           return (
@@ -4381,7 +4403,7 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
                   ? "cc-border-31454f cc-text-cfe0e8 cc-hover-border-4d7488"
                   : "cc-border-25313a cc-text-78909e"}`}>
               {!room ? "This ground will not carry any more"
-                : `Feed the ward — ${POP_INVEST.food} rations over ${POP_INVEST.seasons} winters`}
+                : `Feed the ward — ${POP_INVEST.food} rations over ${POP_INVEST.seasons} seasons`}
             </button>
           );
         })()}
@@ -4412,7 +4434,7 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
         );
       })()}
 
-      <Section title="What it gives each winter">
+      <Section title="What it gives each season">
         {RES_META.map(({ k, label }) => y[k] > 0 && <Row key={k} label={label} value={`+${y[k]}`} tint="#6fae8c" />)}
         {RES_META.every(({ k }) => y[k] <= 0) && <div className="cc-text-13px cc-text-8399a6">Nothing worth carting out.</div>}
         {coastal(selProv.c, selProv.r) && (
@@ -4472,7 +4494,7 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
                   {bld.damaged && !left && <span className="cc-text-12px cc-text-e0644a">damaged</span>}
                   {left > 0 && (
                     <span className="num cc-text-12d5px cc-text-c9a37a">
-                      {left} winter{left === 1 ? "" : "s"} left
+                      {left} season{left === 1 ? "" : "s"} left
                     </span>
                   )}
                 </div>
@@ -4581,7 +4603,7 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
           <div className="cc-text-13px cc-text-c6d6de leading-relaxed">
             Nobody here knows how to raise anything yet. Set the workshops on something
             in <span className="cc-text-8fe3d6">Advances</span> — systematic scavenging
-            gives you salvage yards within a few winters.
+            gives you salvage yards within a few seasons.
           </div>
         </Section>
       )}
@@ -5059,7 +5081,7 @@ function TechTree({ game, P, onResearch, onClose }) {
         <div className="shrink-0 border-t cc-border-28363f p-4 cc-bg-101820">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="disp cc-text-18px">{t.name}</span>
-            <span className="num cc-text-12d5px cc-text-c9a37a">{t.scrap} scrap · {researchTurns(P, t, nat)} winters</span>
+            <span className="num cc-text-12d5px cc-text-c9a37a">{t.scrap} scrap · {researchTurns(P, t, nat)} seasons</span>
             {st.s === "known" && <span className="cc-text-12d5px cc-text-9fd6b4">already understood</span>}
           </div>
           <div className="cc-text-13px cc-text-c6d6de mt-1 leading-relaxed">{t.desc}</div>
@@ -6060,7 +6082,7 @@ function SeatScreen({ game, P, prov, onClose, onEdict, onUpgrade, onWork, onRecr
 
           {/* ---- the realm ---- */}
           <div>
-            <div className="cc-text-12d5px cc-text-a7bac6 mb-2 pb-1 border-b cc-border-243138">The realm this winter</div>
+            <div className="cc-text-12d5px cc-text-a7bac6 mb-2 pb-1 border-b cc-border-243138">The realm this season</div>
             <div className="grid gap-1.5 mb-4">
               {RES_META.map(({ k, label }) => (
                 <div key={k} className="flex items-baseline justify-between cc-text-13px">
@@ -6779,7 +6801,7 @@ function Codex({ onClose }) {
           </div>
           <div>
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Winning</div>
-            <p>Take four rival seats of power, or hold a tenth of the continent, or simply hold more than anyone after a hundred and fifty winters. A seat stays a seat after it falls, so a captured capital keeps flying its crest under your colours. Lose every holding and it is over.</p>
+            <p>Take four rival seats of power, or hold a tenth of the continent, or simply hold more than anyone after a hundred and fifty seasons. A seat stays a seat after it falls, so a captured capital keeps flying its crest under your colours. Lose every holding and it is over.</p>
           </div>
         </div>
       </div>

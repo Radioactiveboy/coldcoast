@@ -115,6 +115,20 @@ export const POP_LANDMARK = {
   "74,129": 360,  // Athina Stone
 };
 
+/* People eat. Before this they did not, which made a large population pure
+   profit and agriculture an afterthought — you could hold half the continent
+   on the rations a handful of silt farms threw off. One ration a season per
+   POP_PER_MOUTH heads, taken off the realm's income before the warbands take
+   theirs, so growing a ward is a commitment rather than a free bonus.
+
+   Note what this does across the year: the harvest already swings with the
+   season (winter pays 0.55 of what the land gives) while mouths do not, so a
+   realm living hand to mouth in summer starves in winter. That is the
+   intended shape. */
+export const POP_PER_MOUTH = 200;
+
+export const popFood = (pop) => Math.round(Math.max(0, pop || 0) / POP_PER_MOUTH);
+
 /* People arrive, and are born, and mostly they do neither quickly. Growth is
    a percentage of what is already there, so an empty moor fills very slowly
    and a town fills fast — which is the wrong way round for fairness and the
