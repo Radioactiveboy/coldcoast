@@ -726,6 +726,19 @@ const ARMOUR_GRADES = [
    given kind every season, and a company cannot be raised until enough of its
    kind is on the rack. What your craftsmen work on is your decision.
    ------------------------------------------------------------------------ */
+/* A tile carries more than one worksite now. How many depends on who lives
+   there, and each one after the first costs more — the ground, the timber and
+   the hands are already spoken for. One of each kind per tile: two silt farms
+   on the same hex is not a decision, it is a typo. */
+const buildsOf = (p) => (p && p.builds) || [];
+const doneBuilds = (p) => buildsOf(p).filter((b) => !b.left);
+const hasBuild = (p, id) => buildsOf(p).some((b) => b.id === id && !b.left);
+const buildSlots = (p) => popSlots(p && p.pop);
+const freeSlots = (p) => buildSlots(p) - buildsOf(p).length;
+const BUILD_STEP = [1, 1.75, 2.5];
+const buildCost = (base, n) => Math.round(base * BUILD_STEP[Math.min(n, BUILD_STEP.length - 1)]);
+const firstDamaged = (p) => buildsOf(p).find((b) => b.damaged && !b.left) || null;
+
 const HANDS_SEAT = 6;                        // craftsmen working out of a seat
 const HANDS_PER_HUT = 4;                     // each craftsmen's hut on top
 const ARMS_PER_HAND = 10;                    // what one of them turns out in a season
@@ -737,9 +750,10 @@ function craftHands(provinces, natId) {
   Object.values(provinces).forEach((p) => {
     if (p.owner !== natId) return;
     if (p.capital) hands += HANDS_SEAT;
-    if (p.building === "workshop" && !p.buildLeft) {
-      hands += p.damaged ? Math.floor(HANDS_PER_HUT / 2) : HANDS_PER_HUT;
-    }
+    doneBuilds(p).forEach((b) => {
+      if (b.id !== "workshop") return;
+      hands += b.damaged ? Math.floor(HANDS_PER_HUT / 2) : HANDS_PER_HUT;
+    });
   });
   return hands;
 }
@@ -817,7 +831,7 @@ function hasSite(state, natId, t) {
   return owned.some((p) =>
     (t.site.terrain && t.site.terrain.includes(p.t)) ||
     (t.site.feature && p.feature && t.site.feature.includes(p.feature)) ||
-    (t.site.building && p.building === t.site.building && !p.buildLeft));
+    (t.site.building && hasBuild(p, t.site.building)));
 }
 function techState(state, natId, id) {
   const n = state.nations[natId];
@@ -1203,7 +1217,7 @@ function reinforceCost(u, natId, atMuster) {
     scrap: Math.max(1, Math.round(full.scrap * share * mult)),
   };
 }
-const musteringGround = (p) => !!p && (p.capital || (p.building === "muster" && !p.buildLeft));
+const musteringGround = (p) => !!p && (p.capital || hasBuild(p, "muster"));
 
 // Sight is your own ground, wherever your warbands are standing, and one step
 // beyond both. Everything else is dark: you do not know who holds it, what is
@@ -1475,7 +1489,7 @@ function buildWorld() {
         nameCount[reg] = (nameCount[reg] || 0) + 1;
         nm = `${reg} ${ROMAN[nameCount[reg]] || nameCount[reg]}`;
       }
-      provinces[k] = { c, r, t, name: nm, owner: null, building: null, capital: false, seat: null, explored: false, feature: null, pop: startingPop(k, t, null) };
+      provinces[k] = { c, r, t, name: nm, owner: null, builds: [], capital: false, seat: null, explored: false, feature: null, pop: startingPop(k, t, null) };
     }
   }
 
@@ -1536,7 +1550,7 @@ function buildWorld() {
     const q = provinces[k];
     if (q) {
       q.owner = id; q.explored = true; q.capital = true; q.seat = id;
-      q.feature = m.feature; q.building = m.building; q.buildLeft = 0;
+      q.feature = m.feature; q.builds = m.building ? [{ id: m.building, left: 0 }] : [];
     }
   });
 
@@ -1576,11 +1590,13 @@ function provinceYield(p, natId, nat) {
   // population table is set so an ordinary tile yields exactly what its
   // terrain used to; a named place yields more, because more people are on it.
   const y = { food: t.food, scrap: t.scrap, metal: 0, fuel: t.fuel, powder: t.powder, men: popRecruits(p.pop) };
-  if (p.building && !p.buildLeft && BUILDINGS[p.building].yield) {
-    Object.entries(BUILDINGS[p.building].yield).forEach(([k, v]) => {
-      y[k] += p.damaged ? Math.floor(v / 2) : v;
+  doneBuilds(p).forEach((b) => {
+    const def = BUILDINGS[b.id];
+    if (!def || !def.yield) return;
+    Object.entries(def.yield).forEach(([k, v]) => {
+      y[k] += b.damaged ? Math.floor(v / 2) : v;
     });
-  }
+  });
   if (p.feature && FEATURES[p.feature]) {
     Object.entries(FEATURES[p.feature].yield).forEach(([k, v]) => { y[k] += v; });
   }
@@ -1768,7 +1784,7 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
   const defender = armies.find((a) => a.id === dId);
   const prov = provinces[k];
   if (!attacker || !defender || !prov) return null;
-  const terrainDef = TERRAIN[prov.t].def + (prov.building === "redoubt" && !prov.buildLeft ? BUILDINGS.redoubt.def : 0);
+  const terrainDef = TERRAIN[prov.t].def + (hasBuild(prov, "redoubt") ? BUILDINGS.redoubt.def : 0);
   let defenderBonus = 0;
   if (defender.owner === "alpine" && ["h", "m"].includes(prov.t)) defenderBonus += 35;
   if (isMinor(defender.owner)) defenderBonus += MINORS[defender.owner].defBonus;
@@ -2199,16 +2215,18 @@ export default function ColdCoast() {
   function repair(k) {
     setGame((g) => {
       const pr = g.provinces[k];
-      if (!pr || pr.owner !== P || !pr.damaged) return g;
-      const cost = Math.ceil(BUILDINGS[pr.building].scrap / 2);
+      const hurt = firstDamaged(pr);
+      if (!pr || pr.owner !== P || !hurt) return g;
+      const cost = Math.ceil(BUILDINGS[hurt.id].scrap / 2);
       const n = g.nations[P];
       if (n.res.scrap < cost) return g;
       Sound.play("tick");
+      const fixed = buildsOf(pr).map((b) => (b === hurt ? { ...b, damaged: false } : b));
       return {
         ...g,
         nations: { ...g.nations, [P]: { ...n, res: { ...n.res, scrap: n.res.scrap - cost } } },
-        provinces: { ...g.provinces, [k]: { ...pr, damaged: false } },
-        log: [{ turn: g.turn, m: `${BUILDINGS[pr.building].name} at ${pr.name} put back in order.` }, ...g.log].slice(0, 60),
+        provinces: { ...g.provinces, [k]: { ...pr, builds: fixed } },
+        log: [{ turn: g.turn, m: `${BUILDINGS[hurt.id].name} at ${pr.name} put back in order.` }, ...g.log].slice(0, 60),
       };
     });
   }
@@ -2430,12 +2448,14 @@ export default function ColdCoast() {
     setGame((g) => {
       const p = g.provinces[k];
       const b = BUILDINGS[bid];
-      if (!p || p.owner !== P || p.building) return g;
-      if (g.nations[P].res.scrap < b.scrap) return g;
+      if (!p || p.owner !== P || freeSlots(p) <= 0) return g;
+      if (buildsOf(p).some((x) => x.id === bid)) return g;      // one of each kind
+      const price = buildCost(b.scrap, buildsOf(p).length);
+      if (g.nations[P].res.scrap < price) return g;
       const nations = { ...g.nations };
-      nations[P] = { ...nations[P], res: { ...nations[P].res, scrap: nations[P].res.scrap - b.scrap } };
+      nations[P] = { ...nations[P], res: { ...nations[P].res, scrap: nations[P].res.scrap - price } };
       Sound.play("tick");
-      const provinces = { ...g.provinces, [k]: { ...p, building: bid, buildLeft: b.turns } };
+      const provinces = { ...g.provinces, [k]: { ...p, builds: [...buildsOf(p), { id: bid, left: b.turns }] } };
       return { ...g, nations, provinces, log: [{ turn: g.turn, m: `Work begins on a ${b.name.toLowerCase()} at ${p.name} — ${b.turns} winters.` }, ...g.log].slice(0, 60) };
     });
   }
@@ -2534,16 +2554,21 @@ export default function ColdCoast() {
 
         // build
         if (res.scrap > 90 / style.build) {
-          const target = myProv.find((p) => !p.building);
+          // Prefer somewhere with room. The AI pays the same escalating price
+          // for a second worksite on the same ground that the player does.
+          const target = myProv.find((p) => freeSlots(p) > 0);
           if (target) {
             const opts = Object.entries(BUILDINGS)
               .filter(([bid]) => unlocked(nations[id], bid))
+              .filter(([bid]) => !buildsOf(target).some((x) => x.id === bid))
               .filter(([, b]) => !b.coast || coastal(target.c, target.r))
               .filter(([, b]) => !b.on || b.on.includes(target.t));
             const [bid, b] = opts[Math.floor(Math.random() * opts.length)] || [];
-            if (bid && res.scrap >= b.scrap) {
-              nations[id] = { ...nations[id], res: { ...res, scrap: res.scrap - b.scrap } };
-              provinces[key(target.c, target.r)] = { ...target, building: bid, buildLeft: b.turns };
+            const price = b ? buildCost(b.scrap, buildsOf(target).length) : 0;
+            if (bid && res.scrap >= price) {
+              nations[id] = { ...nations[id], res: { ...res, scrap: res.scrap - price } };
+              provinces[key(target.c, target.r)] = {
+                ...target, builds: [...buildsOf(target), { id: bid, left: b.turns }] };
             }
           }
         }
@@ -2788,7 +2813,7 @@ export default function ColdCoast() {
             const score = (q) => {
               const k = key(q.c, q.r);
               let v = (q.owner && !isMinor(q.owner) ? 34 : 0)
-                + (q.building && !q.damaged ? 16 : 0)
+                + (doneBuilds(q).some((b) => !b.damaged) ? 16 : 0)
                 + (q.capital ? -30 : 0)                      // seats are too well held
                 + neighbours(q.c, q.r).filter(([x, y]) => {
                     const z = provinces[key(x, y)]; return z && z.owner && !isMinor(z.owner);
@@ -2816,9 +2841,11 @@ export default function ColdCoast() {
           const roll = Math.random();
           const res3 = { ...vn.res };
           let what = "";
-          if (on.building && !on.buildLeft && !on.damaged && roll < 0.42) {
-            provinces[key(a.c, a.r)] = { ...on, damaged: true };
-            what = `wreck the ${BUILDINGS[on.building].name.toLowerCase()} at ${on.name}`;
+          const spoil = doneBuilds(on).find((b) => !b.damaged);
+          if (spoil && roll < 0.42) {
+            provinces[key(a.c, a.r)] = { ...on,
+              builds: buildsOf(on).map((b) => (b === spoil ? { ...b, damaged: true } : b)) };
+            what = `wreck the ${BUILDINGS[spoil.id].name.toLowerCase()} at ${on.name}`;
           } else if (roll < 0.72) {
             const take = 18 + Math.floor(Math.random() * 22);
             res3.scrap = Math.max(0, res3.scrap - take);
@@ -2957,12 +2984,18 @@ export default function ColdCoast() {
       // --- construction advances a winter ---
       Object.keys(provinces).forEach((k) => {
         const p = provinces[k];
-        if (!p.buildLeft) return;
-        const left = p.buildLeft - 1;
-        provinces[k] = { ...p, buildLeft: left };
-        if (left === 0 && p.owner === g.player) {
-          newLog.push({ turn: g.turn, m: `${BUILDINGS[p.building].name} at ${p.name} is finished.` });
-        }
+        if (!buildsOf(p).some((b) => b.left)) return;
+        const done = [];
+        const builds = buildsOf(p).map((b) => {
+          if (!b.left) return b;
+          const left = b.left - 1;
+          if (left === 0) done.push(b.id);
+          return { ...b, left };
+        });
+        provinces[k] = { ...p, builds };
+        if (p.owner === g.player) done.forEach((bid) => {
+          newLog.push({ turn: g.turn, m: `${BUILDINGS[bid].name} at ${p.name} is finished.` });
+        });
       });
 
       // --- income for everyone ---
@@ -3433,15 +3466,15 @@ function glyphFor(t, cx, cy, c, r) {
   }
 }
 
-function BuildingMark({ b, x, y, small, left, damaged }) {
+function BuildingMark({ b, x, y, small, tiny, left, damaged }) {
   const done = !left;
-  const R = small ? 7.2 : 9.4;
+  const R = tiny ? 5.4 : small ? 7.2 : 9.4;
   const C = 2 * Math.PI * R;
   const total = BUILDINGS[b].turns || 1;
   const frac = done ? 1 : (total - left) / total;
   const ink = done ? "#f2c97a" : "#9fb6c2";
   const ring = done ? "#8a6f36" : "#3d4f5c";
-  const k = small ? 0.82 : 1;
+  const k = tiny ? 0.6 : small ? 0.82 : 1;
   const marks = {
     siltfarm: <path d="M-4 3h8M-4 0h8M-3 3v-5M0 3v-6M3 3v-5" />,
     yard: <path d="M-4 4v-8h6M-4 -4l6 5M2 -4v3" />,
@@ -3631,7 +3664,7 @@ const RealmLayer = React.memo(function RealmLayer({ provinces, cells, seen }) {
         const [cx, cy] = centreOf(p.c, p.r);
         df += `M${cx} ${cy - 4}L${cx + 4} ${cy}L${cx} ${cy + 4}L${cx - 4} ${cy}Z`;
       }
-      if (p.building || p.capital) marks.push(p);
+      if (buildsOf(p).length || p.capital) marks.push(p);
     });
     return { tints: Object.entries(byNat), dFog: lit, dDim: dim,
              dNat: dn, dProv: dp, dFeature: df, marks };
@@ -3655,8 +3688,20 @@ const RealmLayer = React.memo(function RealmLayer({ provinces, cells, seen }) {
         const col = p.owner ? FACTION[p.owner].color : "#f0e2b8";
         return (
           <g key={"M" + p.c + "_" + p.r}>
-            {p.building && <BuildingMark b={p.building} left={p.buildLeft} damaged={p.damaged}
-              small={!!p.capital} x={p.capital ? cx + 10 : cx} y={p.capital ? cy - 9 : cy} />}
+            {/* Up to three worksites on one hex. Any more than one and they all
+                shrink and spread along the bottom of the tile, because three
+                full-size marks stacked on a 16px hex bury the ground under
+                them and you can no longer see what you are standing on. */}
+            {buildsOf(p).map((bld, i, all) => {
+              const many = all.length > 1 || !!p.capital;
+              const spread = all.length > 1 ? (i - (all.length - 1) / 2) * 9.5 : 0;
+              return (
+                <BuildingMark key={bld.id} b={bld.id} left={bld.left} damaged={bld.damaged}
+                  small={many} tiny={all.length > 2}
+                  x={(p.capital ? cx + 10 : cx) + spread}
+                  y={p.capital ? cy - 9 : cy + (all.length > 1 ? 3 : 0)} />
+              );
+            })}
             {p.capital && (
               <g>
                 <circle cx={cx} cy={cy} r="9.6" fill="#0a1015" stroke={col} strokeWidth="1.8" />
@@ -4242,7 +4287,7 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
   const y = provinceYield(selProv, selProv.owner || P, game.nations[selProv.owner || P]);
   const ownerNat = selProv.owner ? game.nations[selProv.owner] : null;
   const mine = selProv.owner === P;
-  const canMuster = mine && (selProv.capital || (selProv.building === "muster" && !selProv.buildLeft));
+  const canMuster = mine && (selProv.capital || hasBuild(selProv, "muster"));
   const armiesHere = game.armies.filter((a) => a.c === selProv.c && a.r === selProv.r);
 
   // Ground nobody of yours has stood near tells you nothing at all.
@@ -4379,40 +4424,51 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
         </Section>
       )}
 
-      {selProv.building && (
-        (() => {
-          const bd = BUILDINGS[selProv.building];
-          const left = selProv.buildLeft || 0;
-          const frac = left ? (bd.turns - left) / bd.turns : 1;
-          return (
-            <Section title={left ? "Under construction" : selProv.damaged ? "Wrecked" : "Standing here"}>
-              <div className="flex items-baseline gap-2">
-                <span className="cc-text-13d5px flex-1">{bd.name}</span>
-                {selProv.damaged && <span className="cc-text-12px cc-text-e0644a">damaged</span>}
-                {left > 0 && (
-                  <span className="num cc-text-12d5px cc-text-c9a37a">
-                    {left} winter{left === 1 ? "" : "s"} left
-                  </span>
-                )}
-              </div>
-              {left > 0 && (
-                <div className="mt-1.5 cc-h-5px cc-bg-26333c rounded overflow-hidden">
-                  <div className="h-full cc-bar" style={{ width: `${frac * 100}%`, background: "#f2c97a" }} />
+      {buildsOf(selProv).length > 0 && (
+        <Section title={`Standing here — ${buildsOf(selProv).length} of ${buildSlots(selProv)} ${buildSlots(selProv) === 1 ? "site" : "sites"}`}>
+          {/* People leave — raiders drive them off, companies take them away —
+              and a ward can end up carrying more worksites than it now has the
+              hands for. Nothing falls down; you simply cannot add to it until
+              the ward recovers. Saying so beats a Build section that has
+              silently vanished. */}
+          {freeSlots(selProv) < 0 && (
+            <div className="cc-text-12d5px cc-text-e8b98a mb-2 leading-snug">
+              More work here than {Math.round(selProv.pop || 0).toLocaleString()} people can keep up.
+              Nothing will fall down, but nothing more can be started until the ward grows back.
+            </div>
+          )}
+          {buildsOf(selProv).map((bld, i) => {
+            const bd = BUILDINGS[bld.id];
+            const left = bld.left || 0;
+            const frac = left ? (bd.turns - left) / bd.turns : 1;
+            const cost = Math.ceil(bd.scrap / 2);
+            const afford = game.nations[P].res.scrap >= cost;
+            return (
+              <div key={bld.id} className={i ? "mt-2.5 pt-2.5 border-t cc-border-25313a" : ""}>
+                <div className="flex items-baseline gap-2">
+                  <span className="cc-text-13d5px flex-1">{bd.name}</span>
+                  {bld.damaged && !left && <span className="cc-text-12px cc-text-e0644a">damaged</span>}
+                  {left > 0 && (
+                    <span className="num cc-text-12d5px cc-text-c9a37a">
+                      {left} winter{left === 1 ? "" : "s"} left
+                    </span>
+                  )}
                 </div>
-              )}
-              <div className="flex flex-wrap gap-1 mt-1.5">
-                {buildingEffect(selProv.building).map((e) => (
-                  <span key={e} className={`cc-text-11d5px rounded px-1.5 py-0.5 border ${left ? "cc-border-31454f cc-text-95aab6" : "cc-border-3d5a4a cc-text-9fd6b4"}`}>{e}</span>
-                ))}
-              </div>
-              <div className="cc-text-12d5px cc-text-93a9b5 mt-1">{bd.desc}</div>
-              {left > 0 && (
-                <div className="cc-text-12d5px cc-text-95aab6 mt-1">It pays nothing until the work is done.</div>
-              )}
-              {selProv.damaged && !left && (() => {
-                const cost = Math.ceil(bd.scrap / 2);
-                const afford = game.nations[P].res.scrap >= cost;
-                return (
+                {left > 0 && (
+                  <div className="mt-1.5 cc-h-5px cc-bg-26333c rounded overflow-hidden">
+                    <div className="h-full cc-bar" style={{ width: `${frac * 100}%`, background: "#f2c97a" }} />
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {buildingEffect(bld.id).map((e) => (
+                    <span key={e} className={`cc-text-11d5px rounded px-1.5 py-0.5 border ${left ? "cc-border-31454f cc-text-95aab6" : "cc-border-3d5a4a cc-text-9fd6b4"}`}>{e}</span>
+                  ))}
+                </div>
+                <div className="cc-text-12d5px cc-text-93a9b5 mt-1">{bd.desc}</div>
+                {left > 0 && (
+                  <div className="cc-text-12d5px cc-text-95aab6 mt-1">It pays nothing until the work is done.</div>
+                )}
+                {bld.damaged && !left && (
                   <>
                     <div className="cc-text-12d5px cc-text-e09a8a mt-1.5">
                       Raiders got in. It pays half what it should until it is put back in order.
@@ -4426,11 +4482,11 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
                       </button>
                     )}
                   </>
-                );
-              })()}
-            </Section>
-          );
-        })()
+                )}
+              </div>
+            );
+          })}
+        </Section>
       )}
 
       {!selProv.owner && (() => {
@@ -4495,7 +4551,7 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
         );
       })()}
 
-      {mine && !selProv.building && Object.entries(BUILDINGS)
+      {mine && freeSlots(selProv) > 0 && Object.entries(BUILDINGS)
         .filter(([bid]) => unlocked(game.nations[P], bid))
         .filter(([, b]) => !b.coast || coastal(selProv.c, selProv.r))
         .filter(([, b]) => !b.on || b.on.includes(selProv.t)).length === 0 && (
@@ -4508,15 +4564,18 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
         </Section>
       )}
 
-      {mine && !selProv.building && (
-        <Section title="Build">
+      {mine && freeSlots(selProv) > 0 && (
+        <Section title={`Build — ${freeSlots(selProv)} of ${buildSlots(selProv)} ${freeSlots(selProv) === 1 ? "site" : "sites"} free`}>
           <div className="grid gap-1.5">
             {Object.entries(BUILDINGS)
               .filter(([bid]) => unlocked(game.nations[P], bid))
+              .filter(([bid]) => !buildsOf(selProv).some((x) => x.id === bid))
               .filter(([, b]) => !b.coast || coastal(selProv.c, selProv.r))
               .filter(([, b]) => !b.on || b.on.includes(selProv.t))
               .map(([bid, b]) => {
-                const afford = game.nations[P].res.scrap >= b.scrap;
+                // Second and third worksites on one tile cost more.
+                const price = buildCost(b.scrap, buildsOf(selProv).length);
+                const afford = game.nations[P].res.scrap >= price;
                 return (
                   <button key={bid} disabled={!afford}
                     onClick={() => onBuild(key(selProv.c, selProv.r), bid)}
@@ -4525,7 +4584,7 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
                       : "cc-border-25313a opacity-40 cursor-not-allowed"}`}>
                     <div className="flex justify-between items-baseline">
                       <span>{b.name}</span>
-                      <span className="num cc-text-12d5px cc-text-c9a37a">{b.scrap} scrap · {b.turns}w</span>
+                      <span className="num cc-text-12d5px cc-text-c9a37a">{price} scrap · {b.turns}w</span>
                     </div>
                     <div className="cc-text-12px cc-text-93a9b5 mt-0.5">{b.desc}</div>
                   </button>
@@ -5074,7 +5133,7 @@ function ProductionPanel({ game, P, onCraft }) {
   const open = unitsFor(nat);
   const { hands, assigned, idle, over, per, total } = craftPlan(nat, game.provinces, P);
   const huts = Object.values(game.provinces).filter(
-    (p) => p.owner === P && p.building === "workshop" && !p.buildLeft).length;
+    (p) => p.owner === P && hasBuild(p, "workshop")).length;
   const seats = Object.values(game.provinces).filter((p) => p.owner === P && p.capital).length;
 
   return (
