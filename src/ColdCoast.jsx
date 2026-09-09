@@ -3527,52 +3527,141 @@ function glyphFor(t, cx, cy, c, r) {
   }
 }
 
+/* Buildings on the map.
+
+   These were abstract strokes inside a dark disc that hovered over the hex,
+   and four of the ten had no glyph at all — workshop, mine, fishery and pier
+   drew an empty circle, which is a poor way to tell someone what they built.
+
+   They are silhouettes now: a shape you could recognise from its outline,
+   filled and outlined so it reads over any terrain colour, sitting on a small
+   ground shadow rather than floating in a ring. Everything is drawn against a
+   baseline at y=3 and kept inside roughly 13 wide, so up to three fit along
+   the bottom of a hex without covering the ground. */
+const BUILD_ART = {
+  // A barn, and the furrows of the dyked plots beside it.
+  siltfarm: (
+    <>
+      <path d="M-6.4 3v-3.4l2.6-2.2 2.6 2.2V3z" />
+      <path d="M0.4 1.1h6.4M0.4 2.1h6.4M0.4 3h6.4" fill="none" strokeWidth="0.75" />
+    </>
+  ),
+  // A gantry crane over a heap of cut metal.
+  yard: (
+    <>
+      <path d="M-6.5 3l2.4-3.2L-1.7 3z" />
+      <path d="M0.6 3v-8.6M0.6-8.2h5.6M6.2-8.2v2.6" fill="none" strokeWidth="1.15" />
+      <circle cx="6.2" cy="-5.2" r="0.9" />
+    </>
+  ),
+  // A charcoal kiln: a dome with its chimney, and the saltpetre beds.
+  mill: (
+    <>
+      <path d="M-5 3a4.4 4.4 0 0 1 8.8 0z" />
+      <path d="M1.4-1.6v-3.2h1.9v2.2" />
+      <path d="M-6 3h1.2M4.4 3h1.8" fill="none" strokeWidth="0.85" />
+    </>
+  ),
+  // A cracking tower with its banding, and a flare alongside.
+  refinery: (
+    <>
+      <path d="M-4.6 3v-8.4a2.3 2.3 0 0 1 4.6 0V3z" />
+      <path d="M-4.6-2.4h4.6M-4.6-5h4.6" fill="none" strokeWidth="0.75" />
+      <path d="M2.6 3v-5.2h1.6V3z" />
+      <path d="M3.4-2.6q-1.4-1.6 0-3.2q1.4 1.6 0 3.2z" />
+    </>
+  ),
+  // A longhall with a banner over the door.
+  muster: (
+    <>
+      <path d="M-6 3v-3l2-2.4h7l2 2.4v3z" />
+      <path d="M4.6-2.6v-5.4" fill="none" strokeWidth="1" />
+      <path d="M4.6-8h3.4l-1 1.3 1 1.3H4.6z" />
+    </>
+  ),
+  // A craftsman's hut, chimney smoking.
+  workshop: (
+    <>
+      <path d="M-5.4 3v-3.6l3.6-2.8 3.6 2.8V3z" />
+      <path d="M1.6-2.6v-2.8h1.8V-1" />
+      <path d="M2.5-6.4q-1.1-1 0-2q1.1-1 0-2" fill="none" strokeWidth="0.75" />
+    </>
+  ),
+  // A pithead: the winding wheel on its A-frame, over the spoil.
+  mine: (
+    <>
+      <path d="M-3.8 3L0-5.2 3.8 3M-2.4-0.6h4.8" fill="none" strokeWidth="1.1" />
+      <circle cx="0" cy="-6.4" r="1.7" fill="none" strokeWidth="1.1" />
+      <path d="M4.4 3l1.7-2.1L7.8 3z" />
+    </>
+  ),
+  // Drying racks on the shore, with the catch hung out.
+  fishery: (
+    <>
+      <path d="M-5.6 1h11.2l-1.7 2.4h-7.8z" />
+      <path d="M-0.8 1v-4.6" fill="none" strokeWidth="1" />
+      <path d="M-0.8-3.6q3.6 1.1 3.1 4.6" fill="none" strokeWidth="0.85" />
+    </>
+  ),
+  // A stage out over the silt, with a hull tied up against it.
+  pier: (
+    <>
+      <path d="M-6.6-0.9h12.2v1.5h-12.2z" />
+      <path d="M-4.8 0.6V3M-0.4 0.6V3M4 0.6V3" fill="none" strokeWidth="0.95" />
+      <path d="M4.6-0.9v-2.4h1.7v2.4z" />
+    </>
+  ),
+  // A crenellated wall with a bastion thrown out from it.
+  redoubt: (
+    <>
+      <path d="M-6.6 3v-4h1.5v-1.6h1.5V-1h1.6v-1.6h1.5V-1h1.6v-1.6h1.5V-1h1.5v4z" />
+      <path d="M-2.2 3v-2.4h2.6V3z" fill="#0a1015" />
+    </>
+  ),
+};
+
 function BuildingMark({ b, x, y, small, tiny, left, damaged }) {
   const done = !left;
-  const R = tiny ? 5.4 : small ? 7.2 : 9.4;
-  const C = 2 * Math.PI * R;
-  const total = BUILDINGS[b].turns || 1;
-  const frac = done ? 1 : (total - left) / total;
-  const ink = done ? "#f2c97a" : "#9fb6c2";
-  const ring = done ? "#8a6f36" : "#3d4f5c";
-  const k = tiny ? 0.6 : small ? 0.82 : 1;
-  const marks = {
-    siltfarm: <path d="M-4 3h8M-4 0h8M-3 3v-5M0 3v-6M3 3v-5" />,
-    yard: <path d="M-4 4v-8h6M-4 -4l6 5M2 -4v3" />,
-    mill: <path d="M-3 4v-7h6v7M0 -3v-3M-4 4h8" />,
-    refinery: <path d="M-3 4v-6a3 3 0 0 1 6 0v6M-3 0h6M-4 4h8" />,
-    muster: <path d="M-3 5v-10l7 2.5l-7 2.5" />,
-    redoubt: <path d="M-5 4v-5l2.5-2.5L0 -1l2.5-2.5L5 -1v5z" />,
-  };
+  const art = BUILD_ART[b];
+  const total = BUILDINGS[b]?.turns || 1;
+  const frac = done ? 1 : Math.max(0, (total - left) / total);
+  const k = tiny ? 0.62 : small ? 0.82 : 1;
+  // Warm timber and stone when it is standing; cold slate while it is still a
+  // site, so a half-built thing reads as unfinished at a glance rather than
+  // needing a progress collar to be studied.
   return (
-    <g transform={`translate(${x},${y})`}>
-      <circle r={R} fill="#0a1015" stroke={ring} strokeWidth="1.5" />
-      {/* a site shows how far along it is; a finished work shows a solid collar */}
-      <circle r={R} fill="none" stroke={ink} strokeWidth={done ? 1.6 : 2.4}
-        className="cc-buildprog" transform="rotate(-90)"
-        strokeDasharray={`${(C * frac).toFixed(1)} ${C.toFixed(1)}`}
-        opacity={done ? 0.75 : 0.95} strokeLinecap="round" />
-      <g stroke={ink} strokeWidth={1.35} fill="none" strokeLinecap="round" strokeLinejoin="round"
-        opacity={done ? 0.95 : 0.5} transform={`scale(${k})`}>
-        {marks[b]}
+    <g transform={`translate(${x},${y}) scale(${k})`}>
+      <ellipse cx="0" cy="3.3" rx="6.6" ry="1.5" fill="#060b0f" opacity="0.5" />
+      <g fill={done ? (damaged ? "#b08878" : "#dcbf92") : "#8ea6b4"}
+         stroke="#0a1015" strokeWidth="0.9" strokeLinejoin="round" strokeLinecap="round"
+         opacity={done ? 1 : 0.85}>
+        {art || <path d="M-4 3v-4h8v4z" />}
       </g>
       {!done && (
-        <g stroke="#f2c97a" strokeWidth="1.3" strokeLinecap="round">
-          <path d={`M${R - 1} ${-R + 1}l4 -4M${R + 1} ${-R - 3}l2 2`} />
-        </g>
+        <>
+          {/* scaffolding, and how far along the work is */}
+          <path d="M-6.4 3l1.8-6M6.4 3l-1.8-6" fill="none" stroke="#f2c97a"
+            strokeWidth="0.8" opacity="0.8" strokeLinecap="round" />
+          <rect x="-6.4" y="4.4" width="12.8" height="1.5" rx="0.7" fill="#0a1015" opacity="0.85" />
+          <rect x="-6.4" y="4.4" width={(12.8 * frac).toFixed(2)} height="1.5" rx="0.7" fill="#f2c97a" />
+        </>
       )}
-      {damaged && (
-        <g stroke="#e0644a" strokeWidth="1.6" strokeLinecap="round">
-          <circle r={R + 2.5} fill="none" strokeWidth="1.2" opacity="0.9" />
-          <path d={`M${-3.2} ${-3.2}l6.4 6.4M${3.2} ${-3.2}l-6.4 6.4`} />
+      {/* A cross drawn over the whole silhouette hid the thing it was marking.
+          A badge in the corner says the same and leaves the building legible. */}
+      {damaged && done && (
+        <g transform="translate(5.6,-5)">
+          <circle r="2.7" fill="#2a1512" stroke="#e0644a" strokeWidth="0.85" />
+          <path d="M-1.1-1.1l2.2 2.2M1.1-1.1l-2.2 2.2" stroke="#e0644a"
+            strokeWidth="1.05" fill="none" strokeLinecap="round" />
         </g>
       )}
     </g>
   );
 }
 
-
-// What a warband looks like from a distance: whatever its heaviest element is.
+/* What a warband is carrying, for the glyph on the map: guns and vehicles
+   announce themselves, a mostly-mounted band reads as horse, and otherwise
+   the heaviest thing in the column names it. */
 function warbandKind(a) {
   const u = a.units;
   if (!u.length) return "spear";
