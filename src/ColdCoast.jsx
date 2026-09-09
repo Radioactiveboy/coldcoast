@@ -2824,11 +2824,20 @@ export default function ColdCoast() {
             res3.scrap = Math.max(0, res3.scrap - take);
             what = `carry off ${take} scrap from ${on.name}`;
           } else {
+            // They take people, not an abstraction. The heads come off the
+            // province itself and go into the raiders' own pool, so a ward
+            // raided twice pays fewer recruits for years afterwards and the
+            // wasters get stronger for exactly what they took.
             const food = 12 + Math.floor(Math.random() * 16);
-            const men = 6 + Math.floor(Math.random() * 10);
+            const want = 20 + Math.floor(Math.random() * 30);
+            const taken = Math.min(want, Math.max(0, Math.floor(on.pop || 0)));
             res3.food = Math.max(0, res3.food - food);
-            res3.men = Math.max(0, res3.men - men);
-            what = `burn ${food} rations at ${on.name} and take ${men} off with them`;
+            provinces[key(a.c, a.r)] = { ...on, pop: Math.max(0, (on.pop || 0) - taken) };
+            const rn = nations[a.owner];
+            if (rn) nations[a.owner] = { ...rn, res: { ...rn.res, men: (rn.res?.men || 0) + taken } };
+            what = taken > 0
+              ? `burn ${food} rations at ${on.name} and drive ${taken} of its people off with them`
+              : `burn ${food} rations at ${on.name}, and find nobody left to take`;
           }
           nations[victim] = { ...vn, res: res3 };
           if (victim === g.player) {
