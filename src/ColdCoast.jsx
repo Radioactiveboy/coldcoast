@@ -4041,6 +4041,9 @@ const BaseMap = React.memo(function BaseMap({ w, h, provinces, cells, glyphs }) 
 
 function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
   const [zoom, setZoom] = useState(0.8);
+  // What scale the maps are actually DRAWN at, as opposed to what scale they
+  // are being shown at. See the note on the settle below.
+  const [crisp, setCrisp] = useState(0.8);
   const scroll = useRef(null);
   const drag = useRef(null);
   const moved = useRef(false);
@@ -4127,6 +4130,19 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
   // The wheel writes zoomRef itself mid-gesture; this keeps it true for every
   // other route to a new zoom (the buttons, Q and E, jumping to the seat).
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
+  /* Scaling a layer stretches the pixels it already had, which is what makes a
+     gesture cheap and what left the map soft and blocky once you stopped —
+     zoomed to 2x you were looking at a 1x drawing blown up. So the transform
+     carries the gesture, and a moment after it stops the maps are given their
+     true size and redrawn from the vectors, sharp at whatever scale you landed
+     on. The expensive redraw happens once, on a map that is standing still,
+     instead of on every notch of the wheel. */
+  useEffect(() => {
+    if (crisp === zoom) return;
+    const t = setTimeout(() => setCrisp(zoom), 170);
+    return () => clearTimeout(t);
+  }, [zoom, crisp]);
 
   const pick = useCallback((c, r) => { if (!moved.current) selRef.current(c, r); }, []);
 
@@ -4381,17 +4397,20 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
         onClick={pickAt}
         onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}>
         <div className="cc-mapstack" style={{ width: MAPW * zoom, height: MAPH * zoom }}>
-        {/* Zoom is a transform on this box, not a new width on the maps
-            underneath it. Resizing the SVGs made the browser re-rasterise
-            eight and a half thousand hexes, their filters and their labels on
-            every wheel notch; a transform is composited instead, and BaseMap's
-            props stop changing so React skips it entirely. Measured: the task
-            time of a dozen zoom steps fell from 162ms to a few. */}
-        <div className="cc-mapzoom" style={{ width: MAPW, height: MAPH, transform: `scale(${zoom})` }}>
-        <BaseMap w={MAPW} h={MAPH} provinces={staticProvinces}
+        {/* Mid-gesture the zoom is a transform on this box rather than a new
+            width on the maps underneath it. Resizing the SVGs makes the browser
+            re-rasterise eight and a half thousand hexes, their filters and
+            their labels; doing that on every wheel notch is what made zooming
+            drag. A transform is composited instead, and BaseMap's props stop
+            changing so React skips it entirely. The ratio is zoom over crisp,
+            so the moment the settle above catches up this is scale(1) and the
+            maps are drawn at their true size. */}
+        <div className="cc-mapzoom"
+          style={{ width: MAPW * crisp, height: MAPH * crisp, transform: `scale(${zoom / crisp})` }}>
+        <BaseMap w={MAPW * crisp} h={MAPH * crisp} provinces={staticProvinces}
           cells={cells} glyphs={glyphs} />
         <svg viewBox={`0 0 ${MAPW} ${MAPH}`} className="cc-worldmap cc-overmap"
-          style={{ width: MAPW, height: MAPH }}
+          style={{ width: MAPW * crisp, height: MAPH * crisp }}
           role="img" aria-label="Map of post-Collapse Europe">
           <defs>
             <radialGradient id="sea" cx="42%" cy="28%" r="90%">

@@ -80,6 +80,22 @@ await page.waitForSelector("svg.cc-worldmap", { timeout: 30000 });
 await wait(1500);
 
 check("the world renders", await page.evaluate(() => !!document.querySelector("svg.cc-basemap")));
+
+// A zoom gesture is a composited transform, which is what makes it cheap —
+// and what left the map soft when it stopped, because a scaled layer is the
+// old pixels stretched. Once the gesture settles the maps have to be drawn at
+// the scale they are being shown at, or zooming in looks blocky.
+await page.mouse.move(700, 450);
+for (let i = 0; i < 8; i++) { await page.mouse.wheel({ deltaY: -220 }); await wait(70); }
+await wait(700);
+const sharp = await page.evaluate(() => {
+  const b = document.querySelector("svg.cc-basemap");
+  return { drawn: +b.getAttribute("width"), shown: b.getBoundingClientRect().width };
+});
+check("the map redraws sharp at the zoom you stop on", Math.abs(sharp.drawn - sharp.shown) < 2,
+  `drawn ${Math.round(sharp.drawn)}px, shown at ${Math.round(sharp.shown)}px`);
+for (let i = 0; i < 8; i++) { await page.mouse.wheel({ deltaY: 220 }); await wait(70); }
+await wait(500);
 await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77);
 await wait(300);
 check("a province can be selected",
