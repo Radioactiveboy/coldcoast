@@ -4328,25 +4328,32 @@ const RealmLayer = React.memo(function RealmLayer({ provinces, cells, seen }) {
             {/* Up to three worksites on one hex. Any more than one and they all
                 shrink and spread along the bottom of the tile, because three
                 full-size marks stacked on a 16px hex bury the ground under
-                them and you can no longer see what you are standing on. */}
+                them and you can no longer see what you are standing on.
+
+                A seat is tighter again: the crest wants the middle of the hex
+                and so did the worksites, so a yard at a capital was drawn half
+                behind the ring and half over the tile edge. They are stacked
+                instead — crest in the upper half, works in a row along the
+                bottom — and the rank pips move inside the crest, which is
+                where a rank belongs anyway. */}
             {buildsOf(p).map((bld, i, all) => {
-              const many = all.length > 1 || !!p.capital;
-              const spread = all.length > 1 ? (i - (all.length - 1) / 2) * 9.5 : 0;
+              const seat = !!p.capital;
+              const spread = all.length > 1 ? (i - (all.length - 1) / 2) * (seat ? 8 : 9.5) : 0;
               return (
                 <BuildingMark key={bld.id} b={bld.id} left={bld.left} damaged={bld.damaged}
-                  small={many} tiny={all.length > 2}
-                  x={(p.capital ? cx + 10 : cx) + spread}
-                  y={p.capital ? cy - 9 : cy + (all.length > 1 ? 3 : 0)} />
+                  small={seat || all.length > 1} tiny={all.length > 2 || (seat && all.length > 1)}
+                  x={cx + spread}
+                  y={seat ? cy + 8 : cy + (all.length > 1 ? 3 : 0)} />
               );
             })}
             {p.capital && (
               <g>
-                <circle cx={cx} cy={cy} r="9.6" fill="#0a1015" stroke={col} strokeWidth="1.8" />
+                <circle cx={cx} cy={cy - 5.5} r="8.4" fill="#0a1015" stroke={col} strokeWidth="1.7" />
                 {Array.from({ length: seatTier(p) }, (_, i) => (
-                  <circle key={i} cx={cx - 6 + i * 4} cy={cy + 12.5} r="1.5" fill={col} />
+                  <circle key={i} cx={cx - 4 + i * 4} cy={cy + 0.6} r="1.15" fill={col} />
                 ))}
-                <g transform={`translate(${cx - 6.4},${cy - 6.4}) scale(0.53)`} stroke={col}
-                  strokeWidth="2.6" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                <g transform={`translate(${cx - 5.4},${cy - 11.4}) scale(0.45)`} stroke={col}
+                  strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round">
                   <SigilMarks id={p.owner} />
                 </g>
               </g>
@@ -4465,6 +4472,10 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
       const seat = !!p.capital;
       out.push({
         k: key(p.c, p.r), n, x, cy: y, seat,
+        // A seat with worksites on it needs its name further out again: the
+        // crest is in the top half and the works are along the bottom, and the
+        // name was printing straight over them.
+        works: buildsOf(p).length > 0,
         col: p.owner ? FACTION[p.owner].color : "#f0e2b8",
         w: n.length * (seat ? 5.3 : 4.2),
       });
@@ -4750,13 +4761,15 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
       Math.abs(q.y - y) < 12 && Math.abs(q.x - x) < (q.w + w) / 2 + 6);
     placeLabels.forEach((l) => {
       // A seat carries a crest, so its name starts further out.
-      const slots = l.seat ? [22, -23, 32, -33, 42, -43] : [14, -15, 26, -27, 38, -39];
+      const slots = l.seat
+        ? (l.works ? [29, -30, 39, -40, 49, -50] : [22, -23, 32, -33, 42, -43])
+        : [14, -15, 26, -27, 38, -39];
       for (const dy of slots) {
         const y = l.cy + dy;
         if (!onArmy(l.x, y, l.w) && !onLabel(l.x, y, l.w)) { out.push({ ...l, y }); return; }
       }
       // A capital is never dropped; it takes the first slot regardless.
-      if (l.seat) out.push({ ...l, y: l.cy + 22 });
+      if (l.seat) out.push({ ...l, y: l.cy + (l.works ? 29 : 22) });
     });
     return out;
   }, [placeLabels, armySpots, labels]);
