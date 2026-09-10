@@ -13,7 +13,11 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 5: buildings became chains — a build carries the level it has been taken to
+/* 6: the wild has things in it now — about a third of the woods hold a feral
+   herd, and every realm opens with a Waster host marching at its seat. A
+   version 5 save has neither, so it would load into a world that is quietly
+   emptier than the rules assume.
+   5: buildings became chains — a build carries the level it has been taken to
    and, at the top, which fork was chosen. A version 4 save has neither, and
    every building in it would silently read as level one for ever.
    4: a province's single building/buildLeft/damaged became a builds array, so
@@ -25,7 +29,7 @@ export const SAVE_KEY = "coldcoast.save";
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight
@@ -34,7 +38,7 @@ export const SAVE_VERSION = 5;
    the AI has already started is part of the position — dropping it would hand
    the player a free escape. */
 const TRANSIENT = {
-  sel: null, tree: false, seat: null, lords: false, showCodex: false, district: null,
+  sel: null, tree: false, seat: null, lords: false, showCodex: false, district: null, intro: false,
   recruit: null, survey: null, lair: null, focus: null, notices: [],
   screen: null,
 };

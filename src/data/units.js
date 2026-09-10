@@ -96,6 +96,19 @@ export const UNITS = {
     scrap: 0, moraleBase: 130, press: 1.3,
     desc: "Three centuries in the wet dark under the ruins did something, and it kept doing it. What comes up the stairwell is the wrong shape and there is a great deal of it.",
   },
+  /* Not a company at all. Dogs that went back to being wolves, and the things
+     that live off what a dead continent left lying about. They are quick and
+     they will take a lone scouting party apart, but they have no armour, no
+     shot and no reason to die for anything: put arrows into them from thirty
+     yards and they remember they are animals. `beast` is what the combat code
+     reads for that — a side that is mostly beasts is far more vulnerable to
+     whatever you can shoot at it. */
+  feralherd: {
+    name: "Feral Herd", tier: "tribal", only: "beasts", role: "Teeth in the treeline",
+    size: 150, melee: 8, ranged: 0, def: 2, food: 0, powder: 0,
+    scrap: 0, moraleBase: 48, press: 1.15, beast: true,
+    desc: "Boar gone huge on three centuries of nobody hunting them, dogs that forgot which side they were on, and whatever has been eating both. They hold a wood the way weather holds a hill.",
+  },
   riflemen: {
     name: "Riflemen", tier: "vault", needs: "vaultcraft", role: "Killing at distance",
     size: 90, melee: 5, ranged: 22, def: 13, food: 3, powder: 3,

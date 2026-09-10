@@ -901,7 +901,7 @@ function unitStats(u) {
     def: d.def + ag.def,
     powder: d.powder || 0,
     food: d.food, fuel: d.fuel || 0,
-    antiCav: d.antiCav || 1, cav: !!d.cav, siege: !!d.siege,
+    antiCav: d.antiCav || 1, cav: !!d.cav, siege: !!d.siege, beast: !!d.beast,
     speedBonus: d.speed || 0, hold: d.hold || 1, press: d.press || 1,
   };
 }
@@ -983,6 +983,12 @@ const LAIR_KINDS = {
     garrison: ["fleshhorde", "fleshhorde", "fleshhorde"],
     loot: { scrap: 30, powder: 18 },
   },
+  herd: {
+    faction: "beasts", title: "Something is already using this wood",
+    text: "Runs pushed through the bracken, a kill dragged up into the roots of a fallen oak, and the birds all going quiet at once. Nothing here wants to talk to you and nothing here is afraid of you.",
+    garrison: ["feralherd", "feralherd"],
+    loot: { food: 45 },
+  },
   barricade: {
     faction: "wasters", title: "The street is walled off",
     text: "Cars stacked three high across the approach, loopholed, with a gate that opens from behind. Whoever holds it has powder and is not interested in talking about terms.",
@@ -1018,6 +1024,11 @@ const MINORS = {
     name: "The Wasters", short: "Wasters", color: "#b5793f", defBonus: 10, roaming: true,
     blurb: "Nobody's people. They hold a ruin until it is emptied and then they walk to the next one.",
     trait: "They hold what they are sitting on and take what is not nailed down. There is nothing to negotiate.",
+  },
+  beasts: {
+    name: "The Feral Herds", short: "Feral herd", color: "#9a7a4a", defBonus: 8,
+    blurb: "Three hundred years with nobody hunting them, and the woods belong to what lives in them.",
+    trait: "They hold the wood they are in and nothing more. Bring bows: they have no armour and no stomach for a fight they are losing.",
   },
   changed: {
     name: "The Changed", short: "Changed", color: "#8a5fa0", defBonus: 20,
@@ -1733,6 +1744,14 @@ function neighbours(c, r) {
     .filter(([x, y]) => x >= 0 && x < W && y >= 0 && y < H);
 }
 
+/* Distance in hexes, through the cube coordinates an odd-r grid is really
+   made of. Only the marching host needs it, and it needs it every season. */
+function hexDist(c1, r1, c2, r2) {
+  const x1 = c1 - ((r1 - (r1 & 1)) >> 1), z1 = r1, y1 = -x1 - z1;
+  const x2 = c2 - ((r2 - (r2 & 1)) >> 1), z2 = r2, y2 = -x2 - z2;
+  return (Math.abs(x1 - x2) + Math.abs(y1 - y2) + Math.abs(z1 - z2)) / 2;
+}
+
 // Land that touches open sea or a great lake can take works no inland
 // province can. Sea and void are not provinces, so we read the map directly.
 function coastal(c, r) {
@@ -1806,11 +1825,18 @@ function buildWorld() {
     });
   }
 
-  // Some ruins are occupied. Which ones is not visible until surveyed.
+  /* Some ruins are occupied, and so is about a third of the woodland. Which is
+     which is not visible until somebody walks in and finds out — the roll is
+     made here rather than at the moment of investigating so that a wood is the
+     same wood every time the world is drawn, and so a save carries it.
+
+     Herds do not add to a tile's population. They are not people. */
   Object.values(provinces).forEach((q) => {
     const named = NAMED_LAIRS[key(q.c, q.r)];
     if (named) { q.lair = named; q.pop += POP_LAIR[named] || 0; return; }
-    if (q.t !== "r" || q.owner) return;
+    if (q.owner) return;
+    if (q.t === "f" && noise(q.c * 6.7, q.r * 13.1, 47) < 0.34) { q.lair = "herd"; return; }
+    if (q.t !== "r") return;
     if (noise(q.c * 11.3, q.r * 7.7, 31) < 0.34) {
       q.lair = noise(q.r * 5.1, q.c * 9.4, 32) < 0.42 ? "changed" : "wasters";
       q.pop += POP_LAIR[q.lair] || 0;
@@ -1963,7 +1989,7 @@ function nationIncome(state, natId, turn) {
 
 /* ------------------------------- COMBAT ----------------------------------- */
 function sidePower(units, stance, hasPowder) {
-  let melee = 0, ranged = 0, defSum = 0, strSum = 0, cavStr = 0, antiCav = 0;
+  let melee = 0, ranged = 0, defSum = 0, strSum = 0, cavStr = 0, antiCav = 0, beastStr = 0;
   units.forEach((u) => {
     const s = unitStats(u);
     const xpMul = 1 + u.xp * 0.08;
@@ -1974,12 +2000,17 @@ function sidePower(units, stance, hasPowder) {
     strSum += u.str;
     if (s.cav) cavStr += u.str;
     if (s.antiCav > 1) antiCav += u.str;
+    if (s.beast) beastStr += u.str;
   });
   const avgDef = strSum ? defSum / strSum : 0;
   // Only so many men can reach the fighting at once. Beyond that you have depth,
   // not more firepower — which is what stops a small edge snowballing into a rout.
   const front = Math.min(1, FRONTAGE / Math.max(1, strSum));
-  return { melee: melee * front, ranged: ranged * front, avgDef, strSum, cavStr, antiCav };
+  // rangedShare is kept unstanced: it says what this side IS, not what it is
+  // doing this round, and that is what decides how it fares against animals.
+  const rangedShare = melee + ranged > 0 ? ranged / (melee + ranged) : 0;
+  return { melee: melee * front, ranged: ranged * front, avgDef, strSum, cavStr, antiCav,
+           beastFrac: strSum ? beastStr / strSum : 0, rangedShare };
 }
 const FRONTAGE = 340;
 
@@ -2038,6 +2069,15 @@ function resolveRound(bt) {
   // Cavalry charges bite unless pikes are waiting.
   if (A.cavStr > 0 && D.antiCav < D.strSum * 0.3) aOut *= 1.25;
   if (D.cavStr > 0 && A.antiCav < A.strSum * 0.3) dOut *= 1.25;
+
+  /* Animals against arrows. A beast has no armour, no shot and no reason to
+     stand in the open being hit from thirty yards, so a side that is mostly
+     beasts suffers by exactly as much as its enemy can shoot: a warband of
+     hunters roughly doubles its output, a warband of axemen gains nothing and
+     has to go in among the teeth. */
+  const BEAST_BOW = 1.15;
+  if (D.beastFrac > 0.5) aOut *= 1 + BEAST_BOW * A.rangedShare;
+  if (A.beastFrac > 0.5) dOut *= 1 + BEAST_BOW * D.rangedShare;
 
   // Standing off and shooting denies the defender much of their ground advantage.
   const groundMul = aStance.ignoresGround || 1;
@@ -2112,6 +2152,17 @@ function resolveRound(bt) {
 }
 
 
+/* "40 rations, 60 scrap and 120 recruits" — used for both a lair's hoard and
+   whatever a broken band was carrying, so the two read the same in the log. */
+function spoilsText(bag) {
+  const parts = Object.entries(bag || {})
+    .filter(([, v]) => v > 0)
+    .map(([k, v]) => `${v} ${RES_META.find((r) => r.k === k)?.label.toLowerCase() || k}`);
+  if (!parts.length) return "";
+  const last = parts.pop();
+  return `Taken from them: ${parts.length ? `${parts.join(", ")} and ${last}` : last}.`;
+}
+
 function makeBattle(provinces, nations, armies, aId, dId, k) {
   const attacker = armies.find((a) => a.id === aId);
   const defender = armies.find((a) => a.id === dId);
@@ -2170,6 +2221,43 @@ function initialState() {
       mp: baseMove(id), maxMp: baseMove(id),
     });
   });
+  /* Every realm opens with a Waster host three days' march away and every
+     intention of being at the gate. It is a deadline rather than a decoration:
+     left alone it walks in and sacks the seat. It is also the game's first
+     lesson — small enough to beat with what you start with, big enough that
+     losing companies to it hurts, and it is carrying a string of captives and
+     a season's takings that go to whoever breaks it. */
+  NATION_IDS.forEach((id) => {
+    const cap = NATIONS[id].cap;
+    const capK = key(cap[0], cap[1]);
+    let ring = [[cap[0], cap[1]]];
+    const seen = new Set([capK]);
+    for (let step = 0; step < 3; step++) {
+      const next = [];
+      ring.forEach(([c, r]) => neighbours(c, r).forEach(([x, y]) => {
+        const k2 = key(x, y);
+        if (seen.has(k2)) return;
+        seen.add(k2);
+        if (w.provinces[k2]) next.push([x, y]);
+      }));
+      if (next.length) ring = next;
+    }
+    const at = ring.find(([c, r]) => { const q = w.provinces[key(c, r)]; return q && !q.owner; }) || ring[0];
+    if (!at) return;
+    armies.push({
+      id: `mob${id}`, owner: "wasters", mob: true, target: capK,
+      c: at[0], r: at[1], name: "The Rendfast Host",
+      units: [
+        makeUnit("axemen", "wasters", `mob${id}a`),
+        makeUnit("axemen", "wasters", `mob${id}b`),
+        makeUnit("hunters", "wasters", `mob${id}c`),
+      ],
+      mp: 0, maxMp: 3,
+      spoils: { men: 140, scrap: 70, food: 30 },
+      spoilText: "Their captives are cut loose and their carts are yours: 140 recruits, 70 scrap and 30 rations.",
+    });
+  });
+
   SEATED_MINORS.forEach((id) => {
     const m = MINORS[id];
     armies.push({
@@ -2187,7 +2275,7 @@ function initialState() {
   return {
     turn: 1, player: null, ...w, war, armies, uid,
     sel: null, battle: null, log: [], recruit: null, over: null,
-    showCodex: false, district: null, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, notices: [], focus: null, sound: { music: true, sfx: true },
+    showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, notices: [], focus: null, sound: { music: true, sfx: true },
   };
 }
 const baseMove = (natId) => (natId === "lyon" || natId === "horde" ? 6 : 5);
@@ -2323,7 +2411,8 @@ export default function ColdCoast() {
       }); }}
       onBegin={() => { Sound.wake(); Sound.play("turn"); setGame((g) => ({ ...g, begun: true })); }} />
   );
-  if (!P) return <NationPicker onPick={(id) => { Sound.wake(); setGame((g) => ({ ...g, player: id })); }} />;
+  if (!P) return <NationPicker onPick={(id) => { Sound.wake();
+    setGame((g) => ({ ...g, player: id, intro: true })); }} />;
 
   /* --------------------------- ACTION HANDLERS --------------------------- */
   const push = (m) => setGame((g) => ({ ...g, log: [{ turn: g.turn, m }, ...g.log].slice(0, 60) }));
@@ -2462,6 +2551,24 @@ export default function ColdCoast() {
       nations[b.aNat] = { ...nations[b.aNat], res: { ...nations[b.aNat].res, powder: Math.max(0, b.aPowder) } };
       nations[b.dNat] = { ...nations[b.dNat], res: { ...nations[b.dNat].res, powder: Math.max(0, b.dPowder) } };
 
+      /* Some bands are carrying something — the opening Waster host has a
+         string of captives and a cart of scrap behind it. Break the band and
+         you get what it was carrying. */
+      let spoilMsg = "";
+      const gone = [["a", b.aArmy, b.dNat], ["d", b.dArmy, b.aNat]];
+      gone.forEach(([side, id, toNat]) => {
+        // Beaten, not necessarily annihilated. Companies that rout still walk
+        // away, so waiting for the last man would mean the captives were almost
+        // never cut loose — losing the field is what loses you what you carry.
+        if (b.winner === side || b.stalemate) return;
+        const dead = g.armies.find((a) => a.id === id);
+        if (!dead || !dead.spoils || !nations[toNat]) return;
+        const res = { ...nations[toNat].res };
+        Object.entries(dead.spoils).forEach(([rk, v]) => { res[rk] = (res[rk] || 0) + v; });
+        nations[toNat] = { ...nations[toNat], res };
+        if (toNat === g.player) spoilMsg = ` ${dead.spoilText || spoilsText(dead.spoils)}`;
+      });
+
       armies = armies.map((a) => {
         if (a.id === b.aArmy) return { ...a, units: aUnits, mp: 0 };
         if (a.id === b.dArmy) return { ...a, units: dUnits };
@@ -2493,9 +2600,21 @@ export default function ColdCoast() {
           const tp = { ...provinces[tk] };
           const prev = tp.owner;
           tp.owner = b.aNat; if (tp.capital) tp.capital = false;
+          /* What was in there. This was being written onto the province when a
+             lair was found and then never paid to anybody — clearing a waster
+             hold gave you the ground and nothing else, which is not what the
+             text on the screen said it would. */
+          let took = "";
+          if (tp.loot && nations[b.aNat]) {
+            const res = { ...nations[b.aNat].res };
+            Object.entries(tp.loot).forEach(([rk, v]) => { res[rk] = (res[rk] || 0) + v; });
+            nations[b.aNat] = { ...nations[b.aNat], res };
+            took = " " + spoilsText(tp.loot);
+            tp.loot = null;
+          }
           provinces[tk] = tp;
           armies = armies.map((a) => (a.id === b.aArmy ? { ...a, c: b.hex.c, r: b.hex.r } : a));
-          msg = `${nations[b.aNat].short} storms ${b.provName}${prev ? `, wresting it from ${nations[prev].short}` : ""}.`;
+          msg = `${nations[b.aNat].short} storms ${b.provName}${prev ? `, wresting it from ${nations[prev].short}` : ""}.${took}`;
         } else if (loser && attacker) {
           // push the defender back to an adjacent friendly or empty hex
           const spot = neighbours(loser.c, loser.r).find(([x, y]) => {
@@ -2519,7 +2638,7 @@ export default function ColdCoast() {
         if (built) { next = built; rest = queue.slice(i + 1); break; }
       }
 
-      const entries = [{ turn: g.turn, m: msg }];
+      const entries = [{ turn: g.turn, m: msg + spoilMsg }];
       if (msgLord) { entries.unshift({ turn: g.turn, m: msgLord }); if (b.aNat === g.player || b.dNat === g.player) Sound.play("lose"); }
       return {
         ...g, armies, nations, provinces, battle: next, sel: null, pending: rest,
@@ -3257,12 +3376,71 @@ export default function ColdCoast() {
 
       armies = armies.filter((a) => a.units.length > 0);
 
+      /* --- the host that came for the seat ---
+         It does not wander and it does not raid on the way. It walks at the
+         capital it was made for, and when it arrives it either fights whoever
+         is standing there or sacks the place and falls back to do it again.
+         It never takes the seat: a mob of three companies cannot hold a city,
+         and a tutorial that ends the game is not a tutorial. */
+      armies.filter((a) => a.mob && a.units.length).forEach((a) => {
+        const tgt = provinces[a.target];
+        if (!tgt) return;
+        a.route = [[a.c, a.r]];
+        let mp = a.maxMp || 3, guard = 0;
+        while (mp > 0 && guard++ < 4 && hexDist(a.c, a.r, tgt.c, tgt.r) > 0) {
+          const step = neighbours(a.c, a.r).map(([x, y]) => provinces[key(x, y)]).filter(Boolean)
+            .filter((q) => TERRAIN[q.t].move <= mp)
+            .sort((x, y) => hexDist(x.c, x.r, tgt.c, tgt.r) - hexDist(y.c, y.r, tgt.c, tgt.r))[0];
+          if (!step || hexDist(step.c, step.r, tgt.c, tgt.r) >= hexDist(a.c, a.r, tgt.c, tgt.r)) break;
+          const held = armies.find((z) => z.c === step.c && z.r === step.r && z.owner !== a.owner && z.units.length);
+          if (held) {
+            // Somebody is in the way. That is the fight, wherever it happens.
+            if (held.owner === g.player) pending.push({ aId: a.id, dId: held.id, k: key(step.c, step.r) });
+            mp = 0;
+            break;
+          }
+          mp -= TERRAIN[step.t].move;
+          a.c = step.c; a.r = step.r;
+          a.route.push([step.c, step.r]);
+        }
+        a.seq = (a.seq || 0) + 1;
+        if (a.route.length < 2) a.route = null;
+        if (hexDist(a.c, a.r, tgt.c, tgt.r) !== 0) return;
+
+        const guardArmy = armies.find((z) => z.c === a.c && z.r === a.r && z.owner === tgt.owner && z.units.length);
+        if (guardArmy) {
+          if (tgt.owner === g.player) pending.push({ aId: a.id, dId: guardArmy.id, k: a.target });
+          return;
+        }
+        // Nobody home. They take what a seat has and go back out to the edge.
+        const vn = nations[tgt.owner];
+        if (vn) {
+          const men = Math.min(90, Math.max(0, Math.floor((tgt.pop || 0) * 0.05)));
+          const res4 = { ...vn.res };
+          res4.food = Math.max(0, res4.food - 45);
+          res4.scrap = Math.max(0, res4.scrap - 40);
+          nations[tgt.owner] = { ...vn, res: res4 };
+          provinces[a.target] = { ...tgt, pop: Math.max(0, (tgt.pop || 0) - men) };
+          const rn = nations[a.owner];
+          if (rn) nations[a.owner] = { ...rn, res: { ...rn.res, men: (rn.res?.men || 0) + men } };
+          a.spoils = { men: (a.spoils?.men || 0) + men, scrap: (a.spoils?.scrap || 0) + 40,
+                       food: (a.spoils?.food || 0) + 45 };
+          if (tgt.owner === g.player) {
+            newLog.push({ turn: g.turn, m: `The Rendfast Host walks into ${tgt.name} unopposed and helps itself.` });
+            notice("raid", `The Rendfast Host has sacked ${tgt.name}. They took 45 rations, 40 scrap and ${men} of your people.`, a.target);
+          }
+        }
+        const back = neighbours(a.c, a.r).find(([x, y]) => provinces[key(x, y)]
+          && !armies.some((z) => z.c === x && z.r === y && z.owner !== a.owner));
+        if (back) { a.c = back[0]; a.r = back[1]; a.route = null; a.seq = (a.seq || 0) + 1; }
+      });
+
       // --- the Wasters ---
       // They do not claim ground. They walk to whoever has something worth
       // taking, and take it. Everyone is free to go and kill them.
       {
         const claimed = NATION_IDS.reduce((n, x) => n + (heldNow[x] || 0), 0);
-        const bands = armies.filter((a) => a.owner === "wasters" && !a.lairBound);
+        const bands = armies.filter((a) => a.owner === "wasters" && !a.lairBound && !a.mob);
         const want = Math.min(7, Math.floor(claimed / 55));
         if (bands.length < want && Math.random() < 0.4) {
           const wild = Object.values(provinces).filter((q) => !q.owner && q.explored === false);
@@ -3280,7 +3458,7 @@ export default function ColdCoast() {
           }
         }
 
-        armies.filter((a) => a.owner === "wasters" && !a.lairBound).forEach((a) => {
+        armies.filter((a) => a.owner === "wasters" && !a.lairBound && !a.mob).forEach((a) => {
           // They never settle. Every winter they move on, and they will not
           // walk back over ground they have just stripped.
           a.recent = (a.recent || []).slice(-5);
@@ -3626,6 +3804,10 @@ export default function ColdCoast() {
       {game.tree && (
         <TechTree game={game} P={P} onResearch={research}
           onClose={() => setGame((g) => ({ ...g, tree: false }))} />
+      )}
+      {game.intro && (
+        <OpeningScene game={game} P={P}
+          onClose={() => setGame((g) => ({ ...g, intro: false }))} />
       )}
       {game.district && game.provinces[game.district] && (
         <DistrictPanel game={game} P={P} prov={game.provinces[game.district]}
@@ -4868,6 +5050,18 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
   useEffect(() => {
     if (typeof window !== "undefined") window.__ccPick = (c, r) => selRef.current(c, r);
     if (typeof window !== "undefined") window.__ccHeard = () => Sound.heard();
+    /* For the smoke test: how much of the wild is actually holding something.
+       There is no way to check the spawn rate by playing — you would have to
+       walk into every wood on the continent. */
+    if (typeof window !== "undefined") window.__ccWild = () => {
+      const all = Object.values(game.provinces);
+      const woods = all.filter((p) => p.t === "f" && !p.owner);
+      return {
+        woods: woods.length,
+        herds: woods.filter((p) => p.lair === "herd").length,
+        mobs: game.armies.filter((a) => a.mob).length,
+      };
+    };
   }, []);
 
   // The wheel writes zoomRef itself mid-gesture; this keeps it true for every
@@ -7852,6 +8046,67 @@ function WarlordScreen({ game, P, onClose }) {
 
 
 /* ------------------------------ SURVEY MODAL ------------------------------ */
+/* The first thing a player sees after taking the banner. It exists to do two
+   jobs at once: say where they are and what year it is, and put something on
+   the map that has to be dealt with. A strategy game that opens on an empty
+   continent teaches nothing. */
+function OpeningScene({ game, P, onClose }) {
+  const nat = game.nations[P];
+  const seat = Object.values(game.provinces).find((p) => p.capital && p.seat === P);
+  const host = game.armies.find((a) => a.mob && a.target === (seat ? key(seat.c, seat.r) : null));
+  const away = host && seat ? hexDist(host.c, host.r, seat.c, seat.r) : 3;
+  return (
+    <Overlay onClose={onClose}>
+      <div className="cc-w-720px cc-max-w-94vw rounded-lg border cc-border-31454f cc-bg-0d141a overflow-hidden">
+        <div className="px-5 py-3.5 border-b cc-border-28363f flex items-center gap-3"
+          style={{ background: "linear-gradient(90deg,#1c1410,#0d141a)" }}>
+          <Flame size={18} className="cc-text-e8b98a" />
+          <div className="disp cc-text-20px flex-1">Riders came in before dawn</div>
+        </div>
+        <div className="p-5 cc-text-14px leading-relaxed cc-text-c3d5de grid gap-3">
+          <p>
+            Three hundred years since the water went out. The sea dropped and kept dropping,
+            and what it left behind — the Dogger flats, the dry floor of the narrows — is
+            walkable now, and everyone has worked that out at once.
+          </p>
+          <p>
+            You are {WARLORDS[P]?.name || "the headsman"}, and {seat ? seat.name : "your seat"} is yours
+            because nobody stronger has come for it yet. That changed this morning.
+          </p>
+          <p className="cc-text-e8b98a">
+            The Rendfast Host is {away} {away === 1 ? "hex" : "hexes"} out and walking straight at you.
+            Four score of them, axes and a few bows, and a line of people roped behind the carts
+            who used to live somewhere like this. They do not besiege and they do not treat.
+            They arrive, they take what a season took to make, and they go back out for more.
+          </p>
+          <div className="rounded border cc-border-31454f cc-bg-131f27 px-3.5 py-3">
+            <div className="disp cc-text-15px cc-text-e5eef3 mb-1">What that means for you</div>
+            <p className="cc-text-13px cc-text-a0b6c1 leading-relaxed">
+              Leave them and they will walk into {seat ? seat.name : "your seat"} and help themselves —
+              rations, scrap, and your people off the muster roll. Break them and you get the lot back
+              and the captives besides: <span className="cc-text-9fd6b4 num">140 recruits</span>,{" "}
+              <span className="cc-text-9fd6b4 num">70 scrap</span> and{" "}
+              <span className="cc-text-9fd6b4 num">30 rations</span>.
+              You have{" "}<span className="num">{game.armies.filter((a) => a.owner === P).length}</span>{" "}
+              warbands standing at the seat. That is enough, if you use both.
+            </p>
+          </div>
+          <p className="cc-text-12d5px cc-text-93a9b5">
+            And keep your outriders out of the deep woods until you can spare the losses. There is
+            more living in them than trees.
+          </p>
+        </div>
+        <div className="px-5 pb-5">
+          <button type="button" onClick={onClose}
+            className="w-full py-2.5 rounded cc-bg-2a3a4a cc-hover-bg-35495c border cc-border-4d7488 cc-text-dfeaf0 disp cc-text-15px transition-colors">
+            Call the muster
+          </button>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
 function LairModal({ lair, prov, onClose }) {
   const kind = LAIR_KINDS[lair.kind];
   const f = FACTION[kind.faction];
@@ -7871,7 +8126,8 @@ function LairModal({ lair, prov, onClose }) {
             <div className="flex-1 min-w-0">
               <div className="disp cc-text-16px" style={{ color: f.color }}>{f.name}</div>
               <div className="cc-text-12d5px cc-text-93a9b5">
-                {kind.garrison.length} companies, dug in. They hold the ruin until somebody takes it off them.
+                {kind.garrison.length} companies, dug in. They hold the{" "}
+                {lair.kind === "herd" ? "wood" : "ruin"} until somebody takes it off them.
               </div>
             </div>
           </div>

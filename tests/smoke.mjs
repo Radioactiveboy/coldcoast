@@ -76,6 +76,11 @@ const box = await banner.boundingBox();
 check("the banner button can be reached by scrolling", await onScreen(),
   box ? `bottom ${Math.round(box.y + box.height)} of ${vh}` : "no box");
 await banner.click();
+await wait(900);
+// The opening scene stands between the picker and the map now.
+check("the opening scene names the threat", await page.evaluate(() =>
+  /Rendfast Host/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || "")));
+await click("Call the muster");
 await page.waitForSelector("svg.cc-worldmap", { timeout: 30000 });
 await wait(1500);
 
@@ -91,6 +96,15 @@ const fogTones = await page.evaluate(() => new Set(
 check("unexplored ground still shows its shape", fogTones > 4, `${fogTones} tones`);
 check("the ground carries its names", await page.evaluate(() =>
   document.querySelectorAll(".cc-mapname").length) > 8);
+
+// About a third of the woodland is holding a feral herd, which is the thing
+// that stops early scouting being a walk. There is no way to check a spawn
+// rate by playing it — you would have to walk into every wood in Europe.
+const wild = await page.evaluate(() => window.__ccWild && window.__ccWild());
+check("a third of the woods are held by something",
+  !!wild && wild.herds / Math.max(1, wild.woods) > 0.25 && wild.herds / wild.woods < 0.45,
+  wild ? `${wild.herds} herds in ${wild.woods} woods` : "no hook");
+check("every realm has a host walking at it", !!wild && wild.mobs >= 7, `${wild?.mobs} hosts`);
 
 // The ambience is synthesised and there is no way to hear a headless browser,
 // so check the plumbing instead: the layers exist, the season moves the wind,
@@ -108,6 +122,45 @@ await wait(1500);
 const airShore = await heard();
 check("a shore brings up the sea", !!airShore && airShore.coast && airShore.sea > 0.002,
   airShore ? `sea ${airShore.sea}` : "no ambience running");
+
+/* Ending those seasons let the opening Waster host reach the seat, which is
+   exactly what it is for. Fight it here — a battle overlay left standing would
+   sit in front of every check below it, and beating them is where the captives
+   come from. */
+const purse = () => page.evaluate(() => {
+  const t = document.querySelector("header")?.innerText || "";
+  const g = (label) => {
+    const m = t.match(new RegExp("([\\d,]+)\\s*\\n?\\s*" + label, "i"));
+    return m ? +m[1].replace(/,/g, "") : 0;
+  };
+  return { scrap: g("Scrap"), food: g("Rations"), men: g("Recruits") };
+});
+const fightOut = async (rounds = 14) => {
+  for (let i = 0; i < rounds; i++) {
+    const t = await page.evaluate(() => document.body.innerText);
+    if (!/Give the order/.test(t)) break;
+    await click("Give the order"); await wait(320);
+    await click("Count the cost|Fight it out|Press on"); await wait(260);
+  }
+  await page.evaluate(() => {
+    const ov = document.querySelector(".fixed.inset-0.z-50");
+    if (ov) [...ov.querySelectorAll("button")].pop()?.click();
+  });
+  await wait(400);
+};
+const beforeHost = await purse();
+let metHost = await page.evaluate(() => /Give the order/.test(document.body.innerText));
+for (let i = 0; i < 6 && !metHost; i++) {
+  await click("End (spring|summer|autumn|winter)"); await wait(360);
+  metHost = await page.evaluate(() => /Give the order/.test(document.body.innerText));
+}
+check("the opening host comes for the seat", metHost);
+await fightOut();
+const afterHost = await purse();
+check("breaking a band gives up what it was carrying",
+  afterHost.men > beforeHost.men || afterHost.scrap > beforeHost.scrap,
+  `men ${beforeHost.men} -> ${afterHost.men}, scrap ${beforeHost.scrap} -> ${afterHost.scrap}`);
+
 
 // A zoom gesture is a composited transform, which is what makes it cheap —
 // and what left the map soft when it stopped, because a scaled layer is the
@@ -331,6 +384,9 @@ await click("End (spring|summer|autumn|winter)"); await wait(600);
 // Stand next to it and attack.
 await page.evaluate(() => window.__ccPick(21, 77)); await wait(140);
 await page.evaluate(() => window.__ccPick(20, 77)); await wait(200);
+// Clearing a lair pays out what was in it. The loot was being written onto the
+// province when the lair was found and then never given to anybody, so taking
+// a waster hold got you the ground and nothing else.
 const canAttack = await click("Attack the");
 await wait(700);
 const battle = await page.evaluate(() => ({
