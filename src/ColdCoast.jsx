@@ -197,6 +197,7 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-text-dfeaf0{color:#dfeaf0}
 .cc-text-ff8a72{color:#ff8a72}
 .cc-w-1020px{width:1020px}
+.cc-morebuilds{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:5.4px;font-weight:600}
 .cc-districtgrid{grid-template-columns:repeat(auto-fill,minmax(232px,1fr))}
 .cc-districtlist{grid-template-columns:repeat(auto-fill,minmax(228px,1fr))}
 .cc-slot{border-radius:8px;border:1px solid #2a3a44;padding:11px;min-height:104px;display:flex;flex-direction:column}
@@ -4673,16 +4674,41 @@ const RealmLayer = React.memo(function RealmLayer({ provinces, cells, seen }) {
                 instead — crest in the upper half, works in a row along the
                 bottom — and the rank pips move inside the crest, which is
                 where a rank belongs anyway. */}
-            {buildsOf(p).map((bld, i, all) => {
+            {(() => {
+              /* A district can hold six, and six marks will not go on a hex
+                 thirty pixels across without burying the ground they stand on.
+                 Three are drawn and the rest are counted — the district screen
+                 is where you look at a city properly. The three are the ones
+                 still being worked on and the wrecked ones first, because those
+                 are the ones you might do something about from here. */
+              const all = buildsOf(p);
               const seat = !!p.capital;
-              const spread = all.length > 1 ? (i - (all.length - 1) / 2) * (seat ? 8 : 9.5) : 0;
+              const order = all.slice().sort((a, b) =>
+                (b.damaged ? 2 : 0) + (b.left ? 1 : 0) - ((a.damaged ? 2 : 0) + (a.left ? 1 : 0)));
+              const shown = order.slice(0, 3);
+              const rest = all.length - shown.length;
+              const y = seat ? cy + 8 : cy + (shown.length > 1 ? 3 : 0);
+              const step = seat ? 8 : 9.5;
               return (
-                <BuildingMark key={bld.id} b={bld.id} left={bld.left} damaged={bld.damaged}
-                  small={seat || all.length > 1} tiny={all.length > 2 || (seat && all.length > 1)}
-                  x={cx + spread}
-                  y={seat ? cy + 8 : cy + (all.length > 1 ? 3 : 0)} />
+                <>
+                  {shown.map((bld, i) => (
+                    <BuildingMark key={bld.id + i} b={bld.id} left={bld.left} damaged={bld.damaged}
+                      small={seat || shown.length > 1} tiny={shown.length > 2 || (seat && shown.length > 1)}
+                      x={cx + (shown.length > 1 ? (i - (shown.length - 1) / 2) * step : 0)}
+                      y={y} />
+                  ))}
+                  {rest > 0 && (
+                    <g transform={`translate(${cx + ((shown.length - 1) / 2) * step + 9.5},${y - 4.5})`}>
+                      <rect x="-4.2" y="-3.3" width="8.4" height="6.6" rx="1.8"
+                        fill="#0a1015" stroke={col} strokeWidth="0.75" opacity="0.95" />
+                      <text x="0" y="2.1" textAnchor="middle" className="cc-morebuilds" fill={col}>
+                        +{rest}
+                      </text>
+                    </g>
+                  )}
+                </>
               );
-            })}
+            })()}
             {p.capital && (
               <g>
                 <circle cx={cx} cy={cy - 5.5} r="8.4" fill="#0a1015" stroke={col} strokeWidth="1.7" />
