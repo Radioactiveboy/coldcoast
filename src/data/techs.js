@@ -9,6 +9,11 @@ export const TECHS = {
     gives: ["Every field, marsh and steppe you hold feeds one more mouth"],
     yield: { food: 1 }, on: ["p", "s", "d", "c", "l"],
   },
+  hosting: {
+    name: "The long muster", short: "Long muster", turns: 4, scrap: 30, needs: ["foraging"],
+    desc: "Rolls of who owes what, where they sleep and who feeds them on the road. Keeping more than a few companies together is a clerical problem before it is a military one.",
+    gives: ["Warbands of up to ten companies instead of eight"],
+  },
   bowyery: {
     name: "Recurve bowyery", short: "Bowyery", turns: 3, scrap: 25, needs: ["foraging"],
     desc: "Horn, sinew and a winter of drying. Reach without powder.",
@@ -104,7 +109,7 @@ export const TECH_IDS = Object.keys(TECHS);
 export const TECH_TIERS = [
   { id: "tribal", name: "Tribal",
     desc: "What anyone can work out with horn, hide and a long winter.",
-    techs: ["foraging", "bowyery", "horsemanship", "coastworks", "scavenging"] },
+    techs: ["foraging", "hosting", "bowyery", "horsemanship", "coastworks", "scavenging"] },
   { id: "forged", name: "Forged",
     desc: "Ore out of the ground, and a fire hot enough to change it.",
     techs: ["smelting", "toolcraft", "dyking"] },

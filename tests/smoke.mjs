@@ -100,6 +100,26 @@ check("the tech tree opens from Consult the scholars", /TRIBAL/.test(tree));
 check("later tiers are shrouded at the start",
   /Learn \d+ more Tribal advance/.test(tree) && !/Bloomery|Vault craft/.test(tree),
   /Bloomery|Vault craft/.test(tree) ? "a locked tier is naming its advances" : "");
+check("the long muster is one of the tribal advances", /Long muster/.test(tree));
+
+// The tree has to read as a tree: every advance in view that needs something
+// must have a line drawn into it, and clicking one must light its own lines
+// so you can see what it opens. Both were asked for by name.
+const lit = () => page.evaluate(() => [...document.querySelectorAll("svg.cc-tree path")]
+  .filter((p) => p.getAttribute("stroke") === "#8fe3d6").length);
+const paths = await page.evaluate(() => document.querySelectorAll("svg.cc-tree path").length);
+const litBefore = await lit();
+await page.evaluate(() => {
+  const t = [...document.querySelectorAll("svg.cc-tree text")].find((x) => x.textContent === "Bowyery");
+  t?.closest("g").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+});
+// React commits on its own schedule; measuring in the same evaluate as the
+// click reads the old paint and the check can never fail.
+await wait(300);
+const litAfter = await lit();
+check("the tree draws its lines", paths > 4, `${paths} paths`);
+check("picking an advance lights the lines into it",
+  litBefore > 0 && litAfter > 0 && litAfter !== litBefore, `lit ${litBefore} -> ${litAfter}`);
 await page.evaluate(() => {
   const ov = document.querySelector(".fixed.inset-0.z-50");
   if (ov) ov.querySelector("button")?.click();

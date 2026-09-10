@@ -195,6 +195,7 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-text-dfeaf0{color:#dfeaf0}
 .cc-text-ff8a72{color:#ff8a72}
 .cc-w-1020px{width:1020px}
+.cc-mapzoom{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
 .cc-mapscroll{cursor:grab;background:#080d11;overscroll-behavior:contain;will-change:scroll-position}
 .cc-mapscroll:active{cursor:grabbing}
 .cc-maptools{right:12px;bottom:12px;background:rgba(10,16,21,.88);border:1px solid #31454f;border-radius:6px;padding:5px 7px;backdrop-filter:blur(4px)}
@@ -854,7 +855,7 @@ function techState(state, natId, id) {
   const missing = t.needs.filter((k) => !n.known?.[k]);
   if (missing.length) return { s: "locked", why: `Needs ${missing.map((k) => TECHS[k].name.toLowerCase()).join(" and ")}.` };
   if (!hasSite(state, natId, t)) return { s: "locked", why: `Needs ${t.site.label}.` };
-  if (n.research) return { s: "busy", why: "Your workshops are already on something else." };
+  if (n.research) return { s: "busy", why: "Your scholars are already on something else." };
   if (n.res.scrap < t.scrap) return { s: "poor", why: `Needs ${t.scrap} scrap.` };
   return { s: "open" };
 }
@@ -1230,6 +1231,11 @@ function reinforceCost(u, natId, atMuster) {
     scrap: Math.max(1, Math.round(full.scrap * share * mult)),
   };
 }
+/* How many companies will march under one banner. The long muster is a
+   clerical advance, not a military one: rolls, billets and who feeds whom. */
+const BAND_CAP = 8, BAND_CAP_LONG = 10;
+const bandCap = (nat) => (nat?.known?.hosting ? BAND_CAP_LONG : BAND_CAP);
+
 const musteringGround = (p) => !!p && (p.capital || hasBuild(p, "muster"));
 
 // Sight is your own ground, wherever your warbands are standing, and one step
@@ -1616,8 +1622,9 @@ function moveInfo(game, army, prov, P, atWar) {
   if (other) return { ok: true, cost, kind: "attack", label: `Attack the ${game.nations[other.owner].short} warband` };
   const friend = game.armies.find((a) => a.c === prov.c && a.r === prov.r && a.owner === P);
   if (friend) {
-    if (friend.units.length + army.units.length > 8)
-      return { ok: false, cost, why: `${friend.name} is already at full strength — eight companies is the limit.` };
+    const cap = bandCap(game.nations[P]);
+    if (friend.units.length + army.units.length > cap)
+      return { ok: false, cost, why: `${friend.name} is already at full strength — ${cap} companies is the limit.` };
     return { ok: true, cost, kind: "merge", label: `Merge forces with ${friend.name}` };
   }
   if (prov.owner && prov.owner !== P) return { ok: true, cost, kind: "seize", label: "March in and take it" };
@@ -2096,8 +2103,8 @@ export default function ColdCoast() {
     // Two of your own warbands on one hex fold into one.
     const friend = game.armies.find((a) => a.c === target.c && a.r === target.r && a.owner === P && a.id !== army.id);
     if (friend) {
-      if (friend.units.length + army.units.length > 8) {
-        push(`${friend.name} is already at full strength. Eight companies is the limit.`);
+      if (friend.units.length + army.units.length > bandCap(game.nations[P])) {
+        push(`${friend.name} is already at full strength. ${bandCap(game.nations[P])} companies is the limit.`);
         return;
       }
       setGame((g) => ({
@@ -2262,7 +2269,7 @@ export default function ColdCoast() {
         ...g,
         nations: { ...g.nations, [P]: { ...n, res: { ...n.res, scrap: n.res.scrap - t.scrap },
           research: { id, left: researchTurns(P, t, n) } } },
-        log: [{ turn: g.turn, m: `The workshops turn to ${t.name.toLowerCase()}.` }, ...g.log].slice(0, 60),
+        log: [{ turn: g.turn, m: `The scholars turn to ${t.name.toLowerCase()}.` }, ...g.log].slice(0, 60),
       };
     });
   }
@@ -2413,7 +2420,7 @@ export default function ColdCoast() {
       if (!from || !to || from.id === to.id) return g;
       if (from.owner !== P || to.owner !== P) return g;
       if (from.c !== to.c || from.r !== to.r) return g;
-      if (from.units.length + to.units.length > 8) return g;
+      if (from.units.length + to.units.length > bandCap(g.nations[P])) return g;
       Sound.play("march");
       return {
         ...g,
@@ -2624,7 +2631,7 @@ export default function ColdCoast() {
       const u = makeUnit(type, P, uid++, wg, ag);
       let armies = [...g.armies];
       const here = armies.find((a) => a.c === p.c && a.r === p.r && a.owner === P);
-      if (here && here.units.length < 8) {
+      if (here && here.units.length < bandCap(n0)) {
         armies = armies.map((a) => (a.id === here.id ? { ...a, units: [...a.units, u] } : a));
       } else {
         armies.push({
@@ -2739,7 +2746,7 @@ export default function ColdCoast() {
         const popCost = popCostOf(UNITS[type].size);
         if (rack >= UNITS[type].size && (r2.metal || 0) >= cost.metal && seatK && seatPop >= popCost
             && r2.scrap > cost.scrap * (1.6 / style.host) && r2.men > cost.men * (1.4 / style.host)) {
-          const host = armies.find((a) => a.owner === id && a.units.length < 8);
+          const host = armies.find((a) => a.owner === id && a.units.length < bandCap(nations[id]));
           const u = makeUnit(type, id, Math.random().toString(36).slice(2), bw, ba);
           if (host) host.units.push(u);
           else {
@@ -4039,7 +4046,8 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
   const moved = useRef(false);
   const centred = useRef(false);
   const zoomRef = useRef(0.8);
-  zoomRef.current = zoom;
+  const pendingZoom = useRef(null);
+  const zoomRaf = useRef(null);
 
   // The ground itself is fixed at world build. Holding the first snapshot keeps
   // the static layer's props identical for the rest of the game, so it renders
@@ -4116,6 +4124,10 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
     if (typeof window !== "undefined") window.__ccPick = (c, r) => selRef.current(c, r);
   }, []);
 
+  // The wheel writes zoomRef itself mid-gesture; this keeps it true for every
+  // other route to a new zoom (the buttons, Q and E, jumping to the seat).
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
   const pick = useCallback((c, r) => { if (!moved.current) selRef.current(c, r); }, []);
 
   // A click anywhere on the map is resolved to a hex arithmetically, measured
@@ -4155,6 +4167,11 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
   useEffect(() => {
     const el = scroll.current;
     if (!el) return;
+    /* A trackpad pinch fires dozens of wheel events a second and a mouse wheel
+       is not much kinder. Each one used to be its own React render of the whole
+       map. The zoom is tracked in a ref and folded into state once per frame
+       instead, so a fast gesture costs one render rather than twenty, and the
+       scroll correction still happens on the frame the new scale lands. */
     const onWheel = (e) => {
       e.preventDefault();                 // also claims trackpad pinch (ctrlKey)
       const z0 = zoomRef.current;
@@ -4164,8 +4181,18 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
       const box = el.getBoundingClientRect();
       const px = e.clientX - box.left, py = e.clientY - box.top;
       const wx = (el.scrollLeft + px) / z0, wy = (el.scrollTop + py) / z0;
-      setZoom(z);
-      requestAnimationFrame(() => { el.scrollLeft = wx * z - px; el.scrollTop = wy * z - py; });
+      zoomRef.current = z;                // later events in this gesture build on it
+      pendingZoom.current = { z, wx, wy, px, py };
+      if (zoomRaf.current == null) {
+        zoomRaf.current = requestAnimationFrame(() => {
+          zoomRaf.current = null;
+          const q = pendingZoom.current;
+          if (!q) return;
+          setZoom(q.z);
+          el.scrollLeft = q.wx * q.z - q.px;
+          el.scrollTop = q.wy * q.z - q.py;
+        });
+      }
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -4354,10 +4381,17 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
         onClick={pickAt}
         onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}>
         <div className="cc-mapstack" style={{ width: MAPW * zoom, height: MAPH * zoom }}>
-        <BaseMap w={MAPW * zoom} h={MAPH * zoom} provinces={staticProvinces}
+        {/* Zoom is a transform on this box, not a new width on the maps
+            underneath it. Resizing the SVGs made the browser re-rasterise
+            eight and a half thousand hexes, their filters and their labels on
+            every wheel notch; a transform is composited instead, and BaseMap's
+            props stop changing so React skips it entirely. Measured: the task
+            time of a dozen zoom steps fell from 162ms to a few. */}
+        <div className="cc-mapzoom" style={{ width: MAPW, height: MAPH, transform: `scale(${zoom})` }}>
+        <BaseMap w={MAPW} h={MAPH} provinces={staticProvinces}
           cells={cells} glyphs={glyphs} />
         <svg viewBox={`0 0 ${MAPW} ${MAPH}`} className="cc-worldmap cc-overmap"
-          style={{ width: MAPW * zoom, height: MAPH * zoom }}
+          style={{ width: MAPW, height: MAPH }}
           role="img" aria-label="Map of post-Collapse Europe">
           <defs>
             <radialGradient id="sea" cx="42%" cy="28%" r="90%">
@@ -4483,6 +4517,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
             <text y="-27" textAnchor="middle" className="cc-compass" fill="#cfe8f2">N</text>
           </g>
         </svg>
+        </div>
         </div>
       </div>
 
@@ -4871,7 +4906,7 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
         .filter(([, b]) => !b.on || b.on.includes(selProv.t)).length === 0 && (
         <Section title="Build">
           <div className="cc-text-13px cc-text-c6d6de leading-relaxed">
-            Nobody here knows how to raise anything yet. Set the workshops on something
+            Nobody here knows how to raise anything yet. Set the scholars on something
             in <span className="cc-text-8fe3d6">Advances</span> — systematic scavenging
             gives you salvage yards within a few seasons.
           </div>
@@ -4981,9 +5016,10 @@ function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, o
           )}
         </div>
       )}
-      {own && army.units.length >= 8 && (
+      {own && army.units.length >= bandCap(game.nations[P]) && (
         <div className="cc-text-11d5px cc-text-e8b98a mt-1">
-          Full at eight companies. March one out on its own to make room.
+          Full at {bandCap(game.nations[P])} companies. March one out on its own to make room
+          {game.nations[P]?.known?.hosting ? "." : ", or learn the long muster for two more."}
         </div>
       )}
       <div className="cc-text-12d5px cc-text-93a9b5 mb-2">
@@ -5107,16 +5143,16 @@ function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, o
           <div className="grid gap-1.5 mt-2">
             {canMerge && (
               <>
-                <button type="button" disabled={together > 8}
+                <button type="button" disabled={together > bandCap(game.nations[P])}
                   onClick={() => onMerge(heldArmy.id, army.id)}
-                  className={`w-full py-2 rounded disp cc-text-13d5px border transition-colors ${together > 8
+                  className={`w-full py-2 rounded disp cc-text-13d5px border transition-colors ${together > bandCap(game.nations[P])
                     ? "cc-border-25313a cc-text-78909e"
                     : "cc-bg-2a3a4a cc-hover-bg-35495c cc-border-4d7488 cc-text-dfeaf0"}`}>
-                  {together > 8 ? "Too many companies to merge" : `Merge ${heldArmy.name} into this warband`}
+                  {together > bandCap(game.nations[P]) ? "Too many companies to merge" : `Merge ${heldArmy.name} into this warband`}
                 </button>
                 <div className="cc-text-12px cc-text-95aab6">
-                  {together > 8
-                    ? `That would be ${together} companies; eight is the limit.`
+                  {together > bandCap(game.nations[P])
+                    ? `That would be ${together} companies; ${bandCap(game.nations[P])} is the limit.`
                     : `They would march on as one warband of ${together} companies.`}
                 </div>
               </>
@@ -5296,11 +5332,13 @@ const NODE_W = 168, NODE_H = 60, COL = 214, ROW = 78;
 
 const TIER_HEAD = 34;
 
-/* One column per tier, so a shrouded tier is a column you can point at. Within
-   a tier, anything that depends on a neighbour in the same tier sits below it,
-   which keeps the few same-column arrows pointing downward. */
+/* One column per tier, so a shrouded tier is a column you can point at, and
+   the columns read left to right as the order you work through them. Within a
+   tier an advance sits directly under whatever it grows out of, and the links
+   between those two run down the gutter to the left of the column. */
 function treeLayout() {
   const pos = {};
+  const rowOf = {};
   let maxRows = 0;
   TECH_TIERS.forEach((tier, ti) => {
     const sub = {};
@@ -5311,15 +5349,39 @@ function treeLayout() {
       return sub[id];
     };
     tier.techs.forEach(d);
-    const ordered = tier.techs.slice().sort((a, b) => sub[a] - sub[b]);
+    // Sit each advance opposite whatever it grows out of. Sorting a tier by
+    // the average row of its prerequisites is the standard trick for layered
+    // graphs, and it is what stops the lines crossing into a thicket — the
+    // tier columns were readable but the links between them were not.
+    const bary = (id) => {
+      const from = TECHS[id].needs.filter((n) => rowOf[n] != null && TIER_OF[n] < ti);
+      return from.length ? from.reduce((a, n) => a + rowOf[n], 0) / from.length : 99;
+    };
+    // Sorting by depth alone put foraging at the top and the three advances
+    // that grow out of it at the bottom, with unrelated ones in between, so
+    // every one of its links had to reach across the whole column. Walk the
+    // tier instead: a root, then its own children directly beneath it, then
+    // the next root. What leads where is then simply what sits under what.
+    const byBary = (a, b) => (bary(a) - bary(b)) || (tier.techs.indexOf(a) - tier.techs.indexOf(b));
+    const ordered = [];
+    const seen = {};
+    const walk = (id) => {
+      if (seen[id]) return;
+      seen[id] = 1;
+      ordered.push(id);
+      tier.techs.filter((k) => TECHS[k].needs.includes(id)).sort(byBary).forEach(walk);
+    };
+    tier.techs.filter((id) => sub[id] === 0).sort(byBary).forEach(walk);
+    tier.techs.forEach(walk);   // anything left in a cycle still gets a row
     maxRows = Math.max(maxRows, ordered.length);
-    const off = ((5 - ordered.length) * ROW) / 2;
+    const off = ((6 - ordered.length) * ROW) / 2;
     ordered.forEach((id, i) => {
-      pos[id] = { x: 24 + ti * COL, y: 24 + TIER_HEAD + off + i * ROW, tier: ti, row: i };
+      rowOf[id] = i;
+      pos[id] = { x: 54 + ti * COL, y: 24 + TIER_HEAD + off + i * ROW, tier: ti, row: i };
     });
   });
-  return { pos, w: 24 + TECH_TIERS.length * COL,
-           h: 48 + TIER_HEAD + Math.max(maxRows, 5) * ROW, rows: Math.max(maxRows, 5) };
+  return { pos, w: 54 + TECH_TIERS.length * COL,
+           h: 48 + TIER_HEAD + Math.max(maxRows, 6) * ROW, rows: Math.max(maxRows, 6) };
 }
 const TREE = treeLayout();
 
@@ -5346,7 +5408,7 @@ function TechTree({ game, P, onResearch, onClose }) {
         <div className="px-5 py-3 border-b cc-border-28363f flex items-center gap-3"
           style={{ background: "linear-gradient(90deg,#14202a,#0d141a)" }}>
           <Hammer size={18} className="cc-text-8fe3d6" />
-          <div className="disp cc-text-21px flex-1">The workshops</div>
+          <div className="disp cc-text-21px flex-1">The scholars</div>
           <div className="cc-text-12d5px cc-text-c6d6de">
             <span className="num">{Object.keys(nat.known || {}).length}</span> of{" "}
             <span className="num">{TECH_IDS.length}</span> understood
@@ -5358,27 +5420,58 @@ function TechTree({ game, P, onResearch, onClose }) {
 
         <div className="flex-1 overflow-auto thin cc-treescroll">
           <svg width={TREE.w} height={TREE.h} className="cc-tree">
+            {/* One faint panel per tier. The columns were already there in the
+                positions, but nothing on screen said so, and a wall of evenly
+                spaced boxes does not read as stages you work through in
+                order. */}
+            {TECH_TIERS.map((tier, ti) => (
+              <rect key={tier.id} x={54 + ti * COL - 44} y="8" width={COL - 4} height={TREE.h - 16}
+                rx="10" fill={ti % 2 ? "#101c24" : "#0c161d"} opacity="0.75" />
+            ))}
+
             <g fill="none" strokeLinecap="round">
               {TECH_IDS.filter((id) => tierOpen(nat.known, TIER_OF[id]))
-                .flatMap((id) => TECHS[id].needs.map((n) => {
+                .flatMap((id) => TECHS[id].needs.map((n) => ({ n, id, lit: sel === n || sel === id })))
+                // Whatever you are looking at gets its own lines drawn last and
+                // drawn bright, so "what does this open, and what did it need"
+                // is answered by clicking the box rather than by tracing.
+                .sort((u, v) => Number(u.lit) - Number(v.lit))
+                .map(({ n, id, lit }) => {
                 const a = TREE.pos[n], b = TREE.pos[id];
-                const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2, x2 = b.x, y2 = b.y + NODE_H / 2;
-                const done = states[id].s === "known" || nat.known?.[n];
+                const y1 = a.y + NODE_H / 2, y2 = b.y + NODE_H / 2;
+                // Two advances in the same tier share a column, so a plain
+                // left-to-right curve between them runs backwards and loops
+                // over its neighbours. Those leave by the left face and come
+                // back through the gutter beside the column, which reads as a
+                // bracket down the side rather than a knot.
+                const inTier = a.x === b.x;
+                const x2 = inTier ? b.x - 1 : b.x;
+                const line = inTier
+                  ? `M${a.x} ${y1} C${a.x - 34} ${y1}, ${a.x - 34} ${y2}, ${x2} ${y2}`
+                  : `M${a.x + NODE_W} ${y1} C${a.x + NODE_W + 40} ${y1}, ${x2 - 40} ${y2}, ${x2} ${y2}`;
+                // Walked means you already hold what this line comes from, so
+                // the road behind you reads brighter than the road ahead.
+                const walked = !!nat.known?.[n];
+                const col = lit ? "#8fe3d6" : walked ? "#5f9e78" : "#3d5563";
+                const wide = lit ? 2.9 : walked ? 2.4 : 1.6;
+                const op = lit ? 1 : walked ? 0.95 : 0.6;
                 return (
-                  <path key={n + id} d={`M${x1} ${y1} C${x1 + 34} ${y1}, ${x2 - 34} ${y2}, ${x2} ${y2}`}
-                    stroke={done ? "#4d7a5c" : "#2b3d47"} strokeWidth={done ? 2 : 1.4}
-                    opacity={done ? 0.85 : 0.6} />
+                  <g key={n + id}>
+                    <path d={line} stroke={col} strokeWidth={wide} opacity={op} />
+                    <path d={`M${x2 - 8} ${y2 - 4.4}L${x2 - 0.5} ${y2}L${x2 - 8} ${y2 + 4.4}`}
+                      stroke={col} strokeWidth={wide - 0.2} opacity={op} strokeLinejoin="round" />
+                  </g>
                 );
-              }))}
+              })}
             </g>
 
             {/* A tier that is not in view yet: its name, how many advances it
                 holds, and what opens it — but not what they are. */}
             {TECH_TIERS.map((tier, ti) => {
               const open = tierOpen(nat.known, ti);
-              const x = 24 + ti * COL;
+              const x = 54 + ti * COL;
               const w = tierNeeds(nat.known, ti);
-              const off = ((5 - tier.techs.length) * ROW) / 2;
+              const off = ((6 - tier.techs.length) * ROW) / 2;
               return (
                 <g key={tier.id}>
                   <text x={x} y={22} className="cc-tiername" fill={open ? "#8fe3d6" : "#5d707c"}>
@@ -5389,6 +5482,13 @@ function TechTree({ game, P, onResearch, onClose }) {
                   </text>
                   {!open && tier.techs.map((_, i) => (
                     <g key={i} transform={`translate(${x},${24 + TIER_HEAD + off + i * ROW})`}>
+                      {/* A stub coming in from the left, so a shrouded tier
+                          reads as the road continuing rather than the tree
+                          simply stopping at the edge of what you know. */}
+                      <path d={`M-26 ${NODE_H / 2}h18`} stroke="#2b3d47" strokeWidth="1.6"
+                        fill="none" strokeLinecap="round" opacity="0.8" />
+                      <path d={`M-11 ${NODE_H / 2 - 3.6}L-4 ${NODE_H / 2}L-11 ${NODE_H / 2 + 3.6}`}
+                        stroke="#2b3d47" strokeWidth="1.5" fill="none" strokeLinejoin="round" opacity="0.8" />
                       <rect width={NODE_W} height={NODE_H} rx="7" fill="#0a1015"
                         stroke="#22303a" strokeWidth="1.2" strokeDasharray="5 4" />
                       <rect x="11" y="22" width={NODE_W - 52} height="7" rx="3.5" fill="#1b2731" />
@@ -5464,7 +5564,7 @@ function TechTree({ game, P, onResearch, onClose }) {
           {st.s === "open" && (
             <button type="button" onClick={() => { onResearch(sel); onClose(); }}
               className="w-full mt-3 py-2.5 rounded cc-bg-2a3a4a cc-hover-bg-35495c border cc-border-4d7488 cc-text-dfeaf0 disp cc-text-15px transition-colors">
-              Set the workshops on it
+              Set the scholars on it
             </button>
           )}
         </div>
@@ -5509,7 +5609,7 @@ function AdvancesPanel({ game, P, onResearch, onOpenTree }) {
       ) : (
         <div className="rounded border cc-border-31454f cc-bg-131f27 px-3 py-2.5 mt-3">
           <div className="cc-text-13px cc-text-c6d6de">
-            The workshops are idle. {open.length
+            The scholars are idle. {open.length
               ? `${open.length} line${open.length === 1 ? "" : "s"} of work could start now.`
               : "Nothing can start until you hold more, or earn more scrap."}
           </div>
@@ -5746,7 +5846,7 @@ function RecruitPanel({ natId, nat, provName, prov, onClose, onConfirm }) {
             {locked.length > 0 && (
               <div className="cc-text-12px cc-text-78909e leading-snug">
                 {locked.map((t) => t.name).join(", ")} companies are beyond your people for now.
-                What you learn in the workshops opens them.
+                What your scholars learn opens them.
               </div>
             )}
           </div>
