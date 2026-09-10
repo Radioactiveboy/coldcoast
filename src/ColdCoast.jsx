@@ -446,19 +446,27 @@ const W = 104;
 const H = MAP_ROWS.length;
 const MAP = MAP_ROWS.map((r) => r.padEnd(W, "_").slice(0, W));
 
+/* The colours are the map's, and nothing else uses them. They were picked one
+   at a time and it showed: three different greens of the same weight alternating
+   tile by tile read as camouflage rather than as country, and the ruinfields
+   shouted in orange from one end of Europe to the other.
+   They sit in a narrow band of value and chroma now — close enough that relief
+   shading and the ink symbols carry the reading, far enough apart to tell what
+   you are standing on. Ice and the drained seabed are the two deliberate
+   exceptions: those should be visible from across the continent. */
 const TERRAIN = {
-  p: { name: "Plains",        color: "#7d8a5c", food: 3, scrap: 0, fuel: 0, powder: 0, men: 2, def: 0,  move: 1, land: true },
-  f: { name: "Cold forest",   color: "#4a6350", food: 1, scrap: 1, fuel: 2, powder: 0, men: 1, def: 10, move: 2, land: true },
-  h: { name: "Hills",         color: "#77705a", food: 1, scrap: 2, fuel: 1, powder: 0, men: 1, def: 15, move: 2, land: true },
-  m: { name: "Mountains",     color: "#5d5f63", food: 0, scrap: 2, fuel: 0, powder: 0, men: 0, def: 28, move: 3, land: true },
-  s: { name: "Steppe",        color: "#9a9463", food: 2, scrap: 1, fuel: 0, powder: 0, men: 3, def: 0,  move: 1, land: true },
-  t: { name: "Tundra",        color: "#8e9aa0", food: 1, scrap: 0, fuel: 0, powder: 0, men: 1, def: 5,  move: 2, land: true },
-  g: { name: "Glacier",       color: "#eaf3f7", food: 0, scrap: 0, fuel: 0, powder: 0, men: 0, def: 12, move: 3, land: true },
-  d: { name: "Silt flats",    color: "#a5905e", food: 4, scrap: 2, fuel: 0, powder: 0, men: 1, def: -10, move: 1, land: true },
-  c: { name: "Saltmarsh",     color: "#6f7a5f", food: 2, scrap: 1, fuel: 1, powder: 0, men: 0, def: 12, move: 2, land: true },
-  r: { name: "Ruinfield",     color: "#8a5540", food: 0, scrap: 5, fuel: 1, powder: 2, men: 1, def: 22, move: 2, land: true },
-  b: { name: "Saltpan",       color: "#b9a98b", food: 0, scrap: 1, fuel: 3, powder: 0, men: 0, def: -5, move: 1, land: true },
-  l: { name: "Freshwater",    color: "#3f6b7d", food: 3, scrap: 0, fuel: 0, powder: 0, men: 0, def: -12, move: 2, land: true },
+  p: { name: "Plains",        color: "#79805a", food: 3, scrap: 0, fuel: 0, powder: 0, men: 2, def: 0,  move: 1, land: true },
+  f: { name: "Cold forest",   color: "#556a53", food: 1, scrap: 1, fuel: 2, powder: 0, men: 1, def: 10, move: 2, land: true },
+  h: { name: "Hills",         color: "#867a5e", food: 1, scrap: 2, fuel: 1, powder: 0, men: 1, def: 15, move: 2, land: true },
+  m: { name: "Mountains",     color: "#7e7b74", food: 0, scrap: 2, fuel: 0, powder: 0, men: 0, def: 28, move: 3, land: true },
+  s: { name: "Steppe",        color: "#8f8a61", food: 2, scrap: 1, fuel: 0, powder: 0, men: 3, def: 0,  move: 1, land: true },
+  t: { name: "Tundra",        color: "#87908f", food: 1, scrap: 0, fuel: 0, powder: 0, men: 1, def: 5,  move: 2, land: true },
+  g: { name: "Glacier",       color: "#dde8ee", food: 0, scrap: 0, fuel: 0, powder: 0, men: 0, def: 12, move: 3, land: true },
+  d: { name: "Silt flats",    color: "#a2905f", food: 4, scrap: 2, fuel: 0, powder: 0, men: 1, def: -10, move: 1, land: true },
+  c: { name: "Saltmarsh",     color: "#6c7760", food: 2, scrap: 1, fuel: 1, powder: 0, men: 0, def: 12, move: 2, land: true },
+  r: { name: "Ruinfield",     color: "#7d6355", food: 0, scrap: 5, fuel: 1, powder: 2, men: 1, def: 22, move: 2, land: true },
+  b: { name: "Saltpan",       color: "#b0a184", food: 0, scrap: 1, fuel: 3, powder: 0, men: 0, def: -5, move: 1, land: true },
+  l: { name: "Freshwater",    color: "#41697a", food: 3, scrap: 0, fuel: 0, powder: 0, men: 0, def: -12, move: 2, land: true },
   "~": { name: "Open sea",    color: "#1b2c38", land: false },
   _: { name: "", color: "transparent", land: false },
 };
@@ -3516,6 +3524,86 @@ function lum(h) {
 }
 const inkFor = (col) => (lum(col) > 0.22 ? mix(col, "#04080b", 0.62) : mix(col, "#e9f3f7", 0.55));
 
+/* ------------------------------- RELIEF ------------------------------------
+   There is no elevation data behind this world and there should not be — the
+   coast is hand-drawn, and a dropped sea is the whole premise. But a height
+   can be inferred from what the ground already IS: mountains stand over hills,
+   hills over plains, and the drained seabed lies below all of it. Smooth that
+   table of terrain classes a few times and it becomes a landform; light the
+   landform from the north-west and every range gets a lit face and a shadowed
+   one. That is most of what separates a map from a chart of coloured tiles,
+   and it costs one pass at load and nothing at all thereafter. */
+/* Only the classes that ARE a height difference get one. A forest is not
+   higher than a plain and a ruinfield is not higher than a steppe, and giving
+   them separate heights turned the shading into salt and pepper — the lowland
+   classes alternate every other tile, so the map read as noise rather than as
+   country. Everything that is simply ground sits at one level; mountains,
+   hills, ice and the dropped seabed are the landform. */
+const RELIEF_H = {
+  m: 1, g: 0.86, h: 0.46,
+  p: 0.16, f: 0.16, s: 0.16, t: 0.16, r: 0.16, c: 0.12,
+  l: 0.1, d: -0.05, b: -0.08, "~": -0.2, _: -0.2,
+};
+const RELIEF_LIGHT = [-0.62, -0.62, 0.48];   // from the north-west, fairly low
+const RELIEF_K = 5.2;                        // vertical exaggeration
+const RELIEF_STEPS = 6;                      // quantised, so the fills batch
+
+const RELIEF = (() => {
+  const at = (c, r) => r * W + c;
+  let h = new Float32Array(W * H);
+  for (let r = 0; r < H; r++) {
+    for (let c = 0; c < W; c++) h[at(c, r)] = RELIEF_H[MAP[r][c]] ?? 0;
+  }
+  // Six passes of neighbour averaging. Fewer and a range is one bright tile;
+  // many more and the whole continent melts into a single dome.
+  for (let pass = 0; pass < 6; pass++) {
+    const next = new Float32Array(W * H);
+    for (let r = 0; r < H; r++) {
+      for (let c = 0; c < W; c++) {
+        let sum = h[at(c, r)] * 2.2, n = 2.2;
+        neighbours(c, r).forEach(([nc, nr]) => { sum += h[at(nc, nr)]; n += 1; });
+        next[at(c, r)] = sum / n;
+      }
+    }
+    h = next;
+  }
+
+  const L = (() => {
+    const m = Math.hypot(...RELIEF_LIGHT);
+    return RELIEF_LIGHT.map((v) => v / m);
+  })();
+  const flat = L[2];                          // what level ground returns
+  const out = new Float32Array(W * H);
+  for (let r = 0; r < H; r++) {
+    for (let c = 0; c < W; c++) {
+      const [cx, cy] = centreOf(c, r);
+      let gx = 0, gy = 0, n = 0;
+      neighbours(c, r).forEach(([nc, nr]) => {
+        const [nx, ny] = centreOf(nc, nr);
+        const dh = h[at(nc, nr)] - h[at(c, r)];
+        gx += (dh * (nx - cx)) / (2 * S);
+        gy += (dh * (ny - cy)) / (2 * S);
+        n += 1;
+      });
+      if (n) { gx = (gx * 2) / n; gy = (gy * 2) / n; }
+      const vx = -gx * RELIEF_K, vy = -gy * RELIEF_K;
+      const m = Math.hypot(vx, vy, 1);
+      const dot = (vx * L[0] + vy * L[1] + L[2]) / m;
+      out[at(c, r)] = Math.max(-1, Math.min(1, (dot - flat) * 2.3));
+    }
+  }
+  return out;
+})();
+
+/* Lit above zero, in shadow below, quantised so that the whole map still draws
+   as a couple of hundred batched paths rather than one per tile. The grain of
+   the ground is folded in here too, rather than being its own dimension of
+   fill colour that would multiply the batches. */
+const reliefAt = (c, r) => {
+  const v = RELIEF[r * W + c] + (noise(c * 5.1, r * 7.3, 4) - 0.5) * 0.09;
+  return Math.round(Math.max(-1, Math.min(1, v)) * RELIEF_STEPS) / RELIEF_STEPS;
+};
+
 const JIT = S * 0.3;
 const _cor = new Map();
 function cornerAt(cx, cy, i) {
@@ -3882,9 +3970,13 @@ const StaticLand = React.memo(function StaticLand({ provinces, cells, glyphs }) 
     Object.values(provinces).forEach((p) => {
       const pts = cells[key(p.c, p.r)];
       if (!pts) return;
-      const tone = Math.round(noise(p.c * 5.1, p.r * 7.3, 4) * 3) / 3;
-      const fill = mix(TERRAIN[p.t].color, tone > 0.5 ? "#ffffff" : "#000000",
-        0.02 + Math.abs(tone - 0.5) * 0.07);
+      // The sun is on the ground, not on a lamp behind the screen: a lit face
+      // warms towards daylight and a shadowed one falls towards the cold blue
+      // the whole map is painted in, rather than both going grey.
+      const sh = reliefAt(p.c, p.r);
+      const fill = sh >= 0
+        ? mix(TERRAIN[p.t].color, "#fff3d8", sh * 0.19)
+        : mix(TERRAIN[p.t].color, "#0b1220", -sh * 0.27);
       byFill[fill] = (byFill[fill] || "") + "M" + pts.map((q) => q[0] + " " + q[1]).join("L") + "Z";
       for (let i = 0; i < 6; i++) {
         const [nc, nr] = edgeN(p.c, p.r, i);
@@ -3898,12 +3990,22 @@ const StaticLand = React.memo(function StaticLand({ provinces, cells, glyphs }) 
 
   return (
     <>
+      {/* The shelf. Three soft passes along the coastline, laid down before the
+          land is: the half that falls inland is covered by the ground on top,
+          so what is left is water shallowing as it comes ashore. Cartographers
+          have drawn this band for four hundred years and it is most of why an
+          old chart reads as water rather than as blue paper. */}
+      <g fill="none" stroke="#63b6d8" strokeLinejoin="round" style={{ pointerEvents: "none" }}>
+        <path d={dCoast} strokeWidth="34" opacity="0.05" />
+        <path d={dCoast} strokeWidth="17" opacity="0.07" />
+        <path d={dCoast} strokeWidth="7" opacity="0.09" />
+      </g>
       <g style={{ filter: "drop-shadow(2px 3px 3px rgba(3,7,10,.85))" }}>
         {fills.map(([col, d]) => <path key={col} d={d} fill={col} />)}
       </g>
       <g fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}>
         {Object.entries(glyphs).map(([t, d]) => (
-          <path key={t} d={d} stroke={inkFor(TERRAIN[t].color)} strokeWidth="0.95" opacity="0.46" />
+          <path key={t} d={d} stroke={inkFor(TERRAIN[t].color)} strokeWidth="1" opacity="0.5" />
         ))}
       </g>
       <g fill="none" style={{ pointerEvents: "none" }}>
@@ -4016,13 +4118,36 @@ const BaseMap = React.memo(function BaseMap({ w, h, provinces, cells, glyphs }) 
       viewBox={`0 0 ${MAPW} ${MAPH}`} preserveAspectRatio="xMidYMid meet">
       <defs>
         <radialGradient id="basesea" cx="42%" cy="34%" r="78%">
-          <stop offset="0%" stopColor="#16323f" />
-          <stop offset="55%" stopColor="#0e2430" />
-          <stop offset="100%" stopColor="#081720" />
+          <stop offset="0%" stopColor="#1a3a49" />
+          <stop offset="55%" stopColor="#122b37" />
+          <stop offset="100%" stopColor="#0b1e29" />
         </radialGradient>
         <pattern id="baseswell" width="26" height="26" patternUnits="userSpaceOnUse">
           <path d="M0 13q6.5 -4 13 0t13 0" fill="none" stroke="#4e7d95" strokeWidth="0.7" opacity="0.16" />
         </pattern>
+        {/* Paper. Specks too small to read as marks, enough to stop every fill
+            being a flat slab of one colour. Two patterns rather than one, and
+            their sizes are coprime (23 and 17), because a single tile shows its
+            grid the moment you zoom in — which is exactly what the first
+            attempt at this did, polka dots across the whole continent. */}
+        <pattern id="basegrain" width="23" height="23" patternUnits="userSpaceOnUse">
+          <path d="M2.4 3.1h.01M8.7 1.4h.01M15.2 4.8h.01M20.6 2.3h.01M5.1 9.6h.01M12.8 8.2h.01
+                   M18.4 11.7h.01M3.3 15.4h.01M9.9 18.1h.01M16.6 16.3h.01M21.2 19.8h.01M6.7 21.4h.01"
+            stroke="#000000" strokeWidth="0.7" strokeLinecap="round" opacity="0.34" />
+        </pattern>
+        <pattern id="basegrain2" width="17" height="17" patternUnits="userSpaceOnUse">
+          <path d="M1.8 6.2h.01M7.4 2.9h.01M13.6 7.8h.01M4.9 12.7h.01M11.2 14.3h.01M15.8 11.1h.01"
+            stroke="#ffffff" strokeWidth="0.65" strokeLinecap="round" opacity="0.22" />
+        </pattern>
+        {/* Latitude. The north of this map is ice and the south is dust, and a
+            wash from one to the other ties eight thousand separate tiles into
+            one continent — the thing a coloured grid never does on its own. */}
+        <linearGradient id="baselat" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#8ecbe8" stopOpacity="0.11" />
+          <stop offset="42%" stopColor="#8ecbe8" stopOpacity="0.02" />
+          <stop offset="68%" stopColor="#e8b578" stopOpacity="0.03" />
+          <stop offset="100%" stopColor="#e8a05a" stopOpacity="0.11" />
+        </linearGradient>
       </defs>
       <rect width={MAPW} height={MAPH} fill="url(#basesea)" />
       <rect width={MAPW} height={MAPH} fill="url(#baseswell)" style={{ pointerEvents: "none" }} />
@@ -4035,6 +4160,9 @@ const BaseMap = React.memo(function BaseMap({ w, h, provinces, cells, glyphs }) 
         ))}
       </g>
       <StaticLand provinces={provinces} cells={cells} glyphs={glyphs} />
+      <rect width={MAPW} height={MAPH} fill="url(#basegrain)" style={{ pointerEvents: "none" }} />
+      <rect width={MAPW} height={MAPH} fill="url(#basegrain2)" style={{ pointerEvents: "none" }} />
+      <rect width={MAPW} height={MAPH} fill="url(#baselat)" style={{ pointerEvents: "none" }} />
     </svg>
   );
 });
