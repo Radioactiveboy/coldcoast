@@ -14,6 +14,8 @@ import {
   Flag, Sparkles, Play, Anvil, Boxes,
 } from "lucide-react";
 import { TECHS, TECH_IDS, TECH_TIERS, TIER_OF, tierGate, tierOpen, tierNeeds } from "./data/techs.js";
+import { ICONS, ICON_AUTHORS, unitIcon, techIcon } from "./data/gameicons.js";
+import { MAP_NAMES } from "./data/places.js";
 import { UNIT_TIERS, UNITS, UNIT_IDS } from "./data/units.js";
 import { SETTLEMENT, WORKS, WORK_IDS } from "./data/settlement.js";
 import { seasonOf, yearOf } from "./data/seasons.js";
@@ -195,6 +197,12 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-text-dfeaf0{color:#dfeaf0}
 .cc-text-ff8a72{color:#ff8a72}
 .cc-w-1020px{width:1020px}
+.cc-mapnames{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+.cc-mapname{position:absolute;white-space:nowrap;font-family:'Barlow Condensed',ui-sans-serif,sans-serif;font-weight:600;text-transform:uppercase;user-select:none;text-shadow:0 0 6px rgba(4,8,12,.95),0 1px 2px rgba(4,8,12,.95)}
+.cc-nsea{color:#7fb2cd}
+.cc-nland{color:#d9cdb2}
+.cc-nridge{color:#cfc4ab}
+.cc-nice{color:#cfe3ec}
 .cc-mapzoom{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
 .cc-mapscroll{cursor:grab;background:#080d11;overscroll-behavior:contain;will-change:scroll-position}
 .cc-mapscroll:active{cursor:grabbing}
@@ -673,12 +681,44 @@ const UNIT_ART = {
   axemen: unitAxemen,
 };
 
+/* The icon for a company type, whether or not it has a painting. Used where a
+   row needs a mark rather than a portrait — the muster roll, mostly. */
+function UnitMark({ type, size = 22, lit }) {
+  const ic = unitIcon(type);
+  if (!ic) return <span style={{ width: size, height: size, display: "inline-block" }} />;
+  return (
+    <svg viewBox="0 0 512 512" width={size} height={size} aria-hidden="true"
+      style={{ display: "block", flexShrink: 0, color: lit ? "#8fe3d6" : "#7e939f" }}>
+      <path d={ic.d} fill="currentColor" />
+    </svg>
+  );
+}
+
 function UnitArt({ type, size = 40, plinth }) {
   const src = UNIT_ART[type];
-  if (!src) return null;
+  if (src) {
+    return (
+      <span className={plinth ? "cc-unitplinth" : "cc-unitart"} style={{ height: size }}>
+        <img src={src} alt="" style={{ height: size, width: "auto", display: "block" }} />
+      </span>
+    );
+  }
+  /* Three of the fourteen company types have painted art and the other eleven
+     had nothing at all — a blank where the picture goes, in every muster roll
+     and every battle. They fall back to a game-icons mark, which is not the
+     same thing as a painting but is a great deal better than a hole. */
+  const ic = unitIcon(type);
+  if (!ic) return null;
+  // In the portrait slot the mark is set well inside the plinth, so it reads as
+  // a device on a plate rather than as a painting that failed to load.
+  const s = plinth ? Math.round(size * 0.62) : size;
   return (
-    <span className={plinth ? "cc-unitplinth" : "cc-unitart"} style={{ height: size }}>
-      <img src={src} alt="" style={{ height: size, width: "auto", display: "block" }} />
+    <span className={plinth ? "cc-unitplinth" : "cc-unitart"}
+      style={{ height: size, color: plinth ? "#7f96a3" : "#93aab7",
+        display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+      <svg viewBox="0 0 512 512" width={s} height={s} aria-hidden="true" style={{ display: "block" }}>
+        <path d={ic.d} fill="currentColor" />
+      </svg>
     </span>
   );
 }
@@ -4017,20 +4057,68 @@ const StaticLand = React.memo(function StaticLand({ provinces, cells, glyphs }) 
   );
 });
 
+/* The names of the ground. These live OUTSIDE the scaled box, as plain
+   positioned text over the map rather than SVG text inside it, and that is a
+   performance decision as much as a typographic one: anything inside the
+   composited zoom layer that changes forces the whole layer to repaint, and
+   that layer runs to seven thousand pixels across. Twenty stroked SVG labels
+   in there took sixteen zoom steps from 113ms of main-thread work to 655ms.
+   Out here they cost nothing, and they hold one size on screen instead of
+   swelling with the map — which is how an atlas behaves anyway.
+
+   Drawn above the fog on purpose: you know the Horse Sea is out there long
+   before you have put a warband on it. They fade out as you zoom in, because
+   at tile-reading range a name three hexes wide is in the way of whatever is
+   standing under it. */
+const MapNames = React.memo(function MapNames({ zoom }) {
+  const k = zoom <= 1.15 ? 1 : Math.max(0, 1 - (zoom - 1.15) / 0.7);
+  if (k <= 0.02) return null;
+  return (
+    <div className="cc-mapnames">
+      {MAP_NAMES.map((n) => {
+        const [x, y] = centreOf(n.at[0], n.at[1]);
+        const cls = n.sea ? "cc-nsea" : n.ice ? "cc-nice" : n.ridge ? "cc-nridge" : "cc-nland";
+        return (
+          <span key={n.name} className={`cc-mapname ${cls}`}
+            style={{
+              left: x * zoom, top: y * zoom,
+              // Sized in map units like everything else, so a name covers the
+              // same ground at every zoom — it just is not drawn inside the
+              // layer that has to be re-rasterised when the ground is.
+              fontSize: n.size * zoom, letterSpacing: n.size * 0.32 * zoom,
+              opacity: (n.sea ? 0.66 : 0.72) * k,
+              transform: `translate(-50%,-50%) rotate(${n.rot || 0}deg)`,
+            }}>
+            {n.name.toUpperCase()}
+          </span>
+        );
+      })}
+    </div>
+  );
+});
+
 const RealmLayer = React.memo(function RealmLayer({ provinces, cells, seen }) {
-  const { tints, dFog, dDim, dNat, dProv, dFeature, marks } = useMemo(() => {
+  const { tints, fogBands, dDim, dNat, dProv, dFeature, marks } = useMemo(() => {
     const byNat = {};
-    let lit = "", dim = "", dn = "", dp = "", df = "";
+    const fog = {};
+    let dim = "", dn = "", dp = "", df = "";
     const marks = [];
     Object.values(provinces).forEach((p) => {
       const pts = cells[key(p.c, p.r)];
       if (!pts) return;
       const seg = "M" + pts.map((q) => q[0] + " " + q[1]).join("L") + "Z";
-      // Ground outside your sight is drawn as fog and nothing else about it is
-      // drawn at all — which also keeps the layer's work proportional to what
-      // you can see rather than to the size of the map.
+      /* Ground outside your sight keeps its shape and its relief and nothing
+         else: no colour, no symbol, no sign of what it is worth. Survivors of a
+         collapse would know the lie of the land — the old roads, the ranges,
+         where the water stops — without knowing who is living on it now. Drawn
+         opaque over the ground rather than as a veil across it, so nothing of
+         the terrain beneath leaks through to be read. */
       const k0 = key(p.c, p.r);
-      if (!seen.has(k0)) { lit += seg; return; }
+      if (!seen.has(k0)) {
+        const b = reliefAt(p.c, p.r);
+        fog[b] = (fog[b] || "") + seg;
+        return;
+      }
       if (p.owner) byNat[p.owner] = (byNat[p.owner] || "") + seg;
       else if (!p.explored) dim += seg;
 
@@ -4054,13 +4142,18 @@ const RealmLayer = React.memo(function RealmLayer({ provinces, cells, seen }) {
       }
       if (buildsOf(p).length || p.capital) marks.push(p);
     });
-    return { tints: Object.entries(byNat), dFog: lit, dDim: dim,
+    return { tints: Object.entries(byNat), fogBands: Object.entries(fog), dDim: dim,
              dNat: dn, dProv: dp, dFeature: df, marks };
   }, [provinces, cells, seen]);
 
   return (
     <g style={{ pointerEvents: "none" }}>
-      <path d={dFog} fill="#070d12" opacity="0.93" />
+      {fogBands.map(([b, d]) => {
+        const sh = +b;
+        return <path key={b} d={d} fill={sh >= 0
+          ? mix("#16242f", "#4a6d80", sh * 0.66)
+          : mix("#16242f", "#05090d", -sh * 0.8)} />;
+      })}
       <path d={dDim} fill="#101820" opacity="0.16" />
       {tints.map(([nat, d]) => (
         <path key={nat} d={d} data-nat={nat} fill={FACTION[nat].color} opacity="0.46" />
@@ -4665,6 +4758,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
           </g>
         </svg>
         </div>
+        <MapNames zoom={zoom} />
         </div>
       </div>
 
@@ -5456,23 +5550,13 @@ function WorldPanel({ game, P, atWar, onWar }) {
    without anyone positioning a node by hand.
    ------------------------------------------------------------------------ */
 function TechIcon({ id }) {
-  const g = {
-    foraging: <><path d="M10 17V8" /><path d="M10 8c0-3 2-4 4-4 0 3-2 4-4 4z" /><path d="M10 11c0-3-2-4-4-4 0 3 2 4 4 4z" /></>,
-    bowyery: <><path d="M5 3a12 12 0 0 1 0 14" /><path d="M5 3l10 7L5 17" /><path d="M15 10h2" /></>,
-    horsemanship: <><path d="M5 17c0-5 3-8 7-8V6l4 3-4 3" /><path d="M12 9c-4 0-5 3-5 8" /></>,
-    scavenging: <><path d="M4 16h12" /><path d="M6 16V8l5-4" /><path d="M11 4l4 3" /><path d="M8 11h5" /></>,
-    smelting: <><path d="M6 17h8l-1-6H7z" /><path d="M8 11V6h4v5" /><path d="M10 6V3" /></>,
-    toolcraft: <><path d="M4 16l7-7" /><path d="M11 5l4 4-2 2-4-4z" /><path d="M4 16l1 1" /></>,
-    drill: <><path d="M6 17V4l8 3-8 3" /><path d="M13 17h3M4 17h3" /></>,
-    dyking: <><path d="M3 12q4-3 7 0t7 0" /><path d="M3 16q4-3 7 0t7 0" /><path d="M6 8V4h8v4" /></>,
-    saltpetre: <><path d="M10 3l2 4 4 1-3 3 1 4-4-2-4 2 1-4-3-3 4-1z" /></>,
-    blackpowder: <><circle cx="9" cy="13" r="4" /><path d="M12 10l3-3M15 7l1 1M15 7l-1-1" /></>,
-    casting: <><path d="M3 13h9v3H3z" /><path d="M12 12l5 2-5 2z" /><circle cx="5" cy="17" r="1.5" /></>,
-    refining: <><path d="M7 17V9a3 3 0 0 1 6 0v8z" /><path d="M7 12h6" /><path d="M5 17h10" /><path d="M10 6V3" /></>,
-    enginework: <><circle cx="10" cy="10" r="3.5" /><path d="M10 3v2M10 15v2M3 10h2M15 10h2M5 5l1.5 1.5M13.5 13.5L15 15M15 5l-1.5 1.5M6.5 13.5L5 15" /></>,
-    vaultcraft: <><circle cx="10" cy="10" r="6" /><circle cx="10" cy="10" r="2" /><path d="M10 4v3M10 13v3M4 10h3M13 10h3" /></>,
-  };
-  return <g fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{g[id] || <circle cx="10" cy="10" r="5" />}</g>;
+  /* These were fourteen line marks drawn by hand and they looked it — a
+     wobbling arc for bowyery, a circle with spokes for anything mechanical.
+     Every advance now carries a game-icons mark instead, drawn at 512 and
+     scaled down, which is why they hold up at any size. */
+  const ic = techIcon(id);
+  if (ic) return <path d={ic.d} fill="currentColor" transform="scale(0.0508)" />;
+  return <circle cx="11" cy="11" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.5" />;
 }
 
 const NODE_W = 168, NODE_H = 60, COL = 214, ROW = 78;
@@ -5663,7 +5747,7 @@ function TechTree({ game, P, onResearch, onClose }) {
                   onClick={() => setSel(id)}>
                   <rect width={NODE_W} height={NODE_H} rx="7" fill={c.fill}
                     stroke={on ? "#ffffff" : c.edge} strokeWidth={on ? 2.2 : 1.4} />
-                  <g transform="translate(11,13)" style={{ color: c.text }}><TechIcon id={id} /></g>
+                  <g transform="translate(10,17)" style={{ color: c.text }}><TechIcon id={id} /></g>
                   <text x="36" y="24" className="cc-tname" fill={c.text}>{tt.short || tt.name}</text>
                   <text x="36" y="40" className="cc-tmeta" fill={mix(c.text, "#0d141a", 0.42)}>
                     {s === "known" ? "understood"
@@ -5979,11 +6063,16 @@ function RecruitPanel({ natId, nat, provName, prov, onClose, onConfirm }) {
                       <button key={id} type="button" onClick={() => setType(id)}
                         className={`text-left px-3 py-2 rounded border transition-colors ${on
                           ? "cc-border-4d9aa6 cc-bg-152a30" : "cc-border-31454f cc-hover-border-3d6470"}`}>
-                        <div className="flex items-baseline gap-2">
-                          <span className="cc-text-13d5px flex-1">{u.name}</span>
-                          <span className="num cc-text-11d5px cc-text-c9a37a">{u.size}</span>
+                        <div className="flex items-center gap-2.5">
+                          <UnitMark type={id} size={22} lit={on} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline gap-2">
+                              <span className="cc-text-13d5px flex-1">{u.name}</span>
+                              <span className="num cc-text-11d5px cc-text-c9a37a">{u.size}</span>
+                            </div>
+                            <div className="cc-text-11d5px cc-text-93a9b5">{u.role}</div>
+                          </div>
                         </div>
-                        <div className="cc-text-11d5px cc-text-93a9b5">{u.role}</div>
                       </button>
                     );
                   })}
@@ -6001,7 +6090,7 @@ function RecruitPanel({ natId, nat, provName, prov, onClose, onConfirm }) {
           <div className="flex-1 min-w-0">
             <div className="rounded border cc-border-31454f cc-bg-131f27 p-4">
               <div className="flex gap-4 flex-wrap">
-                {UNIT_ART[type] && <UnitArt type={type} size={170} plinth />}
+                <UnitArt type={type} size={170} plinth />
                 <div className="flex-1 min-w-0">
                   <div className="disp cc-text-22px">{d.name}</div>
                   <div className="cc-text-13px cc-text-8fe3d6">{d.role}</div>
@@ -7413,6 +7502,16 @@ function Codex({ onClose }) {
           <div>
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Winning</div>
             <p>Take four rival seats of power, or hold a tenth of the continent, or simply hold more than anyone after a hundred and fifty seasons. A seat stays a seat after it falls, so a captured capital keeps flying its crest under your colours. Lose every holding and it is over.</p>
+          </div>
+          {/* The icon set is CC BY 3.0, which means its authors have to be
+              named somewhere a player can find them. This is that place. */}
+          <div className="pt-2 border-t cc-border-28363f">
+            <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Credits</div>
+            <p className="cc-text-13px cc-text-93a9b5">
+              Company and advance icons by {ICON_AUTHORS.join(", ")} from{" "}
+              <span className="cc-text-c3d5de">game-icons.net</span>, used under the
+              Creative Commons Attribution 3.0 licence.
+            </p>
           </div>
         </div>
       </div>

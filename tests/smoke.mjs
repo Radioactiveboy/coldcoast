@@ -81,6 +81,17 @@ await wait(1500);
 
 check("the world renders", await page.evaluate(() => !!document.querySelector("svg.cc-basemap")));
 
+// Ground you have not seen keeps its shape: it is drawn in bands of relief
+// rather than as one flat black shroud, so the coast and the ranges read from
+// the first turn. One tone means the silhouette is gone.
+const fogTones = await page.evaluate(() => new Set(
+  [...document.querySelectorAll("svg.cc-overmap path")]
+    .map((p) => p.getAttribute("fill"))
+    .filter((f) => f && /^#[0-9a-f]{6}$/i.test(f))).size);
+check("unexplored ground still shows its shape", fogTones > 4, `${fogTones} tones`);
+check("the ground carries its names", await page.evaluate(() =>
+  document.querySelectorAll(".cc-mapname").length) > 8);
+
 // A zoom gesture is a composited transform, which is what makes it cheap —
 // and what left the map soft when it stopped, because a scaled layer is the
 // old pixels stretched. Once the gesture settles the maps have to be drawn at
