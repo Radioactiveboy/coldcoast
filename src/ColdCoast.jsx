@@ -4149,13 +4149,31 @@ function WarbandMark({ col, n, hostile, chosen, kind }) {
    RealmLayer is everything that changes hands: who owns what, where the borders
    run, which ground is still unwalked, and what is standing on it. It draws as
    a handful of grouped paths rather than one node per province. */
-const StaticLand = React.memo(function StaticLand({ provinces, cells, glyphs }) {
-  const { fills, dCoast } = useMemo(() => {
-    const byFill = {};
-    let dc = "";
+/* How the ground is cut up for drawing. One path per terrain across the whole
+   map was the obvious way to keep the node count down, and it is exactly wrong
+   for rasterising: the browser draws a big element in tiles, and a path whose
+   bounding box is the whole of Europe has to be walked in full for every
+   single tile it touches. Eight and a half thousand hexes, ninety times over.
+
+   Cutting the map into blocks means a tile only walks the blocks it actually
+   overlaps. It costs more nodes — about a thousand instead of forty — but they
+   are small, static, and never reconciled again. */
+const BLOCK_C = 12, BLOCK_R = 16;
+const BLOCK_COLS = Math.ceil(W / BLOCK_C);
+
+const StaticLand = React.memo(function StaticLand({ provinces, cells }) {
+  const blocks = useMemo(() => {
+    const out = new Map();
+    const at = (c, r) => {
+      const k = Math.floor(r / BLOCK_R) * BLOCK_COLS + Math.floor(c / BLOCK_C);
+      let b = out.get(k);
+      if (!b) { b = { k, fills: {}, glyphs: {}, coast: "" }; out.set(k, b); }
+      return b;
+    };
     Object.values(provinces).forEach((p) => {
       const pts = cells[key(p.c, p.r)];
       if (!pts) return;
+      const b = at(p.c, p.r);
       // The sun is on the ground, not on a lamp behind the screen: a lit face
       // warms towards daylight and a shadowed one falls towards the cold blue
       // the whole map is painted in, rather than both going grey.
@@ -4163,16 +4181,26 @@ const StaticLand = React.memo(function StaticLand({ provinces, cells, glyphs }) 
       const fill = sh >= 0
         ? mix(TERRAIN[p.t].color, "#fff3d8", sh * 0.19)
         : mix(TERRAIN[p.t].color, "#0b1220", -sh * 0.27);
-      byFill[fill] = (byFill[fill] || "") + "M" + pts.map((q) => q[0] + " " + q[1]).join("L") + "Z";
+      b.fills[fill] = (b.fills[fill] || "") + "M" + pts.map((q) => q[0] + " " + q[1]).join("L") + "Z";
+
+      const [cx, cy] = centreOf(p.c, p.r);
+      const g = glyphFor(p.t, cx, cy, p.c, p.r);
+      if (g) {
+        const o = b.glyphs[p.t] || (b.glyphs[p.t] = { ink: "", fill: "", lit: "" });
+        o.ink += g.ink; o.fill += g.fill; o.lit += g.lit;
+      }
+
       for (let i = 0; i < 6; i++) {
         const [nc, nr] = edgeN(p.c, p.r, i);
         if (provinces[key(nc, nr)]) continue;
         const A = pts[i], B = pts[(i + 1) % 6];
-        dc += `M${A[0]} ${A[1]}L${B[0]} ${B[1]}`;
+        b.coast += `M${A[0]} ${A[1]}L${B[0]} ${B[1]}`;
       }
     });
-    return { fills: Object.entries(byFill), dCoast: dc };
+    return [...out.values()];
   }, [provinces, cells]);
+
+  const dCoast = useMemo(() => blocks.map((b) => b.coast).join(""), [blocks]);
 
   return (
     <>
@@ -4186,26 +4214,32 @@ const StaticLand = React.memo(function StaticLand({ provinces, cells, glyphs }) 
         <path d={dCoast} strokeWidth="17" opacity="0.07" />
         <path d={dCoast} strokeWidth="7" opacity="0.09" />
       </g>
-      <g style={{ filter: "drop-shadow(2px 3px 3px rgba(3,7,10,.85))" }}>
-        {fills.map(([col, d]) => <path key={col} d={d} fill={col} />)}
-      </g>
-      {/* Shadow, outline, lit edge — in that order, so a mark reads as a thing
-          standing on the ground rather than as a line drawn on it. */}
-      <g strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}>
-        {Object.entries(glyphs).map(([t, g]) => {
-          const ink = inkFor(TERRAIN[t].color);
-          return (
-            <g key={t}>
-              {g.fill && <path d={g.fill} fill={ink} stroke="none" opacity="0.26" />}
-              {g.ink && <path d={g.ink} fill="none" stroke={ink} strokeWidth="0.95" opacity="0.52" />}
-              {g.lit && <path d={g.lit} fill="none" stroke="#fff2d8" strokeWidth="0.8"
-                opacity={t === "m" ? 0.12 : 0.2} />}
-            </g>
-          );
-        })}
-      </g>
+
+      {/* No filter over this. A drop-shadow on the land forced the browser to
+          render every hex on the continent into one offscreen buffer before it
+          could composite anything — at full zoom that buffer is sixty-eight
+          megapixels, and it defeats the block splitting above completely. The
+          coastline below carries the same reading for nothing. */}
+      {blocks.map((b) => (
+        <g key={b.k}>
+          {Object.entries(b.fills).map(([col, d]) => <path key={col} d={d} fill={col} />)}
+          {/* Shadow, outline, lit edge — in that order, so a mark reads as a
+              thing standing on the ground rather than a line drawn on it. */}
+          {Object.entries(b.glyphs).map(([t, g]) => {
+            const ink = inkFor(TERRAIN[t].color);
+            return (
+              <g key={t} strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}>
+                {g.fill && <path d={g.fill} fill={ink} stroke="none" opacity="0.26" />}
+                {g.ink && <path d={g.ink} fill="none" stroke={ink} strokeWidth="0.95" opacity="0.52" />}
+                {g.lit && <path d={g.lit} fill="none" stroke="#fff2d8" strokeWidth="0.8"
+                  opacity={t === "m" ? 0.12 : 0.2} />}
+              </g>
+            );
+          })}
+        </g>
+      ))}
       <g fill="none" style={{ pointerEvents: "none" }}>
-        <path d={dCoast} stroke="#08141b" strokeWidth="2" opacity="0.92" strokeLinejoin="round" />
+        <path d={dCoast} stroke="#08141b" strokeWidth="3.2" opacity="0.95" strokeLinejoin="round" />
         <path d={dCoast} stroke="#a8dcee" strokeWidth="0.65" opacity="0.42" strokeLinejoin="round" />
       </g>
 
@@ -4271,8 +4305,13 @@ const RealmLayer = React.memo(function RealmLayer({ provinces, cells, seen }) {
          the terrain beneath leaks through to be read. */
       const k0 = key(p.c, p.r);
       if (!seen.has(k0)) {
-        const b = reliefAt(p.c, p.r);
-        fog[b] = (fog[b] || "") + seg;
+        // Bucketed by block as well as by band, for the same reason the ground
+        // is: fog covers most of the map, and one path per band means every
+        // raster tile walks the whole continent.
+        const blk = Math.floor(p.r / BLOCK_R) * BLOCK_COLS + Math.floor(p.c / BLOCK_C);
+        const band = reliefAt(p.c, p.r);
+        const o = fog[blk] || (fog[blk] = {});
+        o[band] = (o[band] || "") + seg;
         return;
       }
       if (p.owner) byNat[p.owner] = (byNat[p.owner] || "") + seg;
@@ -4304,12 +4343,16 @@ const RealmLayer = React.memo(function RealmLayer({ provinces, cells, seen }) {
 
   return (
     <g style={{ pointerEvents: "none" }}>
-      {fogBands.map(([b, d]) => {
-        const sh = +b;
-        return <path key={b} d={d} fill={sh >= 0
-          ? mix("#16242f", "#4a6d80", sh * 0.66)
-          : mix("#16242f", "#05090d", -sh * 0.8)} />;
-      })}
+      {fogBands.map(([blk, bands]) => (
+        <g key={blk}>
+          {Object.entries(bands).map(([b, d]) => {
+            const sh = +b;
+            return <path key={b} d={d} fill={sh >= 0
+              ? mix("#16242f", "#4a6d80", sh * 0.66)
+              : mix("#16242f", "#05090d", -sh * 0.8)} />;
+          })}
+        </g>
+      ))}
       <path d={dDim} fill="#101820" opacity="0.16" />
       {tints.map(([nat, d]) => (
         <path key={nat} d={d} data-nat={nat} fill={FACTION[nat].color} opacity="0.46" />
@@ -4368,7 +4411,7 @@ const RealmLayer = React.memo(function RealmLayer({ provinces, cells, seen }) {
 /* The ground never changes after the world is built, so it lives in its own
    <svg> beneath the rest. The browser rasterises it once; turns and selections
    repaint only the thin layer above, which is what stopped the stutter. */
-const BaseMap = React.memo(function BaseMap({ w, h, provinces, cells, glyphs }) {
+const BaseMap = React.memo(function BaseMap({ w, h, provinces, cells }) {
   return (
     <svg className="cc-worldmap cc-basemap" width={w} height={h}
       viewBox={`0 0 ${MAPW} ${MAPH}`} preserveAspectRatio="xMidYMid meet">
@@ -4415,7 +4458,7 @@ const BaseMap = React.memo(function BaseMap({ w, h, provinces, cells, glyphs }) 
           <line key={"h" + i} x1="0" y1={i * 90} x2={MAPW} y2={i * 90} />
         ))}
       </g>
-      <StaticLand provinces={provinces} cells={cells} glyphs={glyphs} />
+      <StaticLand provinces={provinces} cells={cells} />
       <rect width={MAPW} height={MAPH} fill="url(#basegrain)" style={{ pointerEvents: "none" }} />
       <rect width={MAPW} height={MAPH} fill="url(#basegrain2)" style={{ pointerEvents: "none" }} />
       <rect width={MAPW} height={MAPH} fill="url(#baselat)" style={{ pointerEvents: "none" }} />
@@ -4449,17 +4492,6 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
     return o;
   }, []);
 
-  const glyphs = useMemo(() => {
-    const byT = {};
-    Object.values(game.provinces).forEach((p) => {
-      const [cx, cy] = centreOf(p.c, p.r);
-      const g = glyphFor(p.t, cx, cy, p.c, p.r);
-      if (!g) return;
-      const o = byT[p.t] || (byT[p.t] = { ink: "", fill: "", lit: "" });
-      o.ink += g.ink; o.fill += g.fill; o.lit += g.lit;
-    });
-    return byT;
-  }, []);
 
   // Where each name wants to sit. Actual placement happens below, once we know
   // where the warbands are standing.
@@ -4529,8 +4561,12 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
      on. The expensive redraw happens once, on a map that is standing still,
      instead of on every notch of the wheel. */
   useEffect(() => {
-    if (crisp === zoom) return;
-    const t = setTimeout(() => setCrisp(zoom), 170);
+    if (crisp === Math.min(zoom, 2)) return;
+    // Capped, because the drawn size is what the browser has to rasterise:
+    // at 2.4 the map is sixty-eight megapixels, at 2.0 it is forty-seven. Past
+    // the cap the last stretch is 1.2x, which is not something you can see —
+    // unlike the 2.4x stretch that made this look pixelly in the first place.
+    const t = setTimeout(() => setCrisp(Math.min(zoom, 2)), 170);
     return () => clearTimeout(t);
   }, [zoom, crisp]);
 
@@ -4799,8 +4835,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
             maps are drawn at their true size. */}
         <div className="cc-mapzoom"
           style={{ width: MAPW * crisp, height: MAPH * crisp, transform: `scale(${zoom / crisp})` }}>
-        <BaseMap w={MAPW * crisp} h={MAPH * crisp} provinces={staticProvinces}
-          cells={cells} glyphs={glyphs} />
+        <BaseMap w={MAPW * crisp} h={MAPH * crisp} provinces={staticProvinces} cells={cells} />
         <svg viewBox={`0 0 ${MAPW} ${MAPH}`} className="cc-worldmap cc-overmap"
           style={{ width: MAPW * crisp, height: MAPH * crisp }}
           role="img" aria-label="Map of post-Collapse Europe">
