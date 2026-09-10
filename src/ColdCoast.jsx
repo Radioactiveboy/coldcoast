@@ -13,7 +13,7 @@ import {
   Crown, Hammer, MapPin, Skull, Snowflake, Target, Ban, Handshake, Volume2, VolumeX, Music,
   Flag, Sparkles, Play, Anvil, Boxes,
 } from "lucide-react";
-import { TECHS, TECH_IDS } from "./data/techs.js";
+import { TECHS, TECH_IDS, TECH_TIERS, TIER_OF, tierGate, tierOpen, tierNeeds } from "./data/techs.js";
 import { UNIT_TIERS, UNITS, UNIT_IDS } from "./data/units.js";
 import { SETTLEMENT, WORKS, WORK_IDS } from "./data/settlement.js";
 import { seasonOf, yearOf } from "./data/seasons.js";
@@ -216,6 +216,7 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-tnode{cursor:pointer}
 .cc-tnode rect:first-child{transition:stroke .12s ease,filter .12s ease}
 .cc-tnode:hover rect:first-child{filter:brightness(1.35)}
+.cc-tiername{font-family:'Barlow Condensed','Inter',system-ui,sans-serif;font-weight:700;font-size:13px;letter-spacing:.12em}
 .cc-tname{font-family:'Barlow Condensed','Inter',sans-serif;font-weight:600;font-size:14px}
 .cc-tmeta{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10.5px}
 .cc-lordbtn{width:30px;height:30px;border:1px solid #31454f;border-radius:5px;overflow:hidden;padding:0;display:flex}
@@ -784,7 +785,13 @@ function craftPlan(nat, provinces, natId) {
 const wGrade = (id) => WEAPON_GRADES.find((g) => g.id === id) || WEAPON_GRADES[0];
 const aGrade = (id) => ARMOUR_GRADES.find((g) => g.id === id) || ARMOUR_GRADES[0];
 const gradesFor = (nat, list) => list.filter((g) => !g.needs || nat?.known?.[g.needs]);
-const unitOpen = (nat, id) => !UNITS[id].needs || !!nat?.known?.[UNITS[id].needs];
+/* `only` marks a company that belongs to one faction and nobody else — the
+   changed do not muster and their horde is never on anyone's roll. */
+const unitOpen = (nat, id) => {
+  const u = UNITS[id];
+  if (u.only) return nat?.id === u.only;
+  return !u.needs || !!nat?.known?.[u.needs];
+};
 const unitsFor = (nat) => UNIT_IDS.filter((id) => unitOpen(nat, id));
 
 function unitStats(u) {
@@ -838,6 +845,12 @@ function techState(state, natId, id) {
   const t = TECHS[id];
   if (n.known?.[id]) return { s: "known" };
   if (n.research?.id === id) return { s: "working", left: n.research.left };
+  // A whole tier can be out of sight. Nothing in it is offered, to the player
+  // or to the AI, until the tier below is nearly done.
+  if (!tierOpen(n.known, TIER_OF[id])) {
+    const w = tierNeeds(n.known, TIER_OF[id]);
+    return { s: "shrouded", why: `Learn ${w.left} more ${w.tier.name} advance${w.left === 1 ? "" : "s"} first.` };
+  }
   const missing = t.needs.filter((k) => !n.known?.[k]);
   if (missing.length) return { s: "locked", why: `Needs ${missing.map((k) => TECHS[k].name.toLowerCase()).join(" and ")}.` };
   if (!hasSite(state, natId, t)) return { s: "locked", why: `Needs ${t.site.label}.` };
@@ -869,7 +882,7 @@ const LAIR_KINDS = {
   changed: {
     faction: "changed", title: "Something is living here",
     text: "The lower floors are wet and warm and smell of ammonia. What comes up the stairwell at you is the wrong shape and there is a great deal of it. Nobody agrees afterwards on how many there were.",
-    garrison: ["axemen", "axemen", "axemen", "spearmen"],
+    garrison: ["fleshhorde", "fleshhorde", "fleshhorde"],
     loot: { scrap: 30, powder: 18 },
   },
   barricade: {
@@ -3748,6 +3761,7 @@ function BuildingMark({ b, x, y, small, tiny, left, damaged }) {
 function warbandKind(a) {
   const u = a.units;
   if (!u.length) return "spear";
+  if (u.some((x) => x.type === "fleshhorde")) return "horde";
   if (u.some((x) => x.type === "guncrew")) return "cannon";
   if (u.some((x) => x.type === "technicals")) return "vehicle";
   if (u.filter((x) => UNITS[x.type]?.cav).length * 2 >= u.length) return "horse";
@@ -3806,6 +3820,11 @@ function WarbandGlyph({ kind }) {
       <path d="M-5 2.2v-2.6h4.6l1.6-2.2h2.6l1.2 2.2v2.6z" />
       <circle cx="-2.6" cy="3.4" r="1.6" fill="none" strokeWidth="1.1" />
       <circle cx="2.8" cy="3.4" r="1.6" fill="none" strokeWidth="1.1" />
+    </>);
+    // Not arms at all. A mass of it, coming up the stair.
+    case "horde": return (<>
+      <path d="M-4.6 4.6q-1.4-3.4.8-5.2 1.6-1.3 3.4-.5.4-2.4 2.4-2.4 2.2 0 2.4 2.6 2.2.5 2 3-.2 1.8-1.8 2.5z" />
+      <path d="M-2.4 1.2l-1.8-2.6M0.4-.4l-.4-3.2M2.8 1l2-2.4" fill="none" strokeWidth="0.8" />
     </>);
     // A barrel on its carriage.
     case "cannon": return (<>
@@ -5275,26 +5294,32 @@ function TechIcon({ id }) {
 
 const NODE_W = 168, NODE_H = 60, COL = 214, ROW = 78;
 
+const TIER_HEAD = 34;
+
+/* One column per tier, so a shrouded tier is a column you can point at. Within
+   a tier, anything that depends on a neighbour in the same tier sits below it,
+   which keeps the few same-column arrows pointing downward. */
 function treeLayout() {
-  const depth = {};
-  const d = (id) => {
-    if (depth[id] != null) return depth[id];
-    const t = TECHS[id];
-    depth[id] = t.needs.length ? 1 + Math.max(...t.needs.map(d)) : 0;
-    return depth[id];
-  };
-  TECH_IDS.forEach(d);
-  const cols = {};
-  TECH_IDS.forEach((id) => { (cols[depth[id]] = cols[depth[id]] || []).push(id); });
-  const maxRows = Math.max(...Object.values(cols).map((c) => c.length));
   const pos = {};
-  Object.entries(cols).forEach(([dep, ids]) => {
-    const off = ((maxRows - ids.length) * ROW) / 2;
-    ids.forEach((id, i) => {
-      pos[id] = { x: 24 + Number(dep) * COL, y: 24 + off + i * ROW, depth: Number(dep) };
+  let maxRows = 0;
+  TECH_TIERS.forEach((tier, ti) => {
+    const sub = {};
+    const d = (id) => {
+      if (sub[id] != null) return sub[id];
+      const own = TECHS[id].needs.filter((n) => TIER_OF[n] === ti);
+      sub[id] = own.length ? 1 + Math.max(...own.map(d)) : 0;
+      return sub[id];
+    };
+    tier.techs.forEach(d);
+    const ordered = tier.techs.slice().sort((a, b) => sub[a] - sub[b]);
+    maxRows = Math.max(maxRows, ordered.length);
+    const off = ((5 - ordered.length) * ROW) / 2;
+    ordered.forEach((id, i) => {
+      pos[id] = { x: 24 + ti * COL, y: 24 + TIER_HEAD + off + i * ROW, tier: ti, row: i };
     });
   });
-  return { pos, w: 24 + (Math.max(...Object.keys(cols).map(Number)) + 1) * COL, h: 48 + maxRows * ROW };
+  return { pos, w: 24 + TECH_TIERS.length * COL,
+           h: 48 + TIER_HEAD + Math.max(maxRows, 5) * ROW, rows: Math.max(maxRows, 5) };
 }
 const TREE = treeLayout();
 
@@ -5302,8 +5327,12 @@ function TechTree({ game, P, onResearch, onClose }) {
   const nat = game.nations[P];
   const states = {};
   TECH_IDS.forEach((id) => { states[id] = techState(game, P, id); });
-  const [sel, setSel] = useState(() =>
-    nat.research?.id || TECH_IDS.find((id) => states[id].s === "open") || TECH_IDS[0]);
+  const visible = TECH_IDS.filter((id) => tierOpen(nat.known, TIER_OF[id]));
+  const [sel0, setSel] = useState(() =>
+    nat.research?.id || visible.find((id) => states[id].s === "open") || visible[0]);
+  // Learning something can shroud nothing, but a loaded save or a restart can
+  // leave the selection pointing at a tier that is no longer in view.
+  const sel = visible.includes(sel0) ? sel0 : visible[0];
   const t = TECHS[sel], st = states[sel];
 
   const tone = (s) => s === "known" ? { fill: "#132219", edge: "#4d7a5c", text: "#a6e0bd" }
@@ -5330,7 +5359,8 @@ function TechTree({ game, P, onResearch, onClose }) {
         <div className="flex-1 overflow-auto thin cc-treescroll">
           <svg width={TREE.w} height={TREE.h} className="cc-tree">
             <g fill="none" strokeLinecap="round">
-              {TECH_IDS.flatMap((id) => TECHS[id].needs.map((n) => {
+              {TECH_IDS.filter((id) => tierOpen(nat.known, TIER_OF[id]))
+                .flatMap((id) => TECHS[id].needs.map((n) => {
                 const a = TREE.pos[n], b = TREE.pos[id];
                 const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2, x2 = b.x, y2 = b.y + NODE_H / 2;
                 const done = states[id].s === "known" || nat.known?.[n];
@@ -5342,7 +5372,40 @@ function TechTree({ game, P, onResearch, onClose }) {
               }))}
             </g>
 
-            {TECH_IDS.map((id) => {
+            {/* A tier that is not in view yet: its name, how many advances it
+                holds, and what opens it — but not what they are. */}
+            {TECH_TIERS.map((tier, ti) => {
+              const open = tierOpen(nat.known, ti);
+              const x = 24 + ti * COL;
+              const w = tierNeeds(nat.known, ti);
+              const off = ((5 - tier.techs.length) * ROW) / 2;
+              return (
+                <g key={tier.id}>
+                  <text x={x} y={22} className="cc-tiername" fill={open ? "#8fe3d6" : "#5d707c"}>
+                    {tier.name.toUpperCase()}
+                  </text>
+                  <text x={x + NODE_W} y={22} textAnchor="end" className="cc-tmeta" fill="#5d707c">
+                    {tier.techs.filter((id) => nat.known?.[id]).length}/{tier.techs.length}
+                  </text>
+                  {!open && tier.techs.map((_, i) => (
+                    <g key={i} transform={`translate(${x},${24 + TIER_HEAD + off + i * ROW})`}>
+                      <rect width={NODE_W} height={NODE_H} rx="7" fill="#0a1015"
+                        stroke="#22303a" strokeWidth="1.2" strokeDasharray="5 4" />
+                      <rect x="11" y="22" width={NODE_W - 52} height="7" rx="3.5" fill="#1b2731" />
+                      <rect x="11" y="34" width={NODE_W - 96} height="6" rx="3" fill="#161f27" />
+                    </g>
+                  ))}
+                  {!open && w && (
+                    <text x={x} y={24 + TIER_HEAD + off + tier.techs.length * ROW + 4}
+                      className="cc-tmeta" fill="#7b8f9b">
+                      Learn {w.left} more {w.tier.name} advance{w.left === 1 ? "" : "s"}.
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+
+            {TECH_IDS.filter((id) => tierOpen(nat.known, TIER_OF[id])).map((id) => {
               const p = TREE.pos[id], s = states[id].s, c = tone(s);
               const on = sel === id;
               const tt = TECHS[id];
@@ -5424,7 +5487,7 @@ function AdvancesPanel({ game, P, onResearch, onOpenTree }) {
     <div>
       <button type="button" onClick={onOpenTree}
         className="w-full py-3 rounded cc-bg-2a3a4a cc-hover-bg-35495c border cc-border-4d7488 cc-text-dfeaf0 disp cc-text-15px flex items-center justify-center gap-2 transition-colors">
-        <Hammer size={16} /> Open the workshops
+        <Hammer size={16} /> Consult the scholars
       </button>
 
       {busy ? (

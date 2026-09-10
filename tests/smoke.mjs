@@ -85,6 +85,32 @@ await wait(300);
 check("a province can be selected",
   /Lunden/.test(await page.evaluate(() => document.querySelector("aside").innerText)));
 
+// Advances come in tiers now and a tier stays out of sight until the one
+// below it is nearly done. At turn one a realm knows at most one advance, so
+// everything past Tribal must be shrouded — named, counted, but not readable.
+await page.evaluate(() => {
+  const b = [...document.querySelectorAll("header button")].find((x) => x.getAttribute("aria-label") === "Advances");
+  if (b) b.click();
+});
+await wait(350);
+await click("Consult the scholars");
+await wait(500);
+const tree = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+check("the tech tree opens from Consult the scholars", /TRIBAL/.test(tree));
+check("later tiers are shrouded at the start",
+  /Learn \d+ more Tribal advance/.test(tree) && !/Bloomery|Vault craft/.test(tree),
+  /Bloomery|Vault craft/.test(tree) ? "a locked tier is naming its advances" : "");
+await page.evaluate(() => {
+  const ov = document.querySelector(".fixed.inset-0.z-50");
+  if (ov) ov.querySelector("button")?.click();
+});
+await wait(250);
+await page.evaluate(() => {
+  const ov = document.querySelector(".fixed.inset-0.z-50");
+  if (ov) ov.querySelector("button")?.click();
+});
+await wait(250);
+
 // Merging two warbands was reported as "basically impossible": holding one
 // warband made every later click keep that first one in hand, so clicking
 // another of your own did not select it and there was no visible way to

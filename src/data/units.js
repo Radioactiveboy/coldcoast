@@ -84,6 +84,18 @@ export const UNITS = {
     scrap: 130, moraleBase: 86, hold: 1.4,
     desc: "Riot composite over drilled men. There are never many and they are never cheap.",
   },
+  /* Nobody raises these. They belong to the changed, who are not a realm and
+     do not muster — the `only` field keeps them off every muster roll in the
+     game. No armour worth the word and no shot at all, but a great many of
+     them and they do not break: morale of 130 against a vault guard's 86,
+     which is the steadiest thing a realm can field. They come on until there
+     are none left. */
+  fleshhorde: {
+    name: "Flesh Horde", tier: "tribal", only: "changed", role: "It does not stop",
+    size: 280, melee: 13, ranged: 0, def: 0, food: 0, powder: 0,
+    scrap: 0, moraleBase: 130, press: 1.3,
+    desc: "Three centuries in the wet dark under the ruins did something, and it kept doing it. What comes up the stairwell is the wrong shape and there is a great deal of it.",
+  },
   riflemen: {
     name: "Riflemen", tier: "vault", needs: "vaultcraft", role: "Killing at distance",
     size: 90, melee: 5, ranged: 22, def: 13, food: 3, powder: 3,

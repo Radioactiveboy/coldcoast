@@ -89,3 +89,59 @@ export const TECHS = {
   },
 };
 export const TECH_IDS = Object.keys(TECHS);
+
+/* ---------------------------------- TIERS ----------------------------------
+   Advances come in bands, and a band stays out of sight until the one below
+   it is nearly done. The point is pacing: a realm should not be reading about
+   vault craft in its first winter, and the tree should grow as you do.
+
+   A tier opens when all but one of the tier below is understood. All but one
+   rather than all of it, so a realm can leave a branch it has no use for —
+   horse breaking, say — and still get on. Every advance belongs to exactly
+   one tier, and no advance depends on one from a higher tier, so a tier can
+   never be needed before it is visible; there is a check for both below.
+   ------------------------------------------------------------------------ */
+export const TECH_TIERS = [
+  { id: "tribal", name: "Tribal",
+    desc: "What anyone can work out with horn, hide and a long winter.",
+    techs: ["foraging", "bowyery", "horsemanship", "coastworks", "scavenging"] },
+  { id: "forged", name: "Forged",
+    desc: "Ore out of the ground, and a fire hot enough to change it.",
+    techs: ["smelting", "toolcraft", "dyking"] },
+  { id: "drilled", name: "Drilled",
+    desc: "Order, written down: ranks that hold, fields that are dyked, nitre banked.",
+    techs: ["drill", "saltpetre", "refining"] },
+  { id: "powder", name: "Powder",
+    desc: "Corned powder, cast barrels, and engines that will still turn over.",
+    techs: ["blackpowder", "casting", "enginework"] },
+  { id: "vault", name: "Vault",
+    desc: "Pre-Collapse tolerances, read off the machines that made them.",
+    techs: ["vaultcraft"] },
+];
+
+/* All but one of a tier opens the next. A one-advance tier needs that one. */
+export const tierGate = (tier) => Math.max(1, tier.techs.length - 1);
+
+export const TIER_OF = {};
+TECH_TIERS.forEach((t, i) => t.techs.forEach((id) => { TIER_OF[id] = i; }));
+
+/* How many tiers this realm can see. The first is always open. */
+export function tiersOpen(known) {
+  let open = 1;
+  for (let i = 0; i < TECH_TIERS.length - 1; i++) {
+    const done = TECH_TIERS[i].techs.filter((id) => known?.[id]).length;
+    if (done < tierGate(TECH_TIERS[i])) break;
+    open = i + 2;
+  }
+  return Math.min(open, TECH_TIERS.length);
+}
+
+export const tierOpen = (known, i) => i < tiersOpen(known);
+
+/* What is still wanted before tier i comes into view. */
+export function tierNeeds(known, i) {
+  if (i <= 0) return null;
+  const below = TECH_TIERS[i - 1];
+  const done = below.techs.filter((id) => known?.[id]).length;
+  return { tier: below, done, want: tierGate(below), left: Math.max(0, tierGate(below) - done) };
+}
