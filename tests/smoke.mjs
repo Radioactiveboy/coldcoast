@@ -129,6 +129,7 @@ check("later tiers are shrouded at the start",
   /Bloomery|Vault craft/.test(tree) ? "a locked tier is naming its advances" : "");
 check("the long muster is one of the tribal advances", /Long muster/.test(tree));
 
+
 // The tree has to read as a tree: every advance in view that needs something
 // must have a line drawn into it, and clicking one must light its own lines
 // so you can see what it opens. Both were asked for by name.
@@ -147,11 +148,66 @@ const litAfter = await lit();
 check("the tree draws its lines", paths > 4, `${paths} paths`);
 check("picking an advance lights the lines into it",
   litBefore > 0 && litAfter > 0 && litAfter !== litBefore, `lit ${litBefore} -> ${litAfter}`);
+
+// A named place builds through its district: a row of slots that opens with
+// the population, each holding a chain that can be improved twice. Learn
+// something buildable, raise it, and check the improvement is offered.
+await page.evaluate(() => {
+  const t = [...document.querySelectorAll("svg.cc-tree text")].find((x) => x.textContent === "Scavenging");
+  t?.closest("g").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+});
+await wait(250);
+await click("Set the scholars on it");
+await wait(350);
 await page.evaluate(() => {
   const ov = document.querySelector(".fixed.inset-0.z-50");
   if (ov) ov.querySelector("button")?.click();
 });
 await wait(250);
+await page.evaluate(() => {
+  const ov = document.querySelector(".fixed.inset-0.z-50");
+  if (ov) ov.querySelector("button")?.click();
+});
+await wait(250);
+await page.evaluate(() => {
+  const ov = document.querySelector(".fixed.inset-0.z-50");
+  if (ov) ov.querySelector("button")?.click();
+});
+await wait(250);
+
+for (let i = 0; i < 6; i++) { await click("End (spring|summer|autumn|winter)"); await wait(300); }
+await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77);
+await wait(300);
+check("a settlement opens a district", await click("Build in the district"));
+await wait(400);
+const slots = await page.evaluate(() => ({
+  open: document.querySelectorAll(".cc-slotempty").length,
+  filled: document.querySelectorAll(".cc-slotfull").length,
+}));
+check("the district has slots to fill", slots.open + slots.filled >= 4,
+  `${slots.open} empty, ${slots.filled} filled`);
+await page.evaluate(() => document.querySelector(".cc-slotempty")?.click());
+await wait(300);
+const raised = await page.evaluate(() => {
+  const c = [...document.querySelectorAll(".cc-pickcard")].find((x) => /Salvage yard/.test(x.textContent) && !x.disabled);
+  if (!c) return false;
+  c.click(); return true;
+});
+check("something can be raised on empty ground", raised);
+await wait(350);
+await page.evaluate(() => {
+  const ov = document.querySelector(".fixed.inset-0.z-50");
+  if (ov) ov.querySelector("button")?.click();
+});
+await wait(250);
+for (let i = 0; i < 4; i++) { await click("End (spring|summer|autumn|winter)"); await wait(300); }
+await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77);
+await wait(300);
+await click("Build in the district");
+await wait(400);
+const up = await page.evaluate(() =>
+  ([...document.querySelectorAll(".cc-slotup")].map((b) => b.textContent).join(" ")));
+check("a finished building offers its next level", /Cutting floor/.test(up), up.slice(0, 60));
 await page.evaluate(() => {
   const ov = document.querySelector(".fixed.inset-0.z-50");
   if (ov) ov.querySelector("button")?.click();

@@ -13,7 +13,10 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 4: a province's single building/buildLeft/damaged became a builds array, so
+/* 5: buildings became chains — a build carries the level it has been taken to
+   and, at the top, which fork was chosen. A version 4 save has neither, and
+   every building in it would silently read as level one for ever.
+   4: a province's single building/buildLeft/damaged became a builds array, so
    a tile can carry more than one worksite. A version 3 save would load with
    every building on the map gone.
    3: provinces carry a pop. A version 2 save has none, and popRecruits(undefined)
@@ -22,7 +25,7 @@ export const SAVE_KEY = "coldcoast.save";
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight
@@ -31,7 +34,7 @@ export const SAVE_VERSION = 4;
    the AI has already started is part of the position — dropping it would hand
    the player a free escape. */
 const TRANSIENT = {
-  sel: null, tree: false, seat: null, lords: false, showCodex: false,
+  sel: null, tree: false, seat: null, lords: false, showCodex: false, district: null,
   recruit: null, survey: null, lair: null, focus: null, notices: [],
   screen: null,
 };
