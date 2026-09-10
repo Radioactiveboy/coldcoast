@@ -92,6 +92,23 @@ check("unexplored ground still shows its shape", fogTones > 4, `${fogTones} tone
 check("the ground carries its names", await page.evaluate(() =>
   document.querySelectorAll(".cc-mapname").length) > 8);
 
+// The ambience is synthesised and there is no way to hear a headless browser,
+// so check the plumbing instead: the layers exist, the season moves the wind,
+// and standing on a shore brings the sea up. Silence here is a broken graph.
+const heard = () => page.evaluate(() => window.__ccHeard && window.__ccHeard());
+const airSpring = await heard();
+for (let i = 0; i < 3; i++) { await click("End (spring|summer|autumn|winter)"); await wait(320); }
+await wait(1400);
+const airWinter = await heard();
+check("the season is audible", !!airSpring && !!airWinter
+  && airWinter.season === "winter" && airWinter.wind > airSpring.wind,
+  airSpring ? `wind ${airSpring.wind} -> ${airWinter?.wind}` : "no ambience running");
+await page.evaluate((c, r) => window.__ccPick(c, r), 17, 81);   // Plymouth Hulk, a shore
+await wait(1500);
+const airShore = await heard();
+check("a shore brings up the sea", !!airShore && airShore.coast && airShore.sea > 0.002,
+  airShore ? `sea ${airShore.sea}` : "no ambience running");
+
 // A zoom gesture is a composited transform, which is what makes it cheap —
 // and what left the map soft when it stopped, because a scaled layer is the
 // old pixels stretched. Once the gesture settles the maps have to be drawn at

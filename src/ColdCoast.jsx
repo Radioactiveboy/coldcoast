@@ -1398,9 +1398,10 @@ function upgradeState(game, P, prov) {
    which is also what browsers require before audio may start.
    ------------------------------------------------------------------------ */
 const Sound = (() => {
-  let ctx = null, master = null, musicBus = null, sfxBus = null;
+  let ctx = null, master = null, musicBus = null, sfxBus = null, ambBus = null;
   let noiseBuf = null, playing = false, timer = null, voices = [];
   let wantMusic = true, wantSfx = true;
+  let amb = null, ambTimer = null, scene = { season: "spring", coast: false, forge: false, ruins: false };
 
   const ok = () => ctx && ctx.state !== "closed";
 
@@ -1412,6 +1413,8 @@ const Sound = (() => {
     master = ctx.createGain(); master.gain.value = 0.85; master.connect(ctx.destination);
     musicBus = ctx.createGain(); musicBus.gain.value = 0; musicBus.connect(master);
     sfxBus = ctx.createGain(); sfxBus.gain.value = 0.75; sfxBus.connect(master);
+    // Ambience rides with the music, so one switch silences the lot.
+    ambBus = ctx.createGain(); ambBus.gain.value = 0; ambBus.connect(master);
     const n = ctx.sampleRate * 2;
     noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0);
@@ -1458,6 +1461,143 @@ const Sound = (() => {
     win:     () => { [220, 277.2, 329.6, 440].forEach((f, i) => tone(f, 2.2, "sawtooth", 0.05, i * 0.16)); },
     lose:    () => { [220, 207.7, 174.6, 146.8].forEach((f, i) => tone(f, 2.4, "sawtooth", 0.05, i * 0.22)); },
   };
+
+/* ------------------------------- AMBIENCE ----------------------------------
+   Weather, and what is living in it. Three layers that run continuously and
+   are mixed by the season — wind, insects, the sea — and a scatter of things
+   that happen once: birds in spring, gulls on a coast, ravens over ruins, a
+   hammer at a seat with workshops in it, thunder in a winter storm.
+
+   All of it is synthesised, like the rest of the audio in this game. That is
+   not a compromise: a season that changes the weather under you is worth more
+   than a better recording of one, and a bird that answers where you are
+   standing cannot come out of a file.
+   ------------------------------------------------------------------------ */
+  const SEASON_AIR = {
+    spring: { wind: 0.030, windHz: 520, bird: 0.55, insect: 0.00, rain: 0.10, gap: [7, 15] },
+    summer: { wind: 0.018, windHz: 640, bird: 0.30, insect: 0.05, rain: 0.05, gap: [8, 17] },
+    autumn: { wind: 0.055, windHz: 430, bird: 0.10, insect: 0.01, rain: 0.22, gap: [6, 13] },
+    winter: { wind: 0.085, windHz: 300, bird: 0.00, insect: 0.00, rain: 0.30, gap: [5, 12] },
+  };
+  const air = () => SEASON_AIR[scene.season] || SEASON_AIR.spring;
+
+  function loop(freq, q, type, gain, lfoHz, lfoAmt) {
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = ctx.createGain(); g.gain.value = gain;
+    if (lfoHz) {
+      const l = ctx.createOscillator(); l.frequency.value = lfoHz;
+      const lg = ctx.createGain(); lg.gain.value = lfoAmt;
+      l.connect(lg); lg.connect(g.gain); l.start();
+      voices.push(l);
+    }
+    src.connect(f); f.connect(g); g.connect(ambBus);
+    src.start();
+    voices.push(src);
+    return { g, f };
+  }
+
+  function startAmbience() {
+    if (amb || !ok()) return;
+    amb = {
+      wind: loop(500, 0.6, "bandpass", 0.0001, 0.05, 0.02),
+      sea: loop(760, 0.5, "lowpass", 0.0001, 0.075, 0.028),
+      bugs: loop(4600, 9, "bandpass", 0.0001, 11, 0.006),
+      rain: loop(2400, 0.4, "highpass", 0.0001, 0, 0),
+    };
+    tuneAmbience(0.5);
+    ambEvent();
+  }
+
+  function tuneAmbience(secs = 4) {
+    if (!amb || !ok()) return;
+    const a = air();
+    fade(amb.wind.g, a.wind, secs);
+    amb.wind.f.frequency.setTargetAtTime(a.windHz, ctx.currentTime, 2);
+    fade(amb.sea.g, scene.coast ? 0.055 : 0.0001, secs);
+    fade(amb.bugs.g, a.insect, secs);
+    fade(amb.rain.g, a.rain * 0.045, secs);
+  }
+
+  // One-shots. Everything here is short, quiet and slightly different each
+  // time, because a sound that repeats exactly is the one you start hearing.
+  function amBird() {
+    const n = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      const f = 2400 + Math.random() * 1800;
+      ambTone(f, 0.055, "sine", 0.035, i * (0.07 + Math.random() * 0.05), f * (1 + Math.random() * 0.5));
+    }
+  }
+  function amGull() {
+    const f = 780 + Math.random() * 260;
+    ambTone(f, 0.42, "sawtooth", 0.022, 0, f * 0.55);
+    ambTone(f * 1.4, 0.3, "sawtooth", 0.01, 0.28, f * 0.8);
+  }
+  function amRaven() {
+    for (let i = 0; i < 2; i++) ambNoise(0.22, "bandpass", 620 + Math.random() * 220, 6, 0.05, i * 0.34);
+  }
+  function amHammer() {
+    for (let i = 0; i < 3; i++) {
+      const t = i * (0.34 + Math.random() * 0.06);
+      ambNoise(0.06, "bandpass", 1800, 3, 0.035, t);
+      ambTone(1150 + Math.random() * 200, 0.16, "triangle", 0.016, t);
+    }
+  }
+  function amThunder() {
+    ambNoise(2.6, "lowpass", 130, 0.7, 0.075);
+  }
+  function ambNoise(dur, type, freq, q, gain, at = 0) {
+    if (!ok()) return;
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = ctx.createGain();
+    const t = ctx.currentTime + at;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + Math.min(0.08, dur / 3));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(ambBus);
+    src.start(t); src.stop(t + dur + 0.05);
+  }
+  function ambTone(freq, dur, type, gain, at = 0, glide) {
+    if (!ok()) return;
+    const o = ctx.createOscillator(); o.type = type;
+    const g = ctx.createGain();
+    const t = ctx.currentTime + at;
+    o.frequency.setValueAtTime(freq, t);
+    if (glide) o.frequency.exponentialRampToValueAtTime(glide, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(ambBus);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+
+  /* What might be heard next, weighted by the season and by what is under the
+     player. Drawn rather than cycled, so the same thing can happen twice and
+     the ear never learns the order. */
+  function ambEvent() {
+    if (!amb || !ok()) return;
+    const a = air();
+    const pool = [];
+    if (a.bird > 0) pool.push([amBird, a.bird]);
+    if (scene.coast) pool.push([amGull, 0.5]);
+    if (scene.ruins) pool.push([amRaven, 0.45]);
+    if (scene.forge) pool.push([amHammer, 0.4]);
+    if (scene.season === "autumn" || scene.season === "winter") pool.push([amRaven, 0.2]);
+    if (scene.season === "winter") pool.push([amThunder, 0.12]);
+    const total = pool.reduce((n, x) => n + x[1], 0);
+    if (total > 0) {
+      let r = Math.random() * total;
+      for (const [fn, w] of pool) { r -= w; if (r <= 0) { try { fn(); } catch (e) {} break; } }
+    }
+    const [lo, hi] = a.gap;
+    ambTimer = setTimeout(ambEvent, (lo + Math.random() * (hi - lo)) * 1000);
+  }
+
+  function stopAmbience() {
+    if (ambTimer) { clearTimeout(ambTimer); ambTimer = null; }
+    amb = null;
+  }
 
   // A slow cold drone, wind, and a bell every so often from a minor pentatonic.
   const ROOT = 55;
@@ -1529,7 +1669,7 @@ const Sound = (() => {
     wake() {
       if (!ensure()) return;
       if (ctx.state === "suspended") ctx.resume();
-      if (wantMusic) { startMusic(); fade(musicBus, 0.5, 3); }
+      if (wantMusic) { startMusic(); startAmbience(); fade(musicBus, 0.5, 3); fade(ambBus, 0.9, 4); }
     },
     play(name) {
       if (!wantSfx || !ok() || !FX[name]) return;
@@ -1540,11 +1680,32 @@ const Sound = (() => {
       wantMusic = on;
       if (!ensure()) return;
       if (ctx.state === "suspended") ctx.resume();
-      if (on) { startMusic(); fade(musicBus, 0.5, 2); }
-      else { fade(musicBus, 0, 1.2); setTimeout(stopMusic, 1300); }
+      if (on) { startMusic(); startAmbience(); fade(musicBus, 0.5, 2); fade(ambBus, 0.9, 2); }
+      else { fade(musicBus, 0, 1.2); fade(ambBus, 0, 1.2); setTimeout(() => { stopMusic(); stopAmbience(); }, 1300); }
     },
     sfx(on) { wantSfx = on; if (ok()) fade(sfxBus, on ? 0.75 : 0, 0.2); },
+    /* Where the player is and what season it is. Called whenever either
+       changes; cheap enough to call on every selection, since nothing here
+       restarts — the layers are already running and only their gains move. */
+    scene(next) {
+      const same = Object.keys(next).every((k) => scene[k] === next[k]);
+      if (same) return;
+      scene = { ...scene, ...next };
+      if (amb && ok()) tuneAmbience(4);
+    },
     state() { return { music: wantMusic, sfx: wantSfx }; },
+    /* What the ambience is doing right now, for the smoke test. There is no
+       way to hear a headless browser, so the next best thing is to check that
+       the layers exist and that the season actually moves their gains. */
+    heard() {
+      if (!amb || !ok()) return null;
+      return {
+        season: scene.season, coast: scene.coast, ruins: scene.ruins, forge: scene.forge,
+        wind: +amb.wind.g.gain.value.toFixed(4),
+        sea: +amb.sea.g.gain.value.toFixed(4),
+        bugs: +amb.bugs.g.gain.value.toFixed(4),
+      };
+    },
   };
 })();
 
@@ -2095,6 +2256,22 @@ export default function ColdCoast() {
   useEffect(() => {
     if (game.over) Sound.play(game.over.win ? "win" : "lose");
   }, [game.over]);
+
+  /* The weather you can hear. The season sets the air, and whatever hex is
+     under the cursor decides what lives in it — gulls on a shore, ravens over
+     a ruinfield, a hammer where the workshops are. */
+  const selKey = game.sel?.k || null;
+  useEffect(() => {
+    const here = selKey ? game.provinces[selKey] : null;
+    const seat = Object.values(game.provinces).find((p) => p.capital && p.seat === game.player);
+    const at = here || seat;
+    Sound.scene({
+      season: seasonOf(game.turn).id,
+      coast: !!at && coastal(at.c, at.r),
+      ruins: !!at && at.t === "r",
+      forge: !!at && (at.capital || buildsOf(at).some((b) => b.id === "workshop" && !b.left)),
+    });
+  }, [game.turn, selKey, game.provinces, game.player]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") setGame((g) => (g.sel ? { ...g, sel: null } : g)); };
@@ -4664,6 +4841,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
   // to address a hex by, so expose one hook for tests to drive selection.
   useEffect(() => {
     if (typeof window !== "undefined") window.__ccPick = (c, r) => selRef.current(c, r);
+    if (typeof window !== "undefined") window.__ccHeard = () => Sound.heard();
   }, []);
 
   // The wheel writes zoomRef itself mid-gesture; this keeps it true for every
