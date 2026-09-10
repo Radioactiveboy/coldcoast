@@ -3678,84 +3678,210 @@ const edgeN = (c, r, i) => {
   return [c + dc, r + dr];
 };
 
-/* Terrain symbols, drawn as stroked marks rather than fills so the whole map
-   keeps one hand-drawn ink language. */
+/* ----------------------------- TERRAIN MARKS -------------------------------
+   What is actually growing, standing or lying on a tile. These were single
+   stroked outlines at a fixed offset — two identical chevrons for every
+   mountain in Europe, three identical firs for every forest — which tiled into
+   a visible lattice the moment you zoomed in, and read as wallpaper rather
+   than as ground.
+
+   Every mark is now built from the tile's own noise: how many, how big, where
+   they sit, which way they lean. And each comes back in three parts rather
+   than one, so the ground is lit like the rest of the map — a dark face on the
+   south-east side, the outline, and a bright edge on the north-west, which is
+   the same north-west the relief shading is lit from. A mountain reads as a
+   mountain because it has a shadow, not because it is a triangle.
+
+   Everything stays within about eleven units of the centre so nothing spills
+   into the neighbouring tile, and every terrain still batches down to three
+   paths for the whole map.
+   ------------------------------------------------------------------------ */
 function glyphFor(t, cx, cy, c, r) {
-  const j = (i, amp) => (noise(c * 3 + i, r * 5 + i, 7) - 0.5) * amp;
-  let d = "";
+  // One stable stream of randomness per tile. Same tile, same mountains, every
+  // time the world is drawn — but no two tiles alike.
+  const rnd = (i) => noise(c * 7.13 + i * 2.7, r * 3.91 + i * 1.3, 13);
+  const between = (i, lo, hi) => lo + rnd(i) * (hi - lo);
+  const n = (i, lo, hi) => Math.floor(between(i, lo, hi + 0.999));
+  let ink = "", fill = "", lit = "";
+
   switch (t) {
-    case "m":
-      for (let i = 0; i < 2; i++) {
-        const x = cx - 5 + i * 10 + j(i, 3), y = cy + 4 + j(i + 9, 2);
-        d += `M${x - 6} ${y}l6 -9.5l6 9.5`;
+    case "m": {
+      // Peaks along a rough baseline, tallest first so the small ones sit in
+      // front. The south-east face is filled; the north-west ridge is lit.
+      // One dominant peak and usually a smaller neighbour, set at different
+      // heights on a wandering baseline. Two or three peaks of the same size on
+      // the same line, hex after hex, drew a zigzag across the whole range —
+      // regular enough to read as a pattern instead of as mountains.
+      const count = rnd(20) > 0.62 ? 3 : 2;
+      for (let i = 0; i < count; i++) {
+        const x = cx + (i - (count - 1) / 2) * between(i + 1, 7, 10) + between(i + 4, -1.8, 1.8);
+        const y = cy + between(i + 7, 1.5, 6);
+        const w = between(i + 10, 3.4, 5.6);
+        const h = (i === 0 ? between(i + 13, 8.5, 12.5) : between(i + 13, 5, 9));
+        ink += `M${(x - w).toFixed(1)} ${y.toFixed(1)}L${x.toFixed(1)} ${(y - h).toFixed(1)}L${(x + w).toFixed(1)} ${y.toFixed(1)}`;
+        fill += `M${x.toFixed(1)} ${(y - h).toFixed(1)}L${(x + w).toFixed(1)} ${y.toFixed(1)}L${(x + w * 0.15).toFixed(1)} ${y.toFixed(1)}Z`;
+        lit += `M${(x - w * 0.9).toFixed(1)} ${(y - h * 0.12).toFixed(1)}L${x.toFixed(1)} ${(y - h).toFixed(1)}`;
       }
-      return d;
-    case "h":
-      for (let i = 0; i < 2; i++) {
-        const x = cx - 5 + i * 10 + j(i, 3), y = cy + 3 + j(i + 4, 2);
-        d += `M${x - 5.5} ${y}q5.5 -6 11 0`;
+      break;
+    }
+    case "h": {
+      // Mounds, overlapping, each with the shadow under its right shoulder.
+      const count = n(0, 2, 3);
+      for (let i = 0; i < count; i++) {
+        const x = cx + (i - (count - 1) / 2) * between(i + 1, 7, 9) + between(i + 3, -1, 1);
+        const y = cy + between(i + 6, 2.5, 4.5);
+        const w = between(i + 9, 4, 5.6);
+        const h = between(i + 12, 3.4, 5);
+        // The mound is one quadratic; the lit edge and the shadow are its two
+        // halves, split at the apex by de Casteljau rather than drawn by eye —
+        // guessing at them left a pale arc hovering above the hill.
+        const ap = (y - h * 0.95).toFixed(1);
+        ink += `M${(x - w).toFixed(1)} ${y.toFixed(1)}q${w.toFixed(1)} ${(-h * 1.9).toFixed(1)} ${(w * 2).toFixed(1)} 0`;
+        lit += `M${(x - w).toFixed(1)} ${y.toFixed(1)}Q${(x - w * 0.5).toFixed(1)} ${ap} ${x.toFixed(1)} ${ap}`;
+        fill += `M${x.toFixed(1)} ${ap}Q${(x + w * 0.5).toFixed(1)} ${ap} ${(x + w).toFixed(1)} ${y.toFixed(1)}L${x.toFixed(1)} ${y.toFixed(1)}Z`;
       }
-      return d;
-    case "f":
-      for (let i = 0; i < 3; i++) {
-        const x = cx - 8 + i * 8 + j(i, 2.5), y = cy + 6 + j(i + 2, 3);
-        d += `M${x} ${y}l0 -3.5M${x - 3.5} ${y - 3.5}l3.5 -6.5l3.5 6.5z`;
+      break;
+    }
+    case "f": {
+      // A stand rather than a row: varied heights, and the short ones nearer
+      // the front so the group has some depth to it.
+      const count = n(0, 3, 5);
+      for (let i = 0; i < count; i++) {
+        const x = cx + between(i + 1, -9, 9);
+        const y = cy + between(i + 4, 1, 7);
+        const h = between(i + 7, 5.5, 9);
+        const w = h * between(i + 10, 0.3, 0.42);
+        ink += `M${x.toFixed(1)} ${y.toFixed(1)}l0 ${(-h * 0.22).toFixed(1)}`;
+        ink += `M${(x - w).toFixed(1)} ${(y - h * 0.22).toFixed(1)}L${x.toFixed(1)} ${(y - h).toFixed(1)}L${(x + w).toFixed(1)} ${(y - h * 0.22).toFixed(1)}Z`;
+        fill += `M${x.toFixed(1)} ${(y - h).toFixed(1)}L${(x + w).toFixed(1)} ${(y - h * 0.22).toFixed(1)}L${x.toFixed(1)} ${(y - h * 0.22).toFixed(1)}Z`;
       }
-      return d;
-    case "r":
-      for (let i = 0; i < 2; i++) {
-        const x = cx - 6 + i * 11 + j(i, 2), y = cy + 5 + j(i + 3, 2);
-        d += `M${x - 4} ${y}l0 -7l3 0l0 3l4 0l0 4`;
+      break;
+    }
+    case "r": {
+      // Broken wall stubs and a standing corner or two: a place that was built
+      // on rather than a pair of tally marks.
+      const count = n(0, 2, 4);
+      for (let i = 0; i < count; i++) {
+        const x = cx + between(i + 1, -9, 6);
+        const y = cy + between(i + 4, 1, 6);
+        const w = between(i + 7, 3, 5.5);
+        const h = between(i + 10, 3, 6.5);
+        // A wall that stopped part way: up the near side, across a broken top,
+        // down to the ground again. Filled as well as outlined, so it has some
+        // mass to it rather than reading as a tally mark, which is what the
+        // first version looked like.
+        const a = w * between(i + 13, 0.35, 0.6);
+        const shape = `M${x.toFixed(1)} ${y.toFixed(1)}L${x.toFixed(1)} ${(y - h).toFixed(1)}L${(x + a).toFixed(1)} ${(y - h).toFixed(1)}`
+          + `L${(x + a).toFixed(1)} ${(y - h * 0.58).toFixed(1)}L${(x + w).toFixed(1)} ${(y - h * 0.58).toFixed(1)}`
+          + `L${(x + w).toFixed(1)} ${y.toFixed(1)}Z`;
+        ink += shape;
+        fill += shape;
+        // A window, and whatever came down off the top.
+        if (h > 4.4) ink += `M${(x + 0.9).toFixed(1)} ${(y - h * 0.72).toFixed(1)}l${(a - 1.8).toFixed(1)} 0l0 ${(h * 0.3).toFixed(1)}l${(-(a - 1.8)).toFixed(1)} 0Z`;
+        if (rnd(i + 16) > 0.5) ink += `M${(x - 2.6).toFixed(1)} ${(y - 0.4).toFixed(1)}h.01M${(x - 1.4).toFixed(1)} ${(y + 0.5).toFixed(1)}h.01`;
       }
-      return d;
-    case "g":
-      for (let i = 0; i < 2; i++) {
-        const x = cx - 5 + i * 10 + j(i, 3), y = cy + j(i + 1, 4);
-        d += `M${x - 4} ${y}l8 0M${x} ${y - 4}l0 8M${x - 3} ${y - 3}l6 6M${x + 3} ${y - 3}l-6 6`;
+      break;
+    }
+    case "g": {
+      // Crevasses, not asterisks. Long thin cracks with the odd branch.
+      const count = n(0, 2, 3);
+      for (let i = 0; i < count; i++) {
+        const x = cx + between(i + 1, -8, 4);
+        const y = cy + between(i + 4, -6, 5);
+        const dx = between(i + 7, 5, 10), dy = between(i + 10, -3, 3);
+        ink += `M${x.toFixed(1)} ${y.toFixed(1)}l${(dx * 0.45).toFixed(1)} ${(dy * 0.6).toFixed(1)}l${(dx * 0.55).toFixed(1)} ${(dy * 0.4).toFixed(1)}`;
+        if (rnd(i + 13) > 0.5) ink += `M${(x + dx * 0.45).toFixed(1)} ${(y + dy * 0.6).toFixed(1)}l${(dx * 0.25).toFixed(1)} ${(3 + rnd(i) * 2).toFixed(1)}`;
       }
-      return d;
-    case "d":
-      for (let i = 0; i < 3; i++) {
-        const y = cy - 5 + i * 5 + j(i, 1.5);
-        d += `M${cx - 9} ${y}q4.5 -2.5 9 0t9 0`;
+      break;
+    }
+    case "d": {
+      // Ripples on a drained seabed. They run with the tide, so the whole tile
+      // leans one way rather than every line being independently wobbly.
+      const lean = between(0, -1.6, 1.6);
+      const count = n(1, 3, 4);
+      for (let i = 0; i < count; i++) {
+        const y = cy - 5.5 + i * between(i + 2, 3.4, 4.4) + between(i + 5, -0.6, 0.6);
+        const w = between(i + 8, 7.5, 9.5);
+        ink += `M${(cx - w).toFixed(1)} ${(y - lean).toFixed(1)}q${(w * 0.5).toFixed(1)} -2.4 ${w.toFixed(1)} 0t${w.toFixed(1)} ${(lean * 2).toFixed(1)}`;
       }
-      return d;
-    case "l":
-      for (let i = 0; i < 2; i++) {
-        const y = cy - 3 + i * 6 + j(i, 1.5);
-        d += `M${cx - 8} ${y}q4 -2.5 8 0t8 0`;
+      break;
+    }
+    case "l": {
+      const count = n(0, 2, 3);
+      for (let i = 0; i < count; i++) {
+        const y = cy - 3.5 + i * between(i + 2, 3.6, 4.6);
+        const w = between(i + 5, 6.5, 8.5);
+        ink += `M${(cx - w).toFixed(1)} ${y.toFixed(1)}q${(w * 0.5).toFixed(1)} -2.6 ${w.toFixed(1)} 0t${w.toFixed(1)} 0`;
       }
-      return d;
-    case "s":
-      for (let i = 0; i < 3; i++) {
-        const x = cx - 8 + i * 8 + j(i, 3), y = cy + 4 + j(i + 6, 3);
-        d += `M${x} ${y}l0 -5M${x - 2.5} ${y}l-1 -3.5M${x + 2.5} ${y}l1 -3.5`;
+      break;
+    }
+    case "s": {
+      // Tufts of dry grass, some tall enough to lean.
+      const count = n(0, 4, 6);
+      for (let i = 0; i < count; i++) {
+        const x = cx + between(i + 1, -9.5, 9.5);
+        const y = cy + between(i + 4, 0, 6.5);
+        const h = between(i + 7, 3, 5.5);
+        const bend = between(i + 10, -1.6, 1.6);
+        ink += `M${x.toFixed(1)} ${y.toFixed(1)}q${(bend * 0.5).toFixed(1)} ${(-h * 0.6).toFixed(1)} ${bend.toFixed(1)} ${(-h).toFixed(1)}`;
+        ink += `M${x.toFixed(1)} ${y.toFixed(1)}q${(-1.4).toFixed(1)} ${(-h * 0.45).toFixed(1)} ${(-2.2).toFixed(1)} ${(-h * 0.7).toFixed(1)}`;
       }
-      return d;
-    case "c":
-      for (let i = 0; i < 3; i++) {
-        const x = cx - 7 + i * 7 + j(i, 2), y = cy - 3 + i * 4 + j(i + 5, 2);
-        d += `M${x - 4} ${y}l8 0M${x} ${y}l0 -4`;
+      break;
+    }
+    case "c": {
+      // Reed tufts standing in short lengths of open water.
+      const count = n(0, 2, 3);
+      for (let i = 0; i < count; i++) {
+        const x = cx + between(i + 1, -8, 6);
+        const y = cy + between(i + 4, -4, 6);
+        const h = between(i + 7, 3.5, 5.5);
+        ink += `M${x.toFixed(1)} ${y.toFixed(1)}l0 ${(-h).toFixed(1)}M${(x + 2.2).toFixed(1)} ${y.toFixed(1)}l0 ${(-h * 0.7).toFixed(1)}`;
+        ink += `M${(x - 3.4).toFixed(1)} ${(y + 1.4).toFixed(1)}q3.4 -1.4 6.8 0`;
       }
-      return d;
-    case "b":
-      for (let i = 0; i < 5; i++) {
-        const x = cx - 8 + (i % 3) * 8 + j(i, 3), y = cy - 4 + Math.floor(i / 3) * 8 + j(i + 7, 3);
-        d += `M${x} ${y}l0.1 0`;
+      break;
+    }
+    case "b": {
+      // Salt crust: irregular plates with cracks between them.
+      const count = n(0, 2, 3);
+      for (let i = 0; i < count; i++) {
+        const x = cx + between(i + 1, -7, 4);
+        const y = cy + between(i + 4, -5, 4);
+        const w = between(i + 7, 3.4, 5.4);
+        const h = between(i + 10, 2.6, 4);
+        ink += `M${x.toFixed(1)} ${y.toFixed(1)}l${w.toFixed(1)} ${(-h * 0.35).toFixed(1)}l${(w * 0.55).toFixed(1)} ${(h * 0.8).toFixed(1)}l${(-w * 0.7).toFixed(1)} ${(h * 0.55).toFixed(1)}Z`;
       }
-      return d;
-    case "t":
-      for (let i = 0; i < 3; i++) {
-        const x = cx - 7 + i * 7 + j(i, 3), y = cy + j(i + 2, 5);
-        d += `M${x} ${y}l0.1 0M${x + 2} ${y + 3}l0.1 0`;
+      break;
+    }
+    case "t": {
+      // Lichen and a few knee-high shrubs. Sparse, because it is.
+      const count = n(0, 3, 5);
+      for (let i = 0; i < count; i++) {
+        const x = cx + between(i + 1, -9, 9);
+        const y = cy + between(i + 4, -5, 6);
+        if (rnd(i + 7) > 0.55) {
+          ink += `M${x.toFixed(1)} ${y.toFixed(1)}l0 -2.4M${(x - 1.5).toFixed(1)} ${(y - 1.2).toFixed(1)}l1.5 -1.2l1.5 1.2`;
+        } else {
+          ink += `M${x.toFixed(1)} ${y.toFixed(1)}h.01M${(x + 1.8).toFixed(1)} ${(y + 1.4).toFixed(1)}h.01`;
+        }
       }
-      return d;
-    case "p":
-      if (noise(c, r, 11) < 0.45) return "";
-      return `M${cx - 3 + j(0, 4)} ${cy + 3}l0 -4M${cx + 3 + j(1, 4)} ${cy + 4}l0 -3`;
+      break;
+    }
+    case "p": {
+      // Open ground says almost nothing, which is the point — but a little
+      // more than half of it now carries a furrow or a tuft.
+      if (rnd(0) < 0.42) break;
+      for (let i = 0; i < n(1, 2, 3); i++) {
+        const x = cx + between(i + 3, -7, 7), y = cy + between(i + 6, -1, 4.5);
+        const h = between(i + 9, 2.6, 4);
+        const bend = between(i + 12, -0.9, 0.9);
+        ink += `M${x.toFixed(1)} ${y.toFixed(1)}q${(bend * 0.4).toFixed(1)} ${(-h * 0.6).toFixed(1)} ${bend.toFixed(1)} ${(-h).toFixed(1)}`;
+      }
+      break;
+    }
     default:
-      return "";
+      break;
   }
+  return ink || fill || lit ? { ink, fill, lit } : null;
 }
 
 /* Buildings on the map.
@@ -3777,12 +3903,16 @@ const BUILD_ART = {
       <path d="M0.4 1.1h6.4M0.4 2.1h6.4M0.4 3h6.4" fill="none" strokeWidth="0.75" />
     </>
   ),
-  // A gantry crane over a heap of cut metal.
+  // Cut plate stacked against a jib, with the hook still on it. The first
+  // version was a lamp-post next to a triangle.
   yard: (
     <>
-      <path d="M-6.5 3l2.4-3.2L-1.7 3z" />
-      <path d="M0.6 3v-8.6M0.6-8.2h5.6M6.2-8.2v2.6" fill="none" strokeWidth="1.15" />
-      <circle cx="6.2" cy="-5.2" r="0.9" />
+      <path d="M-7 3v-2.6l4.6-1.1V3z" />
+      <path d="M-2 3v-4.1l4.3-1V3z" />
+      <path d="M2.9 3v-2.2l3.4-0.8V3z" />
+      <path d="M-5.4-2.2v-6.2M-5.4-8.4h7.2" fill="none" strokeWidth="1.1" />
+      <path d="M1.8-8.4v2.2" fill="none" strokeWidth="0.85" />
+      <path d="M0.9-6.2h1.8v1.5H0.9z" />
     </>
   ),
   // A charcoal kiln: a dome with its chimney, and the saltpetre beds.
@@ -3793,13 +3923,17 @@ const BUILD_ART = {
       <path d="M-6 3h1.2M4.4 3h1.8" fill="none" strokeWidth="0.85" />
     </>
   ),
-  // A cracking tower with its banding, and a flare alongside.
+  // Two tanks and a flare, joined by a run of pipe. The single rounded tower
+  // it had before read as a headstone with a candle beside it.
   refinery: (
     <>
-      <path d="M-4.6 3v-8.4a2.3 2.3 0 0 1 4.6 0V3z" />
-      <path d="M-4.6-2.4h4.6M-4.6-5h4.6" fill="none" strokeWidth="0.75" />
-      <path d="M2.6 3v-5.2h1.6V3z" />
-      <path d="M3.4-2.6q-1.4-1.6 0-3.2q1.4 1.6 0 3.2z" />
+      <path d="M-7.2 3v-5.6h4.8V3z" />
+      <path d="M-7.2-2.6h4.8" fill="none" strokeWidth="0.7" />
+      <path d="M-1.2 3v-7.8h4V3z" />
+      <path d="M-1.2-2.2h4M-1.2 0.4h4" fill="none" strokeWidth="0.7" />
+      <path d="M-4.8-2.6v-1.6h3.6" fill="none" strokeWidth="0.8" />
+      <path d="M5.2 3v-6.4h1.7V3z" />
+      <path d="M6.05-3.6q-1.5-1.9 0-3.8q1.5 1.9 0 3.8z" />
     </>
   ),
   // A longhall with a banner over the door.
@@ -3861,11 +3995,23 @@ function BuildingMark({ b, x, y, small, tiny, left, damaged }) {
   // site, so a half-built thing reads as unfinished at a glance rather than
   // needing a progress collar to be studied.
   return (
+    /* The same silhouette three times over: cast on the ground to the
+       south-east, filled with a gradient so it has a top and a bottom, and
+       given a warm edge on the north-west. Flat shapes in one colour looked
+       like stickers once the ground under them had a light source. */
     <g transform={`translate(${x},${y}) scale(${k})`}>
-      <ellipse cx="0" cy="3.3" rx="6.6" ry="1.5" fill="#060b0f" opacity="0.5" />
-      <g fill={done ? (damaged ? "#b08878" : "#dcbf92") : "#8ea6b4"}
+      <ellipse cx="1.2" cy="3.4" rx="6.8" ry="1.6" fill="#060b0f" opacity="0.45" />
+      <g transform="translate(0.9,0.8)" fill="#050a0e" stroke="#050a0e" strokeWidth="0.6"
+         strokeLinejoin="round" strokeLinecap="round" opacity="0.3">
+        {art || <path d="M-4 3v-4h8v4z" />}
+      </g>
+      <g fill={`url(#${done ? (damaged ? "bldhurt" : "bldwarm") : "bldsite"})`}
          stroke="#0a1015" strokeWidth="0.9" strokeLinejoin="round" strokeLinecap="round"
-         opacity={done ? 1 : 0.85}>
+         opacity={done ? 1 : 0.9}>
+        {art || <path d="M-4 3v-4h8v4z" />}
+      </g>
+      <g transform="translate(-0.45,-0.45)" fill="none" stroke="#fff0cf" strokeWidth="0.6"
+         strokeLinejoin="round" strokeLinecap="round" opacity="0.3">
         {art || <path d="M-4 3v-4h8v4z" />}
       </g>
       {!done && (
@@ -4043,10 +4189,20 @@ const StaticLand = React.memo(function StaticLand({ provinces, cells, glyphs }) 
       <g style={{ filter: "drop-shadow(2px 3px 3px rgba(3,7,10,.85))" }}>
         {fills.map(([col, d]) => <path key={col} d={d} fill={col} />)}
       </g>
-      <g fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}>
-        {Object.entries(glyphs).map(([t, d]) => (
-          <path key={t} d={d} stroke={inkFor(TERRAIN[t].color)} strokeWidth="1" opacity="0.5" />
-        ))}
+      {/* Shadow, outline, lit edge — in that order, so a mark reads as a thing
+          standing on the ground rather than as a line drawn on it. */}
+      <g strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }}>
+        {Object.entries(glyphs).map(([t, g]) => {
+          const ink = inkFor(TERRAIN[t].color);
+          return (
+            <g key={t}>
+              {g.fill && <path d={g.fill} fill={ink} stroke="none" opacity="0.26" />}
+              {g.ink && <path d={g.ink} fill="none" stroke={ink} strokeWidth="0.95" opacity="0.52" />}
+              {g.lit && <path d={g.lit} fill="none" stroke="#fff2d8" strokeWidth="0.8"
+                opacity={t === "m" ? 0.12 : 0.2} />}
+            </g>
+          );
+        })}
       </g>
       <g fill="none" style={{ pointerEvents: "none" }}>
         <path d={dCoast} stroke="#08141b" strokeWidth="2" opacity="0.92" strokeLinejoin="round" />
@@ -4226,11 +4382,11 @@ const BaseMap = React.memo(function BaseMap({ w, h, provinces, cells, glyphs }) 
         <pattern id="basegrain" width="23" height="23" patternUnits="userSpaceOnUse">
           <path d="M2.4 3.1h.01M8.7 1.4h.01M15.2 4.8h.01M20.6 2.3h.01M5.1 9.6h.01M12.8 8.2h.01
                    M18.4 11.7h.01M3.3 15.4h.01M9.9 18.1h.01M16.6 16.3h.01M21.2 19.8h.01M6.7 21.4h.01"
-            stroke="#000000" strokeWidth="0.7" strokeLinecap="round" opacity="0.34" />
+            stroke="#000000" strokeWidth="0.7" strokeLinecap="round" opacity="0.26" />
         </pattern>
         <pattern id="basegrain2" width="17" height="17" patternUnits="userSpaceOnUse">
           <path d="M1.8 6.2h.01M7.4 2.9h.01M13.6 7.8h.01M4.9 12.7h.01M11.2 14.3h.01M15.8 11.1h.01"
-            stroke="#ffffff" strokeWidth="0.65" strokeLinecap="round" opacity="0.22" />
+            stroke="#ffffff" strokeWidth="0.65" strokeLinecap="round" opacity="0.15" />
         </pattern>
         {/* Latitude. The north of this map is ice and the south is dust, and a
             wash from one to the other ties eight thousand separate tiles into
@@ -4290,8 +4446,10 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
     const byT = {};
     Object.values(game.provinces).forEach((p) => {
       const [cx, cy] = centreOf(p.c, p.r);
-      const d = glyphFor(p.t, cx, cy, p.c, p.r);
-      if (d) byT[p.t] = (byT[p.t] || "") + d;
+      const g = glyphFor(p.t, cx, cy, p.c, p.r);
+      if (!g) return;
+      const o = byT[p.t] || (byT[p.t] = { ink: "", fill: "", lit: "" });
+      o.ink += g.ink; o.fill += g.fill; o.lit += g.lit;
     });
     return byT;
   }, []);
@@ -4653,6 +4811,21 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
             <pattern id="swell" width="26" height="26" patternUnits="userSpaceOnUse">
               <path d="M0 13q6.5 -4 13 0t13 0" fill="none" stroke="#4e7d95" strokeWidth="0.7" opacity="0.16" />
             </pattern>
+            {/* Timber and stone standing, cold slate while it is still a site,
+                and scorched where something has been at it. */}
+            <linearGradient id="bldwarm" x1="0" y1="0" x2="0.35" y2="1">
+              <stop offset="0%" stopColor="#f2d9ab" />
+              <stop offset="55%" stopColor="#d8ba8c" />
+              <stop offset="100%" stopColor="#9d7a53" />
+            </linearGradient>
+            <linearGradient id="bldsite" x1="0" y1="0" x2="0.35" y2="1">
+              <stop offset="0%" stopColor="#a8bfcd" />
+              <stop offset="100%" stopColor="#5f7889" />
+            </linearGradient>
+            <linearGradient id="bldhurt" x1="0" y1="0" x2="0.35" y2="1">
+              <stop offset="0%" stopColor="#c69884" />
+              <stop offset="100%" stopColor="#7d5245" />
+            </linearGradient>
           </defs>
 
           <RealmLayer provinces={game.provinces} cells={cells} seen={sight} />
