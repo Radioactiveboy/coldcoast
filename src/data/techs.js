@@ -14,6 +14,11 @@ export const TECHS = {
     desc: "Rolls of who owes what, where they sleep and who feeds them on the road. Keeping more than a few companies together is a clerical problem before it is a military one.",
     gives: ["Warbands of up to ten companies instead of eight"],
   },
+  carting: {
+    name: "Carts and drovers", short: "Carting", turns: 4, scrap: 30, needs: ["foraging"],
+    desc: "Axles that survive a winter, harness that fits, and men who know how to keep four hundred head moving in the same direction. It is the least glorious thing a realm ever learns and it decides how far its warbands can go.",
+    gives: ["Baggage trains"], unlocks: ["baggage"],
+  },
   bowyery: {
     name: "Recurve bowyery", short: "Bowyery", turns: 3, scrap: 25, needs: ["foraging"],
     desc: "Horn, sinew and a winter of drying. Reach without powder.",
@@ -56,6 +61,11 @@ export const TECHS = {
     desc: "Sluices and banked earth. The silt out there is the richest soil on the island.",
     gives: ["Silt farms", "Silt flats feed one more mouth again"],
     yield: { food: 1 }, on: ["d"], unlocks: ["siltfarm"],
+  },
+  quartering: {
+    name: "Quarter and commissary", short: "Quartering", turns: 5, scrap: 55, needs: ["drill"],
+    desc: "Depots, tallies and a man whose whole job is knowing where the next fortnight's rations are. Armies are fed by clerks long before they are fed by farmers.",
+    gives: ["Your supply reaches a hex further", "Half the wastage on a long campaign"],
   },
   saltpetre: {
     name: "Saltpetre beds", short: "Saltpetre", turns: 5, scrap: 50, needs: ["toolcraft"],
@@ -109,13 +119,13 @@ export const TECH_IDS = Object.keys(TECHS);
 export const TECH_TIERS = [
   { id: "tribal", name: "Tribal",
     desc: "What anyone can work out with horn, hide and a long winter.",
-    techs: ["foraging", "hosting", "bowyery", "horsemanship", "coastworks", "scavenging"] },
+    techs: ["foraging", "hosting", "carting", "bowyery", "horsemanship", "coastworks", "scavenging"] },
   { id: "forged", name: "Forged",
     desc: "Ore out of the ground, and a fire hot enough to change it.",
     techs: ["smelting", "toolcraft", "dyking"] },
   { id: "drilled", name: "Drilled",
     desc: "Order, written down: ranks that hold, fields that are dyked, nitre banked.",
-    techs: ["drill", "saltpetre", "refining"] },
+    techs: ["drill", "quartering", "saltpetre", "refining"] },
   { id: "powder", name: "Powder",
     desc: "Corned powder, cast barrels, and engines that will still turn over.",
     techs: ["blackpowder", "casting", "enginework"] },
