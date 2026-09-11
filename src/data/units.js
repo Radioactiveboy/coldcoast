@@ -28,7 +28,7 @@ export const UNITS = {
     name: "Hunters", tier: "tribal", role: "Reach without powder",
     size: 90, melee: 3, ranged: 7, def: 2, food: 2, powder: 0,
     scrap: 13, moraleBase: 50,
-    desc: "They fed the ward through nineteen winters. A man is a larger target than a hare.",
+    scout: 1, desc: "They fed the ward through nineteen winters. A man is a larger target than a hare.",
   },
   pikemen: {
     name: "Pikemen", tier: "forged", needs: "smelting", role: "A hedge no horse will take",
@@ -40,13 +40,13 @@ export const UNITS = {
     name: "Bowmen", tier: "forged", needs: "bowyery", role: "Massed shot",
     size: 110, melee: 3, ranged: 11, def: 4, food: 2, powder: 0,
     scrap: 21, moraleBase: 54,
-    desc: "Horn and sinew, drawn to the ear. Slower than powder and never out of it.",
+    scout: 1, desc: "Horn and sinew, drawn to the ear. Slower than powder and never out of it.",
   },
   riders: {
     name: "Riders", tier: "forged", needs: "horsemanship", role: "Shock and pursuit",
     size: 80, melee: 13, ranged: 0, def: 6, food: 5, powder: 0, cav: true, speed: 1,
     scrap: 28, moraleBase: 64, press: 1.2,
-    desc: "They arrive where they are least wanted and leave before anyone agrees what happened.",
+    scout: 2, desc: "They arrive where they are least wanted and leave before anyone agrees what happened.",
   },
   ironclad: {
     name: "Ironclad", tier: "forged", needs: "toolcraft", role: "An anvil",
@@ -76,7 +76,7 @@ export const UNITS = {
     name: "Technicals", tier: "powder", needs: "enginework", role: "Speed and reach",
     size: 70, melee: 9, ranged: 12, def: 9, food: 1, fuel: 4, powder: 1, cav: true, speed: 2,
     scrap: 88, moraleBase: 62,
-    desc: "Two dead engines make one that turns over. It runs on fuel, not forage.",
+    scout: 2, desc: "Two dead engines make one that turns over. It runs on fuel, not forage.",
   },
   vaultguard: {
     name: "Vault Guard", tier: "vault", needs: "vaultcraft", role: "Few, and very hard to break",

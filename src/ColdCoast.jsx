@@ -16,6 +16,10 @@ import {
 import { TECHS, TECH_IDS, TECH_TIERS, TIER_OF, tierGate, tierOpen, tierNeeds } from "./data/techs.js";
 import { ICONS, ICON_AUTHORS, unitIcon, techIcon } from "./data/gameicons.js";
 import { MAP_NAMES } from "./data/places.js";
+import { SECTORS, SECTOR_NAME, ADJACENT, POSTURES, POSTURE_IDS, GROUND, groundFor,
+         FORMATIONS, FORMATION_IDS, FLANK_DEAL, FLANK_MORALE, SHAKEN_NEAR, SHAKEN_SECTOR,
+         SIEGE, BREACH_ORDER }
+  from "./data/battle.js";
 import { UNIT_TIERS, UNITS, UNIT_IDS } from "./data/units.js";
 import { SETTLEMENT, WORKS, WORK_IDS } from "./data/settlement.js";
 import { seasonOf, yearOf } from "./data/seasons.js";
@@ -198,6 +202,44 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-text-ff8a72{color:#ff8a72}
 .cc-w-1020px{width:1020px}
 .cc-morebuilds{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:5.4px;font-weight:600}
+.cc-facing{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;opacity:.75;margin-bottom:3px;border-bottom:1px solid #22303a;padding-bottom:2px}
+.cc-line{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media(max-width:720px){.cc-line{grid-template-columns:1fr}}
+.cc-sector{border:1px solid #2a3a44;border-radius:8px;background:#101a21;padding:10px;min-height:150px;transition:border-color .12s,background .12s}
+.cc-sector:hover{border-color:#3d5a66}
+.cc-sectorgone{background:#160f0e;border-color:#4a2b26;opacity:.75}
+.cc-sectorflank{border-color:#8a4636;box-shadow:inset 0 0 22px rgba(224,100,74,.12)}
+.cc-groundtag{font-size:10.5px;border:1px solid #2a3a44;border-radius:3px;padding:1px 5px;color:#7e939f}
+.cc-gr-rough{border-color:#5c5230;color:#c9a37a}
+.cc-gr-anchor{border-color:#2f5768;color:#7fb2cd}
+.cc-breachpip{width:16px;height:5px;border-radius:2px;display:inline-block}
+.cc-chipdark{background:#0c141a;border-style:dashed;border-color:#22303a}
+.cc-blindmark{width:9px;height:9px;border-radius:2px;opacity:.5;display:inline-block}
+.cc-chip{border:1px solid #2a3a44;border-radius:5px;background:#131f27;padding:5px 6px;user-select:none}
+.cc-chippick{cursor:grab}
+.cc-chippick:hover{border-color:#4d9aa6}
+.cc-chipheld{border-color:#8fe3d6;background:#152a30}
+.cc-chipbar{height:3px;border-radius:2px;background:#26333c;overflow:hidden;display:block}
+.cc-chipbar>span{display:block;height:100%}
+.cc-tug{height:7px;border-radius:3px;overflow:hidden;display:flex;background:#26333c}
+.cc-tug>span{display:block;height:100%}
+.cc-postrow{display:flex;gap:3px}
+.cc-postbtn{flex:1;font-size:11px;padding:3px 0;border:1px solid #2a3a44;border-radius:4px;color:#8ba0ac;background:#0f1820;transition:border-color .12s,color .12s,background .12s}
+.cc-postbtn:hover{border-color:#3d6470;color:#c3d5de}
+.cc-poston{border-color:#4d9aa6;color:#dfeaf0;background:#152a30}
+.cc-reserve{border:1px dashed #2a3a44;border-radius:8px;background:#0e161c;padding:10px}
+.cc-reserverow{display:flex;gap:8px;flex-wrap:wrap}
+.cc-reserverow>div{min-width:132px}
+.cc-formbtn{font-size:11.5px;padding:3px 9px;border:1px solid #31454f;border-radius:4px;color:#c3d5de;background:#131f27;transition:border-color .12s,background .12s}
+.cc-formbtn:hover{border-color:#4d9aa6;background:#18262e}
+.cc-bigbtn{padding:9px 18px;border-radius:6px;border:1px solid;font-family:inherit;font-size:14.5px;transition:background .12s,border-color .12s}
+.cc-bigfight{border-color:#8a4636;background:#3a2018;color:#f0d6c2}
+.cc-bigfight:hover{background:#4a2a1f}
+.cc-bigfight:disabled{opacity:.4;cursor:not-allowed}
+.cc-bigoff{border-color:#31454f;background:#131f27;color:#c3d5de}
+.cc-bigoff:hover{background:#18262e}
+.cc-w-1180px{width:1180px}
+.cc-bg-121a20{background:#121a20}
 .cc-districtgrid{grid-template-columns:repeat(auto-fill,minmax(232px,1fr))}
 .cc-districtlist{grid-template-columns:repeat(auto-fill,minmax(228px,1fr))}
 .cc-slot{border-radius:8px;border:1px solid #2a3a44;padding:11px;min-height:104px;display:flex;flex-direction:column}
@@ -902,6 +944,7 @@ function unitStats(u) {
     powder: d.powder || 0,
     food: d.food, fuel: d.fuel || 0,
     antiCav: d.antiCav || 1, cav: !!d.cav, siege: !!d.siege, beast: !!d.beast,
+    scout: d.scout || 0,
     speedBonus: d.speed || 0, hold: d.hold || 1, press: d.press || 1,
   };
 }
@@ -1372,6 +1415,22 @@ function seatDefence(p) {
   Object.keys(p.works || {}).forEach((w) => { d += WORKS[w].def || 0; });
   return d;
 }
+/* ------------------------------- SIEGES ------------------------------------
+   How strong the place is, whether it is worth investing rather than storming,
+   and what a season of sitting in front of it does. */
+const wallsOf = (p) => doneBuilds(p).reduce((n, b) => n + (buildStep(b)?.def || 0), 0) + seatDefence(p);
+const isWalled = (p) => wallsOf(p) >= SIEGE.wallsAt;
+const siegeOf = (p) => p?.siege || null;
+const breachCount = (p) => Math.min(SIEGE.maxBreach, Math.floor((p?.siege?.seasons || 0) / SIEGE.perBreach));
+/* What the ground is when the wall is the thing in your way. Sectors are walls
+   until the siege has opened them. */
+function stormGround(p) {
+  const open = breachCount(p);
+  const g = { left: "walls", centre: "walls", right: "walls" };
+  BREACH_ORDER.slice(0, open).forEach((sec) => { g[sec] = "rough"; });
+  return g;
+}
+
 function seatCap(prov, natId) {
   let c = 0;
   Object.values(prov).forEach((p) => {
@@ -1413,7 +1472,8 @@ const Sound = (() => {
   let ctx = null, master = null, musicBus = null, sfxBus = null, ambBus = null;
   let noiseBuf = null, playing = false, timer = null, voices = [];
   let wantMusic = true, wantSfx = true;
-  let amb = null, ambTimer = null, scene = { season: "spring", coast: false, forge: false, ruins: false };
+  let amb = null, ambTimer = null, field = null;
+  let scene = { season: "spring", coast: false, forge: false, ruins: false };
 
   const ok = () => ctx && ctx.state !== "closed";
 
@@ -1470,6 +1530,14 @@ const Sound = (() => {
     volley:  () => { for (let i = 0; i < 7; i++) noise(0.09, "bandpass", 900 + Math.random() * 1500, 2, 0.06, Math.random() * 0.22); },
     clash:   () => { for (let i = 0; i < 5; i++) noise(0.16, "bandpass", 500 + Math.random() * 900, 3, 0.07, i * 0.05); tone(82, 0.5, "sawtooth", 0.05); },
     turn:    () => { tone(98, 1.1, "sawtooth", 0.05); tone(147, 1.1, "sawtooth", 0.03, 0.04); },
+    // The orders given, and what happens when they are obeyed.
+    horn:    () => { tone(116, 1.5, "sawtooth", 0.055); tone(174, 1.4, "sawtooth", 0.032, 0.06);
+                     tone(233, 1.1, "triangle", 0.02, 0.12); },
+    charge:  () => { for (let i = 0; i < 6; i++) noise(0.1, "lowpass", 180 - i * 8, 1, 0.06, i * 0.07);
+                     tone(87, 0.8, "sawtooth", 0.045, 0.1, 131); },
+    give:    () => { tone(220, 1.2, "sawtooth", 0.05, 0, 82); noise(0.7, "bandpass", 620, 2, 0.05, 0.05); },
+    flanked: () => { tone(65, 1.4, "sawtooth", 0.055, 0, 49); tone(98, 1.2, "triangle", 0.03, 0.08, 73); },
+    chase:   () => { for (let i = 0; i < 8; i++) noise(0.11, "lowpass", 240 - i * 14, 1, 0.05, i * 0.065); },
     win:     () => { [220, 277.2, 329.6, 440].forEach((f, i) => tone(f, 2.2, "sawtooth", 0.05, i * 0.16)); },
     lose:    () => { [220, 207.7, 174.6, 146.8].forEach((f, i) => tone(f, 2.4, "sawtooth", 0.05, i * 0.22)); },
   };
@@ -1699,6 +1767,27 @@ const Sound = (() => {
     /* Where the player is and what season it is. Called whenever either
        changes; cheap enough to call on every selection, since nothing here
        restarts — the layers are already running and only their gains move. */
+    /* The field, while you are standing on it: a long way off, a great many
+       people shouting, and iron every so often. It rides the ambience bus, so
+       the same switch silences it, and it is torn down when the screen closes.
+       Built rather than sampled, like everything else here. */
+    field(on) {
+      if (!ensure() || !amb) { if (!on) return; if (!ensure()) return; }
+      if (on) {
+        if (field || !ok()) return;
+        if (ctx.state === "suspended") ctx.resume();
+        const roar = loop(320, 0.7, "bandpass", 0.0001, 0.09, 0.02);
+        const iron = loop(2100, 5, "bandpass", 0.0001, 0.7, 0.004);
+        fade(roar.g, 0.05, 2.5);
+        fade(iron.g, 0.012, 2.5);
+        field = { roar, iron };
+      } else {
+        if (!field) return;
+        fade(field.roar.g, 0.0001, 1.4);
+        fade(field.iron.g, 0.0001, 1.4);
+        field = null;
+      }
+    },
     scene(next) {
       const same = Object.keys(next).every((k) => scene[k] === next[k]);
       if (same) return;
@@ -1917,6 +2006,8 @@ function moveInfo(game, army, prov, P, atWar) {
 
 /* ------------------------------- ECONOMY ---------------------------------- */
 function provinceYield(p, natId, nat) {
+  // Invested: the carts do not come out and nothing is going in.
+  if (p.siege) return { food: 0, scrap: 0, metal: 0, fuel: 0, powder: 0, men: 0 };
   const t = TERRAIN[p.t];
   // men comes from who lives here rather than from the terrain itself. The
   // population table is set so an ordinary tile yields exactly what its
@@ -1987,7 +2078,60 @@ function nationIncome(state, natId, turn) {
   return gross;
 }
 
-/* ------------------------------- COMBAT ----------------------------------- */
+/* ------------------------------- COMBAT -----------------------------------
+   A battle is a line of three sectors and a reserve behind it. Every company
+   stands somewhere; `u.pos` is where. Sectors fight each other separately,
+   which is what makes where you put things matter — and when one of them goes,
+   the enemy turns onto whatever is beside it, which is how a line comes apart
+   rather than simply wearing down.
+   ------------------------------------------------------------------------ */
+
+/* What you can see of the other line before a blow is struck, which is what
+   outriders are actually for. Nothing brought, nothing known: you deploy blind
+   and find out when the fighting starts. A company of hunters can count them.
+   Horse gets close enough to see what they are.
+
+   0 — nothing at all      1 — how many stand in each sector
+   2 — what they are, and how many                                        */
+const scoutLevel = (units) => {
+  const eyes = units.reduce((n, u) => n + (u.str > 0 ? unitStats(u).scout : 0), 0);
+  return eyes >= 3 ? 2 : eyes >= 1 ? 1 : 0;
+};
+
+/* Heaviest first, so a formation's idea of "the centre" gets the companies
+   that can hold one. */
+const deployWeight = (u) => {
+  const st = unitStats(u);
+  return st.def * 2 + st.melee * 3 + (st.cav ? -12 : 0) + (st.ranged > 8 ? -8 : 0);
+};
+function deployUnits(units, formation) {
+  const lay = (FORMATIONS[formation] || FORMATIONS.even).lay(units.length);
+  const order = units.map((u, i) => ({ u, i })).sort((x, y) => deployWeight(y.u) - deployWeight(x.u));
+  const out = units.map((u) => ({ ...u }));
+  order.forEach(({ i }, rank) => { out[i] = { ...out[i], pos: lay[rank] }; });
+  return out;
+}
+
+/* Which of a side's sectors have nobody left standing in them. A sector nobody
+   was ever put in counts as broken the moment the enemy has somebody there:
+   an empty wing is not a clever economy, it is an open flank. */
+function brokenSectors(mine, theirs) {
+  const out = {};
+  SECTORS.forEach((s) => {
+    const me = mine.filter((u) => u.pos === s && u.str > 0).length;
+    const them = theirs.filter((u) => u.pos === s && u.str > 0).length;
+    out[s] = me === 0 && them > 0;
+  });
+  return out;
+}
+
+/* How many broken neighbours a sector has beside it. Anchored ground — a
+   river, a shore — cannot be turned however the rest of the line is going. */
+function flanksOn(broken, ground, s) {
+  if (GROUND[ground[s]]?.safe) return 0;
+  return ADJACENT[s].filter((t) => broken[t]).length;
+}
+
 function sidePower(units, stance, hasPowder) {
   let melee = 0, ranged = 0, defSum = 0, strSum = 0, cavStr = 0, antiCav = 0, beastStr = 0;
   units.forEach((u) => {
@@ -2045,115 +2189,146 @@ function stanceChips(id) {
 
 function resolveRound(bt) {
   const b = { ...bt, log: [...bt.log] };
-  const aStance = STANCES[b.aStance], dStance = STANCES[b.dStance];
+  const aPost = b.aPost, dPost = b.dPost;
+  const aL = b.aLord || { dealt: 1, taken: 1, morale: 1 };
+  const dL = b.dLord || { dealt: 1, taken: 1, morale: 1 };
 
-  const aPowderNeed = b.a.units.reduce((n, u) => n + unitStats(u).powder, 0) * (aStance.powder || 1);
-  const dPowderNeed = b.d.units.reduce((n, u) => n + unitStats(u).powder, 0) * (dStance.powder || 1);
-  const aHas = b.aPowder >= aPowderNeed;
-  const dHas = b.dPowder >= dPowderNeed;
-  b.aPowder = Math.max(0, b.aPowder - (aHas ? aPowderNeed : 0));
-  b.dPowder = Math.max(0, b.dPowder - (dHas ? dPowderNeed : 0));
-  if (!aHas && aPowderNeed > 0) b.log.push({ t: "warn", s: "a", m: "Attacking guns are down to scavenged charges." });
-  if (!dHas && dPowderNeed > 0) b.log.push({ t: "warn", s: "d", m: "Defending guns are down to scavenged charges." });
+  /* Powder is drawn for the whole army, once, for whatever part of the line is
+     shooting this round. A sector that is not on volley still fires, it just
+     does not burn double doing it. */
+  const need = (units, post) => units.reduce((n, u) =>
+    n + unitStats(u).powder * ((POSTURES[post[u.pos]] || POSTURES.hold).powder || 1), 0);
+  const aNeed = need(b.a.units, aPost), dNeed = need(b.d.units, dPost);
+  const aHas = b.aPowder >= aNeed, dHas = b.dPowder >= dNeed;
+  b.aPowder = Math.max(0, b.aPowder - (aHas ? aNeed : 0));
+  b.dPowder = Math.max(0, b.dPowder - (dHas ? dNeed : 0));
+  if (!aHas && aNeed > 0) b.log.push({ t: "warn", s: "a", m: "Attacking guns are down to scavenged charges." });
+  if (!dHas && dNeed > 0) b.log.push({ t: "warn", s: "d", m: "Defending guns are down to scavenged charges." });
 
-  const A = sidePower(b.a.units, aStance, aHas);
-  const D = sidePower(b.d.units, dStance, dHas);
-
+  const aBroke = brokenSectors(b.a.units, b.d.units);
+  const dBroke = brokenSectors(b.d.units, b.a.units);
+  const ground = b.ground || { left: "open", centre: "open", right: "open" };
   const terrDef = b.terrainDef / 100;
-  const rng = () => 0.85 + Math.random() * 0.3;
 
-  const aL = b.aLord || { dealt: 1, taken: 1, morale: 1 }, dL = b.dLord || { dealt: 1, taken: 1, morale: 1 };
-  let aOut = (A.ranged * (aStance.ranged || 1) + A.melee * (aStance.melee || 1)) * aStance.deal * aL.dealt;
-  let dOut = (D.ranged * (dStance.ranged || 1) + D.melee * (dStance.melee || 1)) * dStance.deal * dL.dealt;
+  let aTotal = 0, dTotal = 0;
+  const shaken = { a: 0, d: 0 };
+  const notes = [];
 
-  // Cavalry charges bite unless pikes are waiting.
-  if (A.cavStr > 0 && D.antiCav < D.strSum * 0.3) aOut *= 1.25;
-  if (D.cavStr > 0 && A.antiCav < A.strSum * 0.3) dOut *= 1.25;
+  SECTORS.forEach((sec) => {
+    const aU = b.a.units.filter((u) => u.pos === sec && u.str > 0);
+    const dU = b.d.units.filter((u) => u.pos === sec && u.str > 0);
+    if (!aU.length && !dU.length) return;
 
-  /* Animals against arrows. A beast has no armour, no shot and no reason to
-     stand in the open being hit from thirty yards, so a side that is mostly
-     beasts suffers by exactly as much as its enemy can shoot: a warband of
-     hunters roughly doubles its output, a warband of axemen gains nothing and
-     has to go in among the teeth. */
-  const BEAST_BOW = 1.15;
-  if (D.beastFrac > 0.5) aOut *= 1 + BEAST_BOW * A.rangedShare;
-  if (A.beastFrac > 0.5) dOut *= 1 + BEAST_BOW * D.rangedShare;
+    const aS = POSTURES[aPost[sec]] || POSTURES.hold;
+    const dS = POSTURES[dPost[sec]] || POSTURES.hold;
+    const A = sidePower(aU, aS, aHas);
+    const D = sidePower(dU, dS, dHas);
+    const gr = GROUND[ground[sec]] || GROUND.open;
 
-  // Standing off and shooting denies the defender much of their ground advantage.
-  const groundMul = aStance.ignoresGround || 1;
-  dOut *= 1 + terrDef * groundMul;
-  if (b.defenderBonus) dOut *= 1 + (b.defenderBonus / 100) * groundMul;
+    let aOut = (A.ranged * (aS.ranged || 1) + A.melee * (aS.melee || 1)) * aS.deal * aL.dealt;
+    let dOut = (D.ranged * (dS.ranged || 1) + D.melee * (dS.melee || 1)) * dS.deal * dL.dealt;
 
-  // Each side's output is already stance-adjusted; here we apply the *receiving*
-  // side's stance and its armour.
-  const K = 3.4;
-  const aCas = Math.round((dOut * K * rng() * aStance.take * aL.taken) / (1 + A.avgDef / 5));
-  const dCas = Math.round((aOut * K * rng() * dStance.take * dL.taken) / (1 + D.avgDef / 5));
+    // Horse is worth what the ground lets it be worth.
+    if (A.cavStr > 0 && D.antiCav < D.strSum * 0.3) aOut *= 1 + 0.25 * gr.horse;
+    if (D.cavStr > 0 && A.antiCav < A.strSum * 0.3) dOut *= 1 + 0.25 * gr.horse;
 
-  const apply = (side, total, stanceMul) => {
-    const units = side.units;
-    const strTotal = units.reduce((n, u) => n + u.str, 0) || 1;
-    const routed = [];
-    units.forEach((u) => {
-      const share = u.str / strTotal;
-      const loss = Math.min(u.str, Math.round(total * share * (0.7 + Math.random() * 0.6)));
-      u.str -= loss;
-      u.lastLoss = loss;
-      const pct = loss / u.max;
-      u.morale -= pct * 70 * stanceMul + 2;
-      if (u.str <= 0) { u.str = 0; routed.push({ u, dead: true }); }
-      else if (u.morale <= 0) routed.push({ u, dead: false });
-    });
-    return routed;
-  };
+    // Animals against arrows, as before, but sector by sector.
+    const BEAST_BOW = 1.15;
+    if (D.beastFrac > 0.5) aOut *= 1 + BEAST_BOW * A.rangedShare;
+    if (A.beastFrac > 0.5) dOut *= 1 + BEAST_BOW * D.rangedShare;
 
-  const aRouted = apply(b.a, aCas, aStance.morale * (aL.morale || 1));
-  const dRouted = apply(b.d, dCas, dStance.morale * (dL.morale || 1));
+    // Taken in the flank. This is the whole reason the line is worth drawing.
+    const aFlank = flanksOn(aBroke, ground, sec);
+    const dFlank = flanksOn(dBroke, ground, sec);
+    if (dFlank) { aOut *= 1 + FLANK_DEAL * dFlank; notes.push({ s: "a", sec, n: dFlank }); }
+    if (aFlank) { dOut *= 1 + FLANK_DEAL * aFlank; notes.push({ s: "d", sec, n: aFlank }); }
 
-  b.log.push({ t: "round", m: `Round ${b.round}: attackers lose ${aCas}, defenders lose ${dCas}.` });
-  [...aRouted].forEach((x) => b.log.push({
-    t: x.dead ? "dead" : "rout", s: "a",
-    m: x.dead ? `${unitName(x.u)} is wiped out.` : `${unitName(x.u)} breaks and runs.`,
-  }));
-  [...dRouted].forEach((x) => b.log.push({
-    t: x.dead ? "dead" : "rout", s: "d",
-    m: x.dead ? `${unitName(x.u)} is wiped out.` : `${unitName(x.u)} breaks and runs.`,
-  }));
+    // The ground under this sector, and the works on the hex, help whoever is
+    // defending the battle — unless the attacker stands off and shoots.
+    const groundMul = aS.ignoresGround || 1;
+    dOut *= 1 + (terrDef + gr.def / 100) * groundMul;
+    if (b.defenderBonus) dOut *= 1 + (b.defenderBonus / 100) * groundMul;
 
-  b.a.routed = [...b.a.routed, ...aRouted.filter((x) => !x.dead).map((x) => ({ ...x.u, str: Math.round(x.u.str * 0.5) }))];
-  b.d.routed = [...b.d.routed, ...dRouted.filter((x) => !x.dead).map((x) => ({ ...x.u, str: Math.round(x.u.str * 0.5) }))];
+    const K = 3.4;
+    const rng = () => 0.85 + Math.random() * 0.3;
+    const aCas = Math.round((dOut * K * rng() * aS.take * aL.taken) / (1 + A.avgDef / 5));
+    const dCas = Math.round((aOut * K * rng() * dS.take * dL.taken) / (1 + D.avgDef / 5));
+    aTotal += aCas; dTotal += dCas;
+
+    const hit = (units, total, moraleMul, flank) => {
+      const strTotal = units.reduce((n, u) => n + u.str, 0) || 1;
+      const gone = [];
+      units.forEach((u) => {
+        const loss = Math.min(u.str, Math.round(total * (u.str / strTotal) * (0.7 + Math.random() * 0.6)));
+        u.str -= loss;
+        u.lastLoss = loss;
+        u.morale -= (loss / u.max) * 70 * moraleMul + 2 + flank * FLANK_MORALE;
+        if (u.str <= 0) { u.str = 0; gone.push({ u, dead: true }); }
+        else if (u.morale <= 0) gone.push({ u, dead: false });
+      });
+      // The company beside you going is felt by everyone still in the sector.
+      if (gone.length) units.forEach((u) => { if (u.str > 0 && u.morale > 0) u.morale -= gone.length * SHAKEN_NEAR; });
+      return gone;
+    };
+
+    const aGone = hit(aU, aCas, aS.morale * (aL.morale || 1), dFlank);
+    const dGone = hit(dU, dCas, dS.morale * (dL.morale || 1), aFlank);
+    b.a.routed.push(...aGone.map((x) => x.u));
+    b.d.routed.push(...dGone.map((x) => x.u));
+    [[aGone, "a"], [dGone, "d"]].forEach(([list, side]) => list.forEach((x) => b.log.push({
+      t: x.dead ? "dead" : "rout", s: side, sec,
+      m: x.dead ? `${unitName(x.u)} is wiped out on the ${sec}.`
+                : `${unitName(x.u)} breaks on the ${sec}.`,
+    })));
+    if (aGone.length && !aU.some((u) => u.str > 0 && u.morale > 0)) shaken.a += 1;
+    if (dGone.length && !dU.some((u) => u.str > 0 && u.morale > 0)) shaken.d += 1;
+  });
+
   b.a.units = b.a.units.filter((u) => u.str > 0 && u.morale > 0);
   b.d.units = b.d.units.filter((u) => u.str > 0 && u.morale > 0);
 
-  b.lastExchange = {
-    round: b.round, aCas, dCas,
-    aStance: b.aStance, dStance: b.dStance,
-    aRouted: aRouted.length, dRouted: dRouted.length,
-    aDry: !aHas && aPowderNeed > 0, dDry: !dHas && dPowderNeed > 0,
-  };
+  // A whole sector going is felt all down the line, reserve included.
+  if (shaken.a) b.a.units.forEach((u) => { u.morale -= shaken.a * SHAKEN_SECTOR; });
+  if (shaken.d) b.d.units.forEach((u) => { u.morale -= shaken.d * SHAKEN_SECTOR; });
+  b.a.units.filter((u) => u.morale <= 0).forEach((u) => b.a.routed.push(u));
+  b.d.units.filter((u) => u.morale <= 0).forEach((u) => b.d.routed.push(u));
+  b.a.units = b.a.units.filter((u) => u.morale > 0);
+  b.d.units = b.d.units.filter((u) => u.morale > 0);
+
+  notes.forEach((n) => b.log.push({
+    t: "flank", s: n.s === "a" ? "d" : "a",
+    m: `The ${n.s === "a" ? "attacking" : "defending"} ${n.sec} is taken in the flank${n.n > 1 ? " from both sides" : ""}.`,
+  }));
+  if (shaken.a) b.log.push({ t: "give", s: "d", m: `The attacking line gives way on ${shaken.a === 1 ? "a sector" : "two sectors"}.` });
+  if (shaken.d) b.log.push({ t: "give", s: "a", m: `The defending line gives way on ${shaken.d === 1 ? "a sector" : "two sectors"}.` });
+  b.log.push({ t: "round", m: `Round ${b.round}: attackers lose ${aTotal}, defenders lose ${dTotal}.` });
+  b.lastExchange = { aCas: aTotal, dCas: dTotal };
+
+  b.broken = { a: brokenSectors(b.a.units, b.d.units), d: brokenSectors(b.d.units, b.a.units) };
   b.round += 1;
 
+  const allGone = (side) => SECTORS.every((sec) => !b[side].units.some((u) => u.pos === sec && u.str > 0));
   if (b.aStance === "withdraw" && b.a.units.length) { b.over = true; b.winner = "d"; b.retreat = "a"; }
   else if (b.dStance === "withdraw" && b.d.units.length) { b.over = true; b.winner = "a"; b.retreat = "d"; }
   else if (!b.a.units.length && !b.d.units.length) { b.over = true; b.winner = "d"; }
   else if (!b.a.units.length) { b.over = true; b.winner = "d"; }
   else if (!b.d.units.length) { b.over = true; b.winner = "a"; }
+  else if (allGone("a") && !allGone("d")) { b.over = true; b.winner = "d"; b.rolled = "a"; }
+  else if (allGone("d") && !allGone("a")) { b.over = true; b.winner = "a"; b.rolled = "d"; }
   else if (b.round > 10) { b.over = true; b.winner = "d"; b.stalemate = true; }
 
   if (b.over) {
     b.log.push({
       t: "end",
-      m: b.stalemate ? "Light fails. The attack is called off."
-        : b.retreat ? `${b.retreat === "a" ? "Attackers" : "Defenders"} disengage.`
+      m: b.stalemate ? "Both lines are still standing when the light goes."
+        : b.rolled ? `The ${b.rolled === "a" ? "attacking" : "defending"} line is rolled up from the flank.`
+        : b.retreat ? `The ${b.retreat === "a" ? "attackers" : "defenders"} quit the field.`
         : `${b.winner === "a" ? "Attackers" : "Defenders"} hold the field.`,
     });
   }
   return b;
 }
 
-
-/* "40 rations, 60 scrap and 120 recruits" — used for both a lair's hoard and
-   whatever a broken band was carrying, so the two read the same in the log. */
 function spoilsText(bag) {
   const parts = Object.entries(bag || {})
     .filter(([, v]) => v > 0)
@@ -2169,7 +2344,14 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
   const prov = provinces[k];
   if (!attacker || !defender || !prov) return null;
   const works = doneBuilds(prov).reduce((n, b) => n + (buildStep(b)?.def || 0), 0);
-  const terrainDef = TERRAIN[prov.t].def + works;
+  // A place under siege by this attacker is stormed, not met in the open.
+  const storming = prov.siege && prov.siege.by === attacker.owner && isWalled(prov);
+  const ground = storming ? stormGround(prov)
+    : groundFor(prov.t, coastal(prov.c, prov.r), prov.c + prov.r);
+  // In a storm the wall is the ground, sector by sector, and a breach is a hole
+  // in it. Counting the works a second time on top of that would make a
+  // breached wall as strong as a whole one.
+  const terrainDef = TERRAIN[prov.t].def + (storming ? 0 : works);
   let defenderBonus = 0;
   if (defender.owner === "alpine" && ["h", "m"].includes(prov.t)) defenderBonus += 35;
   if (isMinor(defender.owner)) defenderBonus += MINORS[defender.owner].defBonus;
@@ -2179,8 +2361,14 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
     aNat: attacker.owner, dNat: defender.owner,
     aArmy: attacker.id, dArmy: defender.id,
     hex: { c: prov.c, r: prov.r }, provName: prov.name,
-    a: { units: attacker.units.map((u) => ({ ...u })), routed: [] },
-    d: { units: defender.units.map((u) => ({ ...u })), routed: [] },
+    // The defender picked the ground; the attacker has to come at it.
+    ground, storming: !!storming, breach: storming ? breachCount(prov) : 0,
+    a: { units: deployUnits(attacker.units.map((u) => ({ ...u })), "even"), routed: [] },
+    d: { units: deployUnits(defender.units.map((u) => ({ ...u })), aiFormation(defender.units, ground)), routed: [] },
+    aPost: { left: "press", centre: "press", right: "press" },
+    dPost: { left: "hold", centre: "hold", right: "hold" },
+    broken: { a: { left: false, centre: false, right: false },
+              d: { left: false, centre: false, right: false } },
     aPowder: nations[attacker.owner].res.powder,
     dPowder: nations[defender.owner].res.powder,
     aStance: "press", dStance: "hold",
@@ -2190,8 +2378,16 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
     aCommander: !!attacker.lord, dCommander: !!defender.lord,
     log: [{
       t: "open",
-      m: `${nations[attacker.owner].short} strikes at ${prov.name}. ${TERRAIN[prov.t].name} favours the defender by ${terrainDef}%.`,
+      m: storming
+        ? `${nations[attacker.owner].short} storms ${prov.name}. ${breachCount(prov)
+          ? `${breachCount(prov)} breach${breachCount(prov) > 1 ? "es" : ""} stand open.`
+          : "The wall is whole."}`
+        : `${nations[attacker.owner].short} strikes at ${prov.name}. ${TERRAIN[prov.t].name} favours the defender by ${terrainDef}%.`,
     }],
+    // Nobody strikes a blow until the line is drawn. Every battle that reaches
+    // a screen has the player on one side of it; the ones that do not are
+    // settled by the quick resolve in the turn step and never come here.
+    phase: "deploy",
     over: false, winner: null,
   };
 }
@@ -2281,20 +2477,78 @@ function initialState() {
 const baseMove = (natId) => (natId === "lyon" || natId === "horde" ? 6 : 5);
 
 
+/* What a rival draws up. Horse wants a wing and open ground to use it on; a
+   line with nothing to shoot with wants weight in the middle; a realm that
+   knows it is outnumbered keeps something back. */
+function aiFormation(units, ground) {
+  const cav = units.filter((u) => unitStats(u).cav).length;
+  const shot = units.filter((u) => unitStats(u).ranged > 8).length;
+  const openWing = SECTORS.some((s) => s !== "centre" && ground[s] === "open");
+  if (cav >= 2 && openWing) return "horns";
+  if (units.length >= 6) return "reserve";
+  if (shot >= 2) return "wall";
+  return "even";
+}
+
+/* A rival's orders, sector by sector. It presses where it is winning, holds
+   where it is not, shoots if it has anything to shoot with, and throws its
+   reserve at the first sector that is about to go. */
+function aiOrders(b, side) {
+  const foe = side === "a" ? "d" : "a";
+  const post = {};
+  let commit = null, worst = 0;
+  SECTORS.forEach((sec) => {
+    const mine = b[side].units.filter((u) => u.pos === sec).reduce((n, u) => n + u.str, 0);
+    const theirs = b[foe].units.filter((u) => u.pos === sec).reduce((n, u) => n + u.str, 0);
+    const ratio = mine / Math.max(1, theirs);
+    if (theirs === 0) post[sec] = "hold";
+    else if (ratio > 1.3) post[sec] = "press";
+    else if (b[side].units.some((u) => u.pos === sec && unitStats(u).ranged > 8) && Math.random() < 0.5) post[sec] = "volley";
+    else post[sec] = "hold";
+    // The sector most likely to go next is where the reserve is needed.
+    const need = theirs - mine;
+    if (mine > 0 && need > worst) { worst = need; commit = sec; }
+  });
+  return { post, commit };
+}
+
 function advanceBattle(b0, P, playerStance) {
   const pSide = b0.aNat === P ? "a" : b0.dNat === P ? "d" : null;
-  const b = { ...b0 };
-  if (pSide === "a") b.aStance = playerStance;
-  if (pSide === "d") b.dStance = playerStance;
-  const ai = pSide === "a" ? "d" : "a";
-  const mine = b[ai].units.reduce((n, u) => n + u.str, 0);
-  const theirs = b[ai === "a" ? "d" : "a"].units.reduce((n, u) => n + u.str, 0);
-  const ratio = mine / Math.max(1, theirs);
-  let pick = "hold";
-  if (ratio > 1.35) pick = "press";
-  else if (ratio < 0.45 && b.round > 2) pick = "withdraw";
-  else if (b[ai].units.some((u) => unitStats(u).ranged > 8)) pick = Math.random() < 0.5 ? "volley" : "hold";
-  b[ai === "a" ? "aStance" : "dStance"] = pick;
+  const b = { ...b0, a: { ...b0.a, units: b0.a.units.map((u) => ({ ...u })), routed: [...b0.a.routed] },
+                      d: { ...b0.d, units: b0.d.units.map((u) => ({ ...u })), routed: [...b0.d.routed] } };
+  /* The old screen gave one order for the whole army. Until the line is drawn
+     on screen that order is simply given to all three sectors, so a plain
+     "press" still means what it always did. */
+  if (pSide && playerStance) {
+    if (playerStance === "withdraw") b[pSide === "a" ? "aStance" : "dStance"] = "withdraw";
+    else {
+      const key = pSide === "a" ? "aPost" : "dPost";
+      b[key] = { left: playerStance, centre: playerStance, right: playerStance };
+    }
+  }
+  const ai = pSide === "a" ? "d" : pSide === "d" ? "a" : null;
+  if (ai) {
+    const { post, commit } = aiOrders(b, ai);
+    b[ai === "a" ? "aPost" : "dPost"] = post;
+    const mine = b[ai].units.reduce((n, u) => n + u.str, 0);
+    const theirs = b[ai === "a" ? "d" : "a"].units.reduce((n, u) => n + u.str, 0);
+    if (mine < theirs * 0.4 && b.round > 2) b[ai === "a" ? "aStance" : "dStance"] = "withdraw";
+    // Reserves go in when a sector is in trouble, not before.
+    if (commit && b[ai].units.some((u) => u.pos === "res")) {
+      b[ai].units = b[ai].units.map((u) => (u.pos === "res" ? { ...u, pos: commit } : u));
+      b.log = [...b.log, { t: "give", s: ai,
+        m: `The ${ai === "a" ? "attacking" : "defending"} reserve goes in on the ${commit}.` }];
+    }
+  } else {
+    // Nobody here is the player's: both lines are handled the same way.
+    ["a", "d"].forEach((sd) => {
+      const { post, commit } = aiOrders(b, sd);
+      b[sd === "a" ? "aPost" : "dPost"] = post;
+      if (commit && b[sd].units.some((u) => u.pos === "res")) {
+        b[sd].units = b[sd].units.map((u) => (u.pos === "res" ? { ...u, pos: commit } : u));
+      }
+    });
+  }
   return resolveRound(b);
 }
 
@@ -2523,6 +2777,40 @@ export default function ColdCoast() {
     setGame((g) => (!g.battle || g.battle.over ? g : { ...g, battle: advanceBattle(g.battle, P, playerStance) }));
   }
 
+  /* The line, while it is being drawn and while it is being fought. All four
+     of these write straight into the battle, because the battle IS the state —
+     there is nothing to commit and nothing to undo. */
+  const bSide = (g) => (g.battle?.aNat === P ? "a" : g.battle?.dNat === P ? "d" : null);
+  function deployBattle(units) {
+    setGame((g) => {
+      const sd = bSide(g);
+      if (!g.battle || !sd || g.battle.over) return g;
+      return { ...g, battle: { ...g.battle, [sd]: { ...g.battle[sd], units } } };
+    });
+  }
+  function beginBattle() {
+    setGame((g) => (g.battle ? { ...g, battle: { ...g.battle, phase: "fight" } } : g));
+  }
+  function postBattle(sec, id) {
+    setGame((g) => {
+      const sd = bSide(g);
+      if (!g.battle || !sd) return g;
+      const key = sd === "a" ? "aPost" : "dPost";
+      return { ...g, battle: { ...g.battle, [key]: { ...g.battle[key], [sec]: id } } };
+    });
+  }
+  function commitReserve(sec) {
+    setGame((g) => {
+      const sd = bSide(g);
+      if (!g.battle || !sd) return g;
+      const units = g.battle[sd].units.map((u) => (u.pos === "res" ? { ...u, pos: sec } : u));
+      if (units.every((u, i) => u.pos === g.battle[sd].units[i].pos)) return g;
+      Sound.play("march");
+      return { ...g, battle: { ...g.battle, [sd]: { ...g.battle[sd], units },
+        log: [...g.battle.log, { t: "give", s: sd, m: `Your reserve goes in on the ${sec}.` }] } };
+    });
+  }
+
   function autoBattle(playerStance) {
     Sound.play("clash");
     setGame((g) => {
@@ -2541,11 +2829,31 @@ export default function ColdCoast() {
       const nations = { ...g.nations };
       const provinces = { ...g.provinces };
 
-      const survivors = (side) => [...b[side].units, ...b[side].routed.filter((u) => u.str > 0)]
-        .map((u) => ({ ...u, morale: Math.max(20, u.maxMorale * 0.7), xp: Math.min(3, u.xp + (b.winner === side ? 1 : 0)) }));
+      /* Pursuit. A broken company is running, not fighting, and horse is what
+         catches it — this is what turns a win into a settled question instead
+         of the same enemy standing in front of you next season. Without a
+         single rider you catch almost nobody. */
+      const chase = (side) => {
+        if (!b.winner || b.winner === side || b.stalemate) return 0;
+        const win = b[b.winner].units;
+        const str = win.reduce((n, u) => n + u.str, 0) || 1;
+        const horse = win.filter((u) => unitStats(u).cav).reduce((n, u) => n + u.str, 0);
+        return Math.min(0.8, 0.1 + (horse / str) * 1.5);
+      };
+      const caught = { a: chase("a"), d: chase("d") };
+      const ridDown = { a: 0, d: 0 };
+      const survivors = (side) => {
+        const ran = b[side].routed.filter((u) => u.str > 0).filter((u) => {
+          if (Math.random() < caught[side]) { ridDown[side] += 1; return false; }
+          return true;
+        });
+        return [...b[side].units, ...ran]
+          .map((u) => ({ ...u, morale: Math.max(20, u.maxMorale * 0.7), xp: Math.min(3, u.xp + (b.winner === side ? 1 : 0)) }));
+      };
 
       const aUnits = survivors("a");
       const dUnits = survivors("d");
+      const rode = ridDown.a + ridDown.d;
 
       // powder spent
       nations[b.aNat] = { ...nations[b.aNat], res: { ...nations[b.aNat].res, powder: Math.max(0, b.aPowder) } };
@@ -2638,7 +2946,10 @@ export default function ColdCoast() {
         if (built) { next = built; rest = queue.slice(i + 1); break; }
       }
 
-      const entries = [{ turn: g.turn, m: msg + spoilMsg }];
+      const chased = rode
+        ? ` ${rode} broken ${rode === 1 ? "company is" : "companies are"} ridden down in the pursuit.`
+        : "";
+      const entries = [{ turn: g.turn, m: msg + chased + spoilMsg }];
       if (msgLord) { entries.unshift({ turn: g.turn, m: msgLord }); if (b.aNat === g.player || b.dNat === g.player) Sound.play("lose"); }
       return {
         ...g, armies, nations, provinces, battle: next, sel: null, pending: rest,
@@ -2904,6 +3215,37 @@ export default function ColdCoast() {
         ...g, provinces, nations, armies,
         survey: { ...sv, result: out },
         log: [{ turn: g.turn, m: `${pr.name} surveyed: ${enc.title.toLowerCase()}.` }, ...g.log].slice(0, 60),
+      };
+    });
+  }
+
+  /* Sitting down in front of a walled place. Nothing about it is fast: it pays
+     nothing while you are there, its people go hungry, its garrison thins, and
+     every third season the wall gives somewhere. */
+  function invest(k) {
+    setGame((g) => {
+      const pr = g.provinces[k];
+      if (!pr || !pr.owner || pr.owner === P || !isWalled(pr) || pr.siege) return g;
+      const near = g.armies.some((a) => a.owner === P && a.units.length
+        && hexDist(a.c, a.r, pr.c, pr.r) === 1);
+      if (!near) return g;
+      Sound.play("horn");
+      return {
+        ...g,
+        provinces: { ...g.provinces, [k]: { ...pr, siege: { by: P, seasons: 0 } } },
+        log: [{ turn: g.turn, m: `${pr.name} is invested. Nothing goes in and nothing comes out.` },
+              ...g.log].slice(0, 60),
+      };
+    });
+  }
+  function liftSiege(k) {
+    setGame((g) => {
+      const pr = g.provinces[k];
+      if (!pr?.siege || pr.siege.by !== P) return g;
+      return {
+        ...g,
+        provinces: { ...g.provinces, [k]: { ...pr, siege: null } },
+        log: [{ turn: g.turn, m: `The siege of ${pr.name} is lifted.` }, ...g.log].slice(0, 60),
       };
     });
   }
@@ -3266,8 +3608,10 @@ export default function ColdCoast() {
           }
         }
 
-        // move & fight
-        armies.filter((a) => a.owner === id).forEach((a) => {
+        // move & fight. A force bound to a place — a lair, or a garrison with a
+        // besieging army camped outside the gate — stays where it is.
+        armies.filter((a) => a.owner === id && !a.lairBound
+          && !provinces[key(a.c, a.r)]?.siege).forEach((a) => {
           a.route = [[a.c, a.r]];
           let mp = a.mp;
           let guard = 0;
@@ -3433,6 +3777,68 @@ export default function ColdCoast() {
         const back = neighbours(a.c, a.r).find(([x, y]) => provinces[key(x, y)]
           && !armies.some((z) => z.c === x && z.r === y && z.owner !== a.owner));
         if (back) { a.c = back[0]; a.r = back[1]; a.route = null; a.seq = (a.seq || 0) + 1; }
+      });
+
+      /* Rivals sit down in front of walls too. A host that has marched up to a
+         walled place it is at war with invests rather than throwing itself at
+         the stonework. */
+      armies.forEach((a) => {
+        if (a.owner === g.player || isMinor(a.owner) || !a.units.length) return;
+        neighbours(a.c, a.r).forEach(([x, y]) => {
+          const q = provinces[key(x, y)];
+          if (!q || !q.owner || q.owner === a.owner || q.siege || !isWalled(q)) return;
+          if (!isMinor(q.owner) && !war[warKey(a.owner, q.owner)]) return;
+          if (Math.random() > 0.5) return;
+          provinces[key(x, y)] = { ...q, siege: { by: a.owner, seasons: 0 } };
+          if (q.owner === g.player) {
+            notice("raid", `${NATIONS[a.owner]?.short || "A host"} has sat down in front of ${q.name}.`, key(x, y));
+          }
+        });
+      });
+
+      /* --- sieges ---
+         A siege is a thing you keep doing, not a thing you did. Walk away and
+         it lifts itself; stay and the place pays nobody, its people go hungry
+         and the men on the wall get thinner every season. */
+      Object.values(provinces).forEach((pv) => {
+        const sg = pv.siege;
+        if (!sg) return;
+        const k2 = key(pv.c, pv.r);
+        const still = armies.some((a) => a.owner === sg.by && a.units.length
+          && hexDist(a.c, a.r, pv.c, pv.r) === 1);
+        if (!still || pv.owner === sg.by) {
+          provinces[k2] = { ...pv, siege: null };
+          if (sg.by === g.player && pv.owner !== sg.by) {
+            newLog.push({ turn: g.turn, m: `The siege of ${pv.name} lapses — nobody is standing in front of it.` });
+          }
+          return;
+        }
+        const was = Math.floor(sg.seasons / SIEGE.perBreach);
+        const seasons = sg.seasons + 1;
+        const now = Math.min(SIEGE.maxBreach, Math.floor(seasons / SIEGE.perBreach));
+        provinces[k2] = {
+          ...pv, siege: { ...sg, seasons },
+          pop: Math.max(0, Math.round((pv.pop || 0) * (1 - SIEGE.starve))),
+        };
+        // The garrison thins on short rations as surely as the town does.
+        armies.forEach((a) => {
+          if (a.c !== pv.c || a.r !== pv.r || a.owner !== pv.owner) return;
+          a.units = a.units.map((u) => ({ ...u, str: Math.max(1, Math.round(u.str * (1 - SIEGE.garrison))) }));
+        });
+        // Sitting still in the mud costs the besieger rations.
+        const bn = nations[sg.by];
+        if (bn) nations[sg.by] = { ...bn, res: { ...bn.res, food: Math.max(0, bn.res.food - SIEGE.upkeep) } };
+        if (now > was) {
+          const where = BREACH_ORDER[now - 1];
+          if (sg.by === g.player) {
+            newLog.push({ turn: g.turn, m: `The wall at ${pv.name} gives way on the ${where}.` });
+            notice("built", `A breach is open at ${pv.name}. Storm it while it stands open.`, k2);
+          } else if (pv.owner === g.player) {
+            notice("raid", `The wall at ${pv.name} has been breached on the ${where}.`, k2);
+          }
+        } else if (pv.owner === g.player && seasons === 1) {
+          notice("raid", `${pv.name} is invested. It pays you nothing while they sit there.`, k2);
+        }
       });
 
       // --- the Wasters ---
@@ -3772,6 +4178,7 @@ export default function ColdCoast() {
             onBuild={build} onRecruitOpen={(k) => setGame((g) => ({ ...g, recruit: k }))}
             onWar={toggleWar} onDeselect={deselect}
             onInvestigate={investigate} onClaim={claim} onMarch={march}
+            onInvest={invest} onLift={liftSiege}
             onSeat={(k) => setGame((g) => ({ ...g, seat: k }))} onResearch={research}
             onOpenTree={() => setGame((g) => ({ ...g, tree: true }))} onRepair={repair}
             onDistrict={(k) => setGame((g) => ({ ...g, district: k }))}
@@ -3796,7 +4203,9 @@ export default function ColdCoast() {
       )}
       {game.battle && (
         <BattleScreen b={game.battle} nations={game.nations} P={P}
-          onStep={stepBattle} onAuto={autoBattle} onClose={closeBattle} />
+          onStep={stepBattle} onAuto={autoBattle} onClose={closeBattle}
+          onDeploy={deployBattle} onPost={postBattle} onCommit={commitReserve}
+          onBegin={beginBattle} />
       )}
       {game.lords && (
         <WarlordScreen game={game} P={P} onClose={() => setGame((g) => ({ ...g, lords: false }))} />
@@ -5044,6 +5453,10 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
   const selRef = useRef(onSelect);
   const deselRef = useRef(onDeselect);
   const provRef = useRef(game.provinces);
+  // The debug hooks below are installed once, so they must not close over the
+  // turn they were installed on.
+  const gameRef = useRef(game);
+  gameRef.current = game;
   selRef.current = onSelect;
   // With the per-province click targets gone there is nothing in the document
   // to address a hex by, so expose one hook for tests to drive selection.
@@ -5053,7 +5466,25 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
     /* For the smoke test: how much of the wild is actually holding something.
        There is no way to check the spawn rate by playing — you would have to
        walk into every wood on the continent. */
+    /* For the smoke test and for probes: enough of the position to check a
+       rule without playing forty seasons by hand. */
+    if (typeof window !== "undefined") window.__ccSiege = () => {
+      const game = gameRef.current;
+      const walled = Object.values(game.provinces).filter((p) => p.owner && isWalled(p));
+      return {
+        walled: walled.length,
+        besieged: walled.filter((p) => p.siege).map((p) => ({
+          name: p.name, by: p.siege.by, seasons: p.siege.seasons, at: key(p.c, p.r),
+        })),
+        mine: game.armies.filter((a) => a.owner === game.player).map((a) => `${a.c},${a.r}:${a.units.length}`),
+        // What a storm would find at each stage of a siege. Read-only: it asks
+        // the same helpers the battle does, without touching the position.
+        storm: [0, 1, 2, 3].map((n) => SECTORS
+          .map((sec) => stormGround({ siege: { seasons: n * SIEGE.perBreach } })[sec]).join("/")),
+      };
+    };
     if (typeof window !== "undefined") window.__ccWild = () => {
+      const game = gameRef.current;
       const all = Object.values(game.provinces);
       const woods = all.filter((p) => p.t === "f" && !p.owner);
       return {
@@ -5514,7 +5945,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
 }
 
 /* -------------------------------- SIDEBAR --------------------------------- */
-function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict,}) {
+function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift }) {
   const [tab, setTab] = useState("here");
   // Only the two that are about what is in front of you. The realm-wide
   // screens moved to the top bar; six tabs did not fit this column.
@@ -5538,6 +5969,7 @@ function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecr
             onBuild={onBuild} onRecruitOpen={onRecruitOpen} onDisband={onDisband}
             onDeselect={onDeselect} onInvestigate={onInvestigate} onClaim={onClaim}
             onMarch={onMarch} atWar={atWar} onSeat={onSeat} onRepair={onRepair} onDistrict={onDistrict}
+            onInvest={onInvest} onLift={onLift}
             onTake={onTake} onMerge={onMerge} onReinforce={onReinforce} onCommand={onCommand}
             onInvestPop={onInvestPop} onRename={onRename} onSplit={onSplit} />
         )}
@@ -5746,7 +6178,7 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair })
   );
 }
 
-function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict }) {
+function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift }) {
   if (!selProv) return (
     <div className="cc-text-13d5px cc-text-93a9b5 leading-relaxed">
       <p className="mb-3">Pick a hex to see what it grows and what it hides.</p>
@@ -5993,6 +6425,68 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
           })}
         </Section>
       )}
+
+      {/* A walled place somebody else holds. You can walk at it and be shot off
+          the wall, or you can sit down in front of it and wait. */}
+      {selProv.owner && selProv.owner !== P && isWalled(selProv) && (() => {
+        const k = key(selProv.c, selProv.r);
+        const sg = siegeOf(selProv);
+        const mine = sg && sg.by === P;
+        const near = game.armies.some((a) => a.owner === P && a.units.length
+          && hexDist(a.c, a.r, selProv.c, selProv.r) === 1);
+        const br = breachCount(selProv);
+        const next = SIEGE.perBreach - ((sg?.seasons || 0) % SIEGE.perBreach);
+        return (
+          <Section title={mine ? "Your siege" : `Walled — ${wallsOf(selProv)}% to the defender`}>
+            {mine ? (
+              <>
+                <div className="cc-text-13px cc-text-c6d6de leading-relaxed mb-2">
+                  Invested <span className="num">{sg.seasons}</span>{" "}
+                  {sg.seasons === 1 ? "season" : "seasons"}. Nothing goes in and nothing comes out:
+                  it pays you nothing, its people are going hungry and its garrison is thinning.
+                </div>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  {Array.from({ length: SIEGE.maxBreach }, (_, i) => (
+                    <span key={i} className="cc-breachpip" style={{ background: i < br ? "#e0644a" : "#2c3d47" }} />
+                  ))}
+                  <span className="cc-text-12px cc-text-a0b6c1">
+                    {br === 0 ? "the wall is whole" : br >= SIEGE.maxBreach ? "the wall is gone"
+                      : `${br} ${br === 1 ? "breach" : "breaches"}`}
+                    {br < SIEGE.maxBreach ? ` · next in ${next} ${next === 1 ? "season" : "seasons"}` : ""}
+                  </span>
+                </div>
+                <div className="cc-text-12px cc-text-93a9b5 leading-snug mb-2">
+                  {br === 0 ? "Storm it now and your companies go at a standing wall."
+                    : br === 1 ? "The gate has gone. A storm reaches the centre without climbing."
+                    : br === 2 ? "The gate and one flank are open."
+                    : "There is no wall left worth the name."}
+                </div>
+                <button type="button" onClick={() => onLift(k)}
+                  className="w-full py-2 rounded border cc-border-31454f cc-text-c3d5de cc-text-13px cc-hover-border-3d6470 transition-colors">
+                  Lift the siege
+                </button>
+              </>
+            ) : sg ? (
+              <div className="cc-text-13px cc-text-c6d6de leading-relaxed">
+                {FACTION[sg.by]?.short || "Somebody"} already has it invested.
+              </div>
+            ) : (
+              <>
+                <div className="cc-text-13px cc-text-c6d6de leading-relaxed mb-2">
+                  Works and walls give the defender <span className="num">{wallsOf(selProv)}%</span>.
+                  Storming that costs companies. Sitting in front of it costs seasons.
+                </div>
+                <button type="button" disabled={!near} onClick={() => onInvest(k)}
+                  className={`w-full py-2.5 rounded disp cc-text-14d5px border transition-colors ${near
+                    ? "cc-bg-2a3a4a cc-hover-bg-35495c cc-border-4d7488 cc-text-dfeaf0"
+                    : "cc-border-25313a cc-text-78909e"}`}>
+                  {near ? "Invest the place" : "March a warband alongside it first"}
+                </button>
+              </>
+            )}
+          </Section>
+        );
+      })()}
 
       {!selProv.owner && (() => {
         const here = game.armies.find((a) => a.owner === P && a.c === selProv.c && a.r === selProv.r);
@@ -7136,45 +7630,175 @@ function CompanyRow({ u, col, showLoss }) {
   );
 }
 
-function BattleScreen({ b, nations, P, onStep, onAuto, onClose }) {
+/* ------------------------------ THE BATTLE --------------------------------
+   Two screens in one. First the line is drawn: every company is dragged onto
+   the left, the centre, the right or into reserve, over ground that is
+   different in each sector. Then it is fought, sector by sector, with an order
+   for each and a reserve to throw in when you decide the moment has come.
+
+   The previous version of this was a column of numbers and one button, and the
+   complaint about it was exactly right: it did not feel like a battle. What
+   makes it feel like one is seeing the line — which part of it is winning,
+   which part is about to go, and what is about to come round the end of it.
+   ------------------------------------------------------------------------ */
+function CompanyChip({ u, col, small, held, onPick, draggable, onDragStart }) {
+  const frac = Math.max(0, Math.min(1, u.str / (u.max || 1)));
+  const mor = Math.max(0, Math.min(1, u.morale / (u.maxMorale || 1)));
+  return (
+    <div
+      draggable={!!draggable}
+      onDragStart={onDragStart}
+      onClick={onPick}
+      className={`cc-chip ${held ? "cc-chipheld" : ""} ${onPick ? "cc-chippick" : ""}`}
+      style={{ borderColor: held ? "#8fe3d6" : undefined }}>
+      <div className="flex items-center gap-1.5">
+        <UnitMark type={u.type} size={small ? 14 : 17} />
+        <span className="cc-text-11d5px flex-1 min-w-0 truncate" style={{ color: col }}>{unitName(u)}</span>
+        <span className="num cc-text-11d5px cc-text-a0b6c1">{u.str}</span>
+      </div>
+      <div className="cc-chipbar mt-1"><span style={{ width: `${frac * 100}%`, background: col }} /></div>
+      <div className="cc-chipbar mt-0.5">
+        <span style={{ width: `${mor * 100}%`,
+          background: mor > 0.5 ? "#9fd6b4" : mor > 0.25 ? "#e8b98a" : "#e0644a" }} />
+      </div>
+    </div>
+  );
+}
+
+function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost, onCommit, onBegin }) {
   const pSide = b.aNat === P ? "a" : b.dNat === P ? "d" : null;
-  const [stance, setStance] = useState(pSide === "a" ? "press" : "hold");
+  const foe = pSide === "a" ? "d" : "a";
   const aN = nations[b.aNat], dN = nations[b.dNat];
-  const aStr = b.a.units.reduce((n, u) => n + u.str, 0);
-  const dStr = b.d.units.reduce((n, u) => n + u.str, 0);
-  const tot = Math.max(1, aStr + dStr);
+  const myN = pSide === "a" ? aN : dN, theirN = pSide === "a" ? dN : aN;
+  const [held, setHeld] = useState(null);
+  const deploying = b.phase === "deploy" && !!pSide;
+
+  /* The field is loud while you are on it, and quiet the moment you leave. */
+  useEffect(() => { Sound.field(true); return () => Sound.field(false); }, []);
+  /* One pass over what the last round produced, so the ear hears the same
+     things the log reports: a line giving way, a flank turned, a pursuit. */
+  const heard = useRef(0);
+  useEffect(() => {
+    if (deploying || heard.current === b.round) return;
+    heard.current = b.round;
+    const tail = b.log.slice(-8);
+    if (tail.some((l) => l.t === "flank")) Sound.play("flanked");
+    if (tail.some((l) => l.t === "give")) Sound.play("give");
+    else if (tail.some((l) => l.t === "rout" || l.t === "dead")) Sound.play("give");
+    if (b.over) Sound.play(b.winner === pSide ? "charge" : "flanked");
+  }, [b.round, b.over, deploying]);
   const ex = b.lastExchange;
+  const ground = b.ground || { left: "open", centre: "open", right: "open" };
 
+  const mine = pSide ? b[pSide].units : [];
+  const theirs = pSide ? b[foe].units : b.d.units;
+  // Before the lines close you only know what your outriders brought back —
+  // unless you have spent seasons camped in front of the place, in which case
+  // you have watched them on the wall every morning and know exactly who is up
+  // there.
+  const besieger = !!b.storming && pSide === "a";
+  const seen = deploying ? (besieger ? 2 : scoutLevel(mine)) : 2;
+  const myPost = (pSide === "a" ? b.aPost : b.dPost) || {};
+  const inSec = (list, sec) => list.filter((u) => u.pos === sec);
+  const strOf = (list) => list.reduce((n, u) => n + u.str, 0);
+  const myBroke = (b.broken || {})[pSide] || {};
+  const theirBroke = (b.broken || {})[foe] || {};
+
+  const place = (id, sec) => {
+    onDeploy(mine.map((u) => (u.id === id ? { ...u, pos: sec } : u)));
+    setHeld(null);
+  };
+  const drop = (sec) => (e) => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData("text/plain") || held;
+    if (id) place(id, sec);
+  };
+
+  const reserve = inSec(mine, "res");
   const myPowder = pSide === "a" ? b.aPowder : b.dPowder;
-  const myUnits = pSide ? b[pSide].units : [];
-  const needBase = myUnits.reduce((n, u) => n + unitStats(u).powder, 0);
-  const need = needBase * (STANCES[stance].powder || 1);
-  const dry = needBase > 0 && need > myPowder;
-  const mySide = pSide === "a" ? "attacking" : "defending";
 
-  const Side = ({ side, nat, label }) => {
-    const units = b[side].units;
-    const str = side === "a" ? aStr : dStr;
-    const yours = pSide === side;
+  const Sector = ({ sec }) => {
+    const gr = GROUND[ground[sec]] || GROUND.open;
+    const us = inSec(mine, sec), them = inSec(theirs, sec);
+    const ourStr = strOf(us), theirStr = strOf(them);
+    const tot = Math.max(1, ourStr + theirStr);
+    const gone = myBroke[sec], theirGone = theirBroke[sec];
+    const flanked = !gr.safe && ADJACENT[sec].some((t) => myBroke[t]);
+    const turning = !gr.safe && ADJACENT[sec].some((t) => theirBroke[t]);
     return (
-      <div className="w-full cc-lg-w-270px shrink-0">
-        <div className="flex items-center gap-2 mb-1.5">
-          <Sigil id={nat.id} size={19} color={nat.color} />
-          <span className="disp cc-text-16px flex-1 min-w-0" style={{ color: nat.color }}>{nat.short}</span>
-          <span className={`cc-text-11d5px rounded px-1.5 py-0.5 border ${yours ? "cc-border-4d9aa6 cc-text-d3e5ec" : "cc-border-31454f cc-text-95aab6"}`}>
-            {yours ? `you, ${label}` : label}
-          </span>
+      <div className={`cc-sector ${gone ? "cc-sectorgone" : ""} ${flanked ? "cc-sectorflank" : ""}`}
+        onDragOver={(e) => deploying && e.preventDefault()}
+        onDrop={deploying ? drop(sec) : undefined}
+        onClick={deploying && held ? () => place(held, sec) : undefined}>
+        <div className="flex items-baseline gap-2 mb-1.5">
+          <span className="disp cc-text-14px cc-text-e5eef3">{SECTOR_NAME[sec]}</span>
+          <span className={`cc-groundtag ${ground[sec] === "rough" ? "cc-gr-rough"
+            : ground[sec] === "anchored" ? "cc-gr-anchor" : ""}`} title={gr.desc}>{gr.name}</span>
         </div>
-        <div className="num cc-text-12d5px cc-text-c6d6de mb-2">
-          {str} men · {side === "a" ? b.aPowder : b.dPowder} powder
+
+        <div className="cc-facing" style={{ color: theirN.color }}>
+          {seen === 0 ? "Opposite" : theirN.short}
         </div>
-        <div className="grid gap-1.5">
-          {units.map((u) => <CompanyRow key={u.id} u={u} col={nat.color} showLoss={!!ex} />)}
-          {!units.length && <div className="cc-text-13px cc-text-95aab6 py-2">The line is gone.</div>}
+        <div className="grid gap-1">
+          {seen === 2 && them.map((u) => <CompanyChip key={u.id} u={u} col={theirN.color} small />)}
+          {seen === 1 && them.map((u) => (
+            <div key={u.id} className="cc-chip cc-chipdark">
+              <div className="flex items-center gap-1.5">
+                <span className="cc-blindmark" style={{ background: theirN.color }} />
+                <span className="cc-text-11d5px cc-text-8399a6">a company</span>
+              </div>
+            </div>
+          ))}
+          {seen === 0 && (
+            <div className="cc-chip cc-chipdark">
+              <div className="cc-text-11d5px cc-text-6f8794">
+                dust, and nobody sent to look
+              </div>
+            </div>
+          )}
+          {seen > 0 && !them.length && (
+            <div className={`cc-text-11d5px py-1 ${theirGone ? "cc-text-9fd6b4" : "cc-text-6f8794"}`}>
+              {theirGone ? "swept off this ground" : "nobody opposite"}
+            </div>
+          )}
         </div>
-        {b[side].routed.length > 0 && (
-          <div className="cc-text-12px cc-text-d9a63f mt-2">
-            {b[side].routed.length} compan{b[side].routed.length === 1 ? "y has" : "ies have"} run
+
+        {!deploying && (
+          <div className="cc-tug my-1.5" title={`${ourStr} against ${theirStr}`}>
+            <span style={{ width: `${(theirStr / tot) * 100}%`, background: theirN.color }} />
+            <span style={{ width: `${(ourStr / tot) * 100}%`, background: myN.color }} />
+          </div>
+        )}
+        {(flanked || turning) && !deploying && (
+          <div className={`cc-text-11d5px mb-1 ${flanked ? "cc-text-e0644a" : "cc-text-9fd6b4"}`}>
+            {flanked ? "taken in the flank" : "turning their flank"}
+          </div>
+        )}
+
+        <div className="cc-facing mt-1.5" style={{ color: myN.color }}>{myN.short}</div>
+        <div className="grid gap-1">
+          {us.map((u) => (
+            <CompanyChip key={u.id} u={u} col={myN.color} held={held === u.id}
+              draggable={deploying}
+              onDragStart={deploying ? (e) => { e.dataTransfer.setData("text/plain", u.id); setHeld(u.id); } : undefined}
+              onPick={deploying ? () => setHeld(held === u.id ? null : u.id) : undefined} />
+          ))}
+          {!us.length && (
+            <div className={`cc-text-11d5px py-1 ${gone ? "cc-text-e0644a" : "cc-text-6f8794"}`}>
+              {gone ? "the line here is gone" : deploying ? "drop a company here" : "nobody"}
+            </div>
+          )}
+        </div>
+
+        {!deploying && !!us.length && (
+          <div className="cc-postrow mt-2">
+            {POSTURE_IDS.map((id) => (
+              <button key={id} type="button" title={POSTURES[id].desc}
+                onClick={() => onPost(sec, id)}
+                className={`cc-postbtn ${myPost[sec] === id ? "cc-poston" : ""}`}>
+                {POSTURES[id].name}
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -7183,160 +7807,154 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose }) {
 
   return (
     <Overlay>
-      <div className="cc-w-1020px cc-max-w-96vw cc-max-h-93vh rounded-lg border cc-border-3a2a26 cc-bg-0d1116 flex flex-col overflow-hidden"
+      <div className="cc-w-1180px cc-max-w-96vw cc-max-h-93vh rounded-lg border cc-border-3a2a26 cc-bg-0d1116 flex flex-col overflow-hidden"
         style={{ boxShadow: "0 0 80px rgba(224,100,74,.14)" }}>
 
-        {/* who, where, how long */}
         <div className="px-5 py-3 border-b cc-border-2a1f1c"
           style={{ background: "linear-gradient(90deg,#1a1210,#0d1116)" }}>
           <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5">
             <Target size={18} className="cc-text-e0644a shrink-0" />
             <div className="disp cc-text-21px">The field at {b.provName}</div>
+            <div className="cc-text-12d5px cc-text-95aab6">
+              {/* A blind commander does not know their strength either, and a
+                  scout who could only count heads brings back a round number. */}
+              {myN.short} <span className="num">{strOf(mine)}</span> against{" "}
+              {seen === 0 ? "an unknown number"
+                : seen === 1
+                  ? <>about <span className="num">{Math.round(strOf(theirs) / 50) * 50}</span> of {theirN.short}</>
+                  : <>{theirN.short} <span className="num">{strOf(theirs)}</span></>}
+            </div>
             <div className="flex items-center gap-1.5 ml-auto">
               <span className="cc-text-12px cc-text-c6d6de">round</span>
               {Array.from({ length: 10 }, (_, i) => (
                 <span key={i} className="cc-w-7px cc-h-7px rounded-sm"
-                  style={{ background: i < Math.min(b.round, 10) - (b.over ? 0 : 1) ? "#e0644a" : "#2c3d47" }} />
+                  style={{ background: i < Math.min(b.round, 10) - (b.over || deploying ? 0 : 1) ? "#e0644a" : "#2c3d47" }} />
               ))}
             </div>
           </div>
-          <div className="cc-text-12d5px cc-text-c6d6de mt-1.5">
-            Ground gives the defender <span className="num cc-text-8fe3d6">{b.terrainDef > 0 ? "+" : ""}{b.terrainDef}%</span>
-            {b.defenderBonus ? <> plus <span className="num cc-text-8fe3d6">+{b.defenderBonus}%</span> from their own doctrine</> : null}
-            . Attackers usually need about a third more men to carry a defended position.
-          </div>
         </div>
 
-        {/* who is winning, in one bar */}
-        <div className="px-5 pt-3 shrink-0">
-          <div className="flex cc-h-9px rounded overflow-hidden border cc-border-31454f">
-            <div className="h-full cc-bar" style={{ width: `${(aStr / tot) * 100}%`, background: aN.color }} />
-            <div className="h-full cc-bar" style={{ width: `${(dStr / tot) * 100}%`, background: dN.color }} />
+        {deploying && (
+          <div className="px-5 py-2.5 border-b cc-border-2a1f1c flex items-center flex-wrap gap-2">
+            <span className="cc-text-12d5px cc-text-a7bac6 mr-1">Draw them up:</span>
+            {FORMATION_IDS.map((id) => (
+              <button key={id} type="button" title={FORMATIONS[id].desc}
+                onClick={() => onDeploy(deployUnits(mine, id))}
+                className="cc-formbtn">{FORMATIONS[id].name}</button>
+            ))}
+            <span className={`cc-text-11d5px ml-auto ${seen === 0 ? "cc-text-e8b98a" : "cc-text-6f8794"}`}>
+              {besieger ? "You have watched this wall for seasons. You know every man on it."
+                : seen === 2 ? "Your outriders have counted them and named them."
+                : seen === 1 ? "Your scouts can count them, no more than that."
+                : "Nobody scouted. You are drawing up blind."}
+            </span>
           </div>
-          <div className="flex justify-between cc-text-11d5px cc-text-95aab6 mt-1">
-            <span className="num">{aStr} attacking</span>
-            <span className="num">{dStr} defending</span>
+        )}
+
+        <div className="flex-1 overflow-y-auto thin p-4">
+          <div className="cc-line">
+            {SECTORS.map((sec) => <Sector key={sec} sec={sec} />)}
           </div>
+
+          <div className="cc-reserve mt-3"
+            onDragOver={(e) => deploying && e.preventDefault()}
+            onDrop={deploying ? drop("res") : undefined}
+            onClick={deploying && held ? () => place(held, "res") : undefined}>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="disp cc-text-14px cc-text-e5eef3">Reserve</span>
+              <span className="cc-text-11d5px cc-text-93a9b5">
+                held back — they take nothing and give nothing until you send them in
+              </span>
+              {!deploying && reserve.length > 0 && (
+                <span className="ml-auto flex gap-1.5">
+                  {SECTORS.map((sec) => (
+                    <button key={sec} type="button" onClick={() => onCommit(sec)} className="cc-formbtn">
+                      Send in on the {sec}
+                    </button>
+                  ))}
+                </span>
+              )}
+            </div>
+            <div className="cc-reserverow">
+              {reserve.map((u) => (
+                <CompanyChip key={u.id} u={u} col={myN.color} held={held === u.id}
+                  draggable={deploying}
+                  onDragStart={deploying ? (e) => { e.dataTransfer.setData("text/plain", u.id); setHeld(u.id); } : undefined}
+                  onPick={deploying ? () => setHeld(held === u.id ? null : u.id) : undefined} />
+              ))}
+              {!reserve.length && (
+                <div className="cc-text-11d5px cc-text-6f8794 py-1">
+                  {deploying ? "nothing held back" : "no reserve"}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {!deploying && ex && (
+            <div className="rounded border cc-border-2a1f1c cc-bg-121a20 px-3.5 py-2.5 mt-3">
+              <div className="flex items-center gap-5 flex-wrap">
+                <div>
+                  <div className="num cc-text-20px" style={{ color: aN.color }}>−{ex.aCas}</div>
+                  <div className="cc-text-11d5px cc-text-95aab6">{aN.short} fell</div>
+                </div>
+                <div>
+                  <div className="num cc-text-20px" style={{ color: dN.color }}>−{ex.dCas}</div>
+                  <div className="cc-text-11d5px cc-text-95aab6">{dN.short} fell</div>
+                </div>
+                <div className="cc-text-12d5px cc-text-a7bac6 flex-1 min-w-0">
+                  {b.log.filter((l) => ["rout", "dead", "flank", "give", "end"].includes(l.t)).slice(-3)
+                    .map((l, i) => <div key={i} className="truncate">{l.m}</div>)}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="flex-1 overflow-y-auto thin p-5 pt-3 flex flex-col cc-lg-flex-row gap-5">
-          <Side side="a" nat={aN} label="attacking" />
-
-          <div className="flex-1 min-w-0">
-            {/* what just happened */}
-            {ex ? (
-              <div className="rounded border cc-border-31454f cc-bg-131f27 p-3 mb-3">
-                <div className="cc-text-12px cc-text-a7bac6 mb-2">Round {ex.round}</div>
-                <div className="flex items-center gap-4">
-                  <div className="flex-1">
-                    <div className="num cc-text-24px" style={{ color: aN.color }}>−{ex.aCas}</div>
-                    <div className="cc-text-11d5px cc-text-95aab6">{aN.short} fell</div>
-                  </div>
-                  <div className="flex-1 text-right">
-                    <div className="num cc-text-24px" style={{ color: dN.color }}>−{ex.dCas}</div>
-                    <div className="cc-text-11d5px cc-text-95aab6">{dN.short} fell</div>
-                  </div>
-                </div>
-                <div className="cc-text-12d5px cc-text-c6d6de mt-2.5 pt-2.5 border-t cc-border-243138">
-                  {aN.short} {STANCES[ex.aStance].name.toLowerCase()}; {dN.short} {STANCES[ex.dStance].name.toLowerCase()}.
-                  {ex.aRouted + ex.dRouted > 0 && " Companies broke."}
-                  {(ex.aDry || ex.dDry) && " Guns are firing on scavenged charges."}
-                </div>
+        <div className="px-5 py-3 border-t cc-border-2a1f1c flex items-center gap-2 flex-wrap">
+          {deploying ? (
+            <>
+              <div className="cc-text-12d5px cc-text-93a9b5 flex-1 min-w-0">
+                {inSec(mine, "left").length + inSec(mine, "centre").length + inSec(mine, "right").length === 0
+                  ? "Put somebody in the line first."
+                  : SECTORS.some((sec) => !inSec(mine, sec).length)
+                    ? "An empty sector is an open flank — the enemy will come round it."
+                    : "The line is drawn."}
               </div>
-            ) : (
-              <div className="rounded border cc-border-31454f cc-bg-131f27 p-3 mb-3 cc-text-13px cc-text-c6d6de">
-                Lines are formed. Give an order to begin. Each round both sides act at once,
-                and companies that lose their nerve run before they are killed — you get about
-                half of those back afterwards.
+              <button type="button" onClick={() => { Sound.play("charge"); onBegin(); }}
+                disabled={!SECTORS.some((sec) => inSec(mine, sec).length)}
+                className="cc-bigbtn cc-bigfight">Take the field</button>
+            </>
+          ) : b.over ? (
+            <>
+              <div className="disp cc-text-16px flex-1 min-w-0">
+                {b.log[b.log.length - 1]?.m || "It is over."}
               </div>
-            )}
-
-            {/* orders, with what they actually do */}
-            {!b.over && pSide && (
-              <>
-                <div className="cc-text-12px cc-text-a7bac6 mb-1.5">Your order, {mySide}</div>
-                <div className="grid gap-1.5">
-                  {Object.entries(STANCES).map(([id, s]) => {
-                    const on = stance === id;
-                    return (
-                      <button key={id} type="button" onClick={() => setStance(id)}
-                        className={`text-left px-3 py-2 rounded border transition-colors ${on ? "cc-border-4d9aa6 cc-bg-152a30" : "cc-border-31454f cc-hover-border-3d6470"}`}>
-                        <div className="flex items-baseline gap-2">
-                          <span className="cc-text-13d5px flex-1">{s.name}</span>
-                          {on && <span className="cc-text-11d5px cc-text-8fe3d6">chosen</span>}
-                        </div>
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {stanceChips(id).map((c) => (
-                            <span key={c.t}
-                              className={`cc-text-11d5px rounded px-1.5 py-0.5 border ${c.good ? "cc-border-3d5a4a cc-text-9fd6b4" : "cc-border-5a3230 cc-text-e09a8a"}`}>
-                              {c.t}
-                            </span>
-                          ))}
-                        </div>
-                        <div className="cc-text-11d5px cc-text-95aab6 mt-1.5">{s.desc}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {dry && (
-                  <div className="cc-text-12d5px cc-text-e09a8a mt-2">
-                    Not enough powder for this order — you hold {myPowder} and need {need}. Your guns
-                    will fire at a quarter strength.
-                  </div>
-                )}
-
-                <div className="flex gap-2 mt-3">
-                  <button type="button" onClick={() => onStep(stance)}
-                    className="flex-1 py-2.5 rounded cc-bg-5a2f26 cc-hover-bg-6e3a2e border cc-border-8a4a38 cc-text-f3d9cf disp cc-text-15px transition-colors">
-                    Give the order
-                  </button>
-                  <button type="button" onClick={() => onAuto(stance)}
-                    className="py-2.5 px-3 rounded border cc-border-31454f cc-text-c6d6de cc-hover-border-3d6470 cc-text-13px transition-colors">
-                    Fight it out
-                  </button>
-                </div>
-              </>
-            )}
-
-            {b.over && (
-              <div className="rounded border cc-border-8a4a38 p-3 mb-3">
-                <div className="disp cc-text-19px cc-text-f0e2b8">
-                  {b.stalemate ? "The attack is called off at nightfall"
-                    : b.retreat ? `${(b.retreat === "a" ? aN : dN).short} disengages`
-                    : `${(b.winner === "a" ? aN : dN).short} holds the field`}
-                </div>
-                <div className="cc-text-13px cc-text-c6d6de mt-1">
-                  {b.winner === pSide ? "The ground is yours." : "You will have to come back with more."}
-                </div>
-                <button type="button" onClick={onClose}
-                  className="w-full mt-3 py-2.5 rounded cc-bg-1f4a52 cc-hover-bg-2a5f69 border cc-border-356b76 cc-text-d9f0f2 disp cc-text-15px transition-colors">
-                  Count the cost
-                </button>
+              <button type="button" onClick={onClose} className="cc-bigbtn cc-bigfight">Count the cost</button>
+            </>
+          ) : (
+            <>
+              <div className="cc-text-12d5px cc-text-93a9b5 flex-1 min-w-0">
+                <span className="num">{myPowder}</span> powder in hand
+                {reserve.length ? ` · ${reserve.length} in reserve` : ""}
               </div>
-            )}
-
-            {/* the running account, kept secondary */}
-            <details className="mt-3">
-              <summary className="cc-text-12px cc-text-95aab6 cursor-pointer">Runners from the line</summary>
-              <div className="grid gap-1 mt-2 cc-max-h-190px overflow-y-auto thin pr-1">
-                {[...b.log].reverse().map((l, i) => (
-                  <div key={i} className={`cc-text-12d5px leading-snug ${l.t === "end" ? "cc-text-f0e2b8"
-                    : l.t === "dead" ? "cc-text-e0644a" : l.t === "rout" ? "cc-text-d9a63f"
-                    : l.t === "warn" ? "cc-text-c9a37a" : "cc-text-c6d6de"}`}>
-                    {l.m}
-                  </div>
-                ))}
-              </div>
-            </details>
-          </div>
-
-          <Side side="d" nat={dN} label="defending" />
+              <button type="button" onClick={() => onStep("withdraw")} className="cc-bigbtn cc-bigoff">
+                Break off
+              </button>
+              <button type="button" onClick={() => onAuto(null)} className="cc-bigbtn cc-bigoff">
+                Fight it out
+              </button>
+              <button type="button" onClick={() => { Sound.play("horn"); onStep(null); }}
+                className="cc-bigbtn cc-bigfight">
+                Give the order
+              </button>
+            </>
+          )}
         </div>
       </div>
     </Overlay>
   );
 }
+
 
 
 /* ------------------------------ SEAT OF POWER -----------------------------

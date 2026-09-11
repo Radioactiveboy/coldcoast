@@ -13,7 +13,9 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 6: the wild has things in it now — about a third of the woods hold a feral
+/* 7: battles are fought on a line — every company carries the sector it stands
+   in — and a walled province can be under siege. A version 6 save has neither.
+   6: the wild has things in it now — about a third of the woods hold a feral
    herd, and every realm opens with a Waster host marching at its seat. A
    version 5 save has neither, so it would load into a world that is quietly
    emptier than the rules assume.
@@ -29,7 +31,7 @@ export const SAVE_KEY = "coldcoast.save";
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight
