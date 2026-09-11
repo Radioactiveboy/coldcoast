@@ -201,6 +201,41 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-text-ff8a72{color:#ff8a72}
 .cc-w-1020px{width:1020px}
 .cc-morebuilds{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:5.4px;font-weight:600}
+.cc-facing{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;opacity:.75;margin-bottom:3px;border-bottom:1px solid #22303a;padding-bottom:2px}
+.cc-line{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media(max-width:720px){.cc-line{grid-template-columns:1fr}}
+.cc-sector{border:1px solid #2a3a44;border-radius:8px;background:#101a21;padding:10px;min-height:150px;transition:border-color .12s,background .12s}
+.cc-sector:hover{border-color:#3d5a66}
+.cc-sectorgone{background:#160f0e;border-color:#4a2b26;opacity:.75}
+.cc-sectorflank{border-color:#8a4636;box-shadow:inset 0 0 22px rgba(224,100,74,.12)}
+.cc-groundtag{font-size:10.5px;border:1px solid #2a3a44;border-radius:3px;padding:1px 5px;color:#7e939f}
+.cc-gr-rough{border-color:#5c5230;color:#c9a37a}
+.cc-gr-anchor{border-color:#2f5768;color:#7fb2cd}
+.cc-chip{border:1px solid #2a3a44;border-radius:5px;background:#131f27;padding:5px 6px;user-select:none}
+.cc-chippick{cursor:grab}
+.cc-chippick:hover{border-color:#4d9aa6}
+.cc-chipheld{border-color:#8fe3d6;background:#152a30}
+.cc-chipbar{height:3px;border-radius:2px;background:#26333c;overflow:hidden;display:block}
+.cc-chipbar>span{display:block;height:100%}
+.cc-tug{height:7px;border-radius:3px;overflow:hidden;display:flex;background:#26333c}
+.cc-tug>span{display:block;height:100%}
+.cc-postrow{display:flex;gap:3px}
+.cc-postbtn{flex:1;font-size:11px;padding:3px 0;border:1px solid #2a3a44;border-radius:4px;color:#8ba0ac;background:#0f1820;transition:border-color .12s,color .12s,background .12s}
+.cc-postbtn:hover{border-color:#3d6470;color:#c3d5de}
+.cc-poston{border-color:#4d9aa6;color:#dfeaf0;background:#152a30}
+.cc-reserve{border:1px dashed #2a3a44;border-radius:8px;background:#0e161c;padding:10px}
+.cc-reserverow{display:flex;gap:8px;flex-wrap:wrap}
+.cc-reserverow>div{min-width:132px}
+.cc-formbtn{font-size:11.5px;padding:3px 9px;border:1px solid #31454f;border-radius:4px;color:#c3d5de;background:#131f27;transition:border-color .12s,background .12s}
+.cc-formbtn:hover{border-color:#4d9aa6;background:#18262e}
+.cc-bigbtn{padding:9px 18px;border-radius:6px;border:1px solid;font-family:inherit;font-size:14.5px;transition:background .12s,border-color .12s}
+.cc-bigfight{border-color:#8a4636;background:#3a2018;color:#f0d6c2}
+.cc-bigfight:hover{background:#4a2a1f}
+.cc-bigfight:disabled{opacity:.4;cursor:not-allowed}
+.cc-bigoff{border-color:#31454f;background:#131f27;color:#c3d5de}
+.cc-bigoff:hover{background:#18262e}
+.cc-w-1180px{width:1180px}
+.cc-bg-121a20{background:#121a20}
 .cc-districtgrid{grid-template-columns:repeat(auto-fill,minmax(232px,1fr))}
 .cc-districtlist{grid-template-columns:repeat(auto-fill,minmax(228px,1fr))}
 .cc-slot{border-radius:8px;border:1px solid #2a3a44;padding:11px;min-height:104px;display:flex;flex-direction:column}
@@ -2202,6 +2237,7 @@ function resolveRound(bt) {
   if (shaken.a) b.log.push({ t: "give", s: "d", m: `The attacking line gives way on ${shaken.a === 1 ? "a sector" : "two sectors"}.` });
   if (shaken.d) b.log.push({ t: "give", s: "a", m: `The defending line gives way on ${shaken.d === 1 ? "a sector" : "two sectors"}.` });
   b.log.push({ t: "round", m: `Round ${b.round}: attackers lose ${aTotal}, defenders lose ${dTotal}.` });
+  b.lastExchange = { aCas: aTotal, dCas: dTotal };
 
   b.broken = { a: brokenSectors(b.a.units, b.d.units), d: brokenSectors(b.d.units, b.a.units) };
   b.round += 1;
@@ -2664,6 +2700,40 @@ export default function ColdCoast() {
   function stepBattle(playerStance) {
     Sound.play(playerStance === "volley" ? "volley" : "clash");
     setGame((g) => (!g.battle || g.battle.over ? g : { ...g, battle: advanceBattle(g.battle, P, playerStance) }));
+  }
+
+  /* The line, while it is being drawn and while it is being fought. All four
+     of these write straight into the battle, because the battle IS the state —
+     there is nothing to commit and nothing to undo. */
+  const bSide = (g) => (g.battle?.aNat === P ? "a" : g.battle?.dNat === P ? "d" : null);
+  function deployBattle(units) {
+    setGame((g) => {
+      const sd = bSide(g);
+      if (!g.battle || !sd || g.battle.over) return g;
+      return { ...g, battle: { ...g.battle, [sd]: { ...g.battle[sd], units } } };
+    });
+  }
+  function beginBattle() {
+    setGame((g) => (g.battle ? { ...g, battle: { ...g.battle, phase: "fight" } } : g));
+  }
+  function postBattle(sec, id) {
+    setGame((g) => {
+      const sd = bSide(g);
+      if (!g.battle || !sd) return g;
+      const key = sd === "a" ? "aPost" : "dPost";
+      return { ...g, battle: { ...g.battle, [key]: { ...g.battle[key], [sec]: id } } };
+    });
+  }
+  function commitReserve(sec) {
+    setGame((g) => {
+      const sd = bSide(g);
+      if (!g.battle || !sd) return g;
+      const units = g.battle[sd].units.map((u) => (u.pos === "res" ? { ...u, pos: sec } : u));
+      if (units.every((u, i) => u.pos === g.battle[sd].units[i].pos)) return g;
+      Sound.play("march");
+      return { ...g, battle: { ...g.battle, [sd]: { ...g.battle[sd], units },
+        log: [...g.battle.log, { t: "give", s: sd, m: `Your reserve goes in on the ${sec}.` }] } };
+    });
   }
 
   function autoBattle(playerStance) {
@@ -3962,7 +4032,9 @@ export default function ColdCoast() {
       )}
       {game.battle && (
         <BattleScreen b={game.battle} nations={game.nations} P={P}
-          onStep={stepBattle} onAuto={autoBattle} onClose={closeBattle} />
+          onStep={stepBattle} onAuto={autoBattle} onClose={closeBattle}
+          onDeploy={deployBattle} onPost={postBattle} onCommit={commitReserve}
+          onBegin={beginBattle} />
       )}
       {game.lords && (
         <WarlordScreen game={game} P={P} onClose={() => setGame((g) => ({ ...g, lords: false }))} />
@@ -7302,45 +7374,137 @@ function CompanyRow({ u, col, showLoss }) {
   );
 }
 
-function BattleScreen({ b, nations, P, onStep, onAuto, onClose }) {
+/* ------------------------------ THE BATTLE --------------------------------
+   Two screens in one. First the line is drawn: every company is dragged onto
+   the left, the centre, the right or into reserve, over ground that is
+   different in each sector. Then it is fought, sector by sector, with an order
+   for each and a reserve to throw in when you decide the moment has come.
+
+   The previous version of this was a column of numbers and one button, and the
+   complaint about it was exactly right: it did not feel like a battle. What
+   makes it feel like one is seeing the line — which part of it is winning,
+   which part is about to go, and what is about to come round the end of it.
+   ------------------------------------------------------------------------ */
+function CompanyChip({ u, col, small, held, onPick, draggable, onDragStart }) {
+  const frac = Math.max(0, Math.min(1, u.str / (u.max || 1)));
+  const mor = Math.max(0, Math.min(1, u.morale / (u.maxMorale || 1)));
+  return (
+    <div
+      draggable={!!draggable}
+      onDragStart={onDragStart}
+      onClick={onPick}
+      className={`cc-chip ${held ? "cc-chipheld" : ""} ${onPick ? "cc-chippick" : ""}`}
+      style={{ borderColor: held ? "#8fe3d6" : undefined }}>
+      <div className="flex items-center gap-1.5">
+        <UnitMark type={u.type} size={small ? 14 : 17} />
+        <span className="cc-text-11d5px flex-1 min-w-0 truncate" style={{ color: col }}>{unitName(u)}</span>
+        <span className="num cc-text-11d5px cc-text-a0b6c1">{u.str}</span>
+      </div>
+      <div className="cc-chipbar mt-1"><span style={{ width: `${frac * 100}%`, background: col }} /></div>
+      <div className="cc-chipbar mt-0.5">
+        <span style={{ width: `${mor * 100}%`,
+          background: mor > 0.5 ? "#9fd6b4" : mor > 0.25 ? "#e8b98a" : "#e0644a" }} />
+      </div>
+    </div>
+  );
+}
+
+function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost, onCommit, onBegin }) {
   const pSide = b.aNat === P ? "a" : b.dNat === P ? "d" : null;
-  const [stance, setStance] = useState(pSide === "a" ? "press" : "hold");
+  const foe = pSide === "a" ? "d" : "a";
   const aN = nations[b.aNat], dN = nations[b.dNat];
-  const aStr = b.a.units.reduce((n, u) => n + u.str, 0);
-  const dStr = b.d.units.reduce((n, u) => n + u.str, 0);
-  const tot = Math.max(1, aStr + dStr);
+  const myN = pSide === "a" ? aN : dN, theirN = pSide === "a" ? dN : aN;
+  const [held, setHeld] = useState(null);
+  const deploying = b.phase === "deploy" && !!pSide;
   const ex = b.lastExchange;
+  const ground = b.ground || { left: "open", centre: "open", right: "open" };
 
+  const mine = pSide ? b[pSide].units : [];
+  const theirs = pSide ? b[foe].units : b.d.units;
+  const myPost = (pSide === "a" ? b.aPost : b.dPost) || {};
+  const inSec = (list, sec) => list.filter((u) => u.pos === sec);
+  const strOf = (list) => list.reduce((n, u) => n + u.str, 0);
+  const myBroke = (b.broken || {})[pSide] || {};
+  const theirBroke = (b.broken || {})[foe] || {};
+
+  const place = (id, sec) => {
+    onDeploy(mine.map((u) => (u.id === id ? { ...u, pos: sec } : u)));
+    setHeld(null);
+  };
+  const drop = (sec) => (e) => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData("text/plain") || held;
+    if (id) place(id, sec);
+  };
+
+  const reserve = inSec(mine, "res");
   const myPowder = pSide === "a" ? b.aPowder : b.dPowder;
-  const myUnits = pSide ? b[pSide].units : [];
-  const needBase = myUnits.reduce((n, u) => n + unitStats(u).powder, 0);
-  const need = needBase * (STANCES[stance].powder || 1);
-  const dry = needBase > 0 && need > myPowder;
-  const mySide = pSide === "a" ? "attacking" : "defending";
 
-  const Side = ({ side, nat, label }) => {
-    const units = b[side].units;
-    const str = side === "a" ? aStr : dStr;
-    const yours = pSide === side;
+  const Sector = ({ sec }) => {
+    const gr = GROUND[ground[sec]] || GROUND.open;
+    const us = inSec(mine, sec), them = inSec(theirs, sec);
+    const ourStr = strOf(us), theirStr = strOf(them);
+    const tot = Math.max(1, ourStr + theirStr);
+    const gone = myBroke[sec], theirGone = theirBroke[sec];
+    const flanked = !gr.safe && ADJACENT[sec].some((t) => myBroke[t]);
+    const turning = !gr.safe && ADJACENT[sec].some((t) => theirBroke[t]);
     return (
-      <div className="w-full cc-lg-w-270px shrink-0">
-        <div className="flex items-center gap-2 mb-1.5">
-          <Sigil id={nat.id} size={19} color={nat.color} />
-          <span className="disp cc-text-16px flex-1 min-w-0" style={{ color: nat.color }}>{nat.short}</span>
-          <span className={`cc-text-11d5px rounded px-1.5 py-0.5 border ${yours ? "cc-border-4d9aa6 cc-text-d3e5ec" : "cc-border-31454f cc-text-95aab6"}`}>
-            {yours ? `you, ${label}` : label}
-          </span>
+      <div className={`cc-sector ${gone ? "cc-sectorgone" : ""} ${flanked ? "cc-sectorflank" : ""}`}
+        onDragOver={(e) => deploying && e.preventDefault()}
+        onDrop={deploying ? drop(sec) : undefined}
+        onClick={deploying && held ? () => place(held, sec) : undefined}>
+        <div className="flex items-baseline gap-2 mb-1.5">
+          <span className="disp cc-text-14px cc-text-e5eef3">{SECTOR_NAME[sec]}</span>
+          <span className={`cc-groundtag ${ground[sec] === "rough" ? "cc-gr-rough"
+            : ground[sec] === "anchored" ? "cc-gr-anchor" : ""}`} title={gr.desc}>{gr.name}</span>
         </div>
-        <div className="num cc-text-12d5px cc-text-c6d6de mb-2">
-          {str} men · {side === "a" ? b.aPowder : b.dPowder} powder
+
+        <div className="cc-facing" style={{ color: theirN.color }}>{theirN.short}</div>
+        <div className="grid gap-1">
+          {them.map((u) => <CompanyChip key={u.id} u={u} col={theirN.color} small />)}
+          {!them.length && (
+            <div className={`cc-text-11d5px py-1 ${theirGone ? "cc-text-9fd6b4" : "cc-text-6f8794"}`}>
+              {theirGone ? "swept off this ground" : "nobody opposite"}
+            </div>
+          )}
         </div>
-        <div className="grid gap-1.5">
-          {units.map((u) => <CompanyRow key={u.id} u={u} col={nat.color} showLoss={!!ex} />)}
-          {!units.length && <div className="cc-text-13px cc-text-95aab6 py-2">The line is gone.</div>}
+
+        {!deploying && (
+          <div className="cc-tug my-1.5" title={`${ourStr} against ${theirStr}`}>
+            <span style={{ width: `${(theirStr / tot) * 100}%`, background: theirN.color }} />
+            <span style={{ width: `${(ourStr / tot) * 100}%`, background: myN.color }} />
+          </div>
+        )}
+        {(flanked || turning) && !deploying && (
+          <div className={`cc-text-11d5px mb-1 ${flanked ? "cc-text-e0644a" : "cc-text-9fd6b4"}`}>
+            {flanked ? "taken in the flank" : "turning their flank"}
+          </div>
+        )}
+
+        <div className="cc-facing mt-1.5" style={{ color: myN.color }}>{myN.short}</div>
+        <div className="grid gap-1">
+          {us.map((u) => (
+            <CompanyChip key={u.id} u={u} col={myN.color} held={held === u.id}
+              draggable={deploying}
+              onDragStart={deploying ? (e) => { e.dataTransfer.setData("text/plain", u.id); setHeld(u.id); } : undefined}
+              onPick={deploying ? () => setHeld(held === u.id ? null : u.id) : undefined} />
+          ))}
+          {!us.length && (
+            <div className={`cc-text-11d5px py-1 ${gone ? "cc-text-e0644a" : "cc-text-6f8794"}`}>
+              {gone ? "the line here is gone" : deploying ? "drop a company here" : "nobody"}
+            </div>
+          )}
         </div>
-        {b[side].routed.length > 0 && (
-          <div className="cc-text-12px cc-text-d9a63f mt-2">
-            {b[side].routed.length} compan{b[side].routed.length === 1 ? "y has" : "ies have"} run
+
+        {!deploying && !!us.length && (
+          <div className="cc-postrow mt-2">
+            {POSTURE_IDS.map((id) => (
+              <button key={id} type="button" title={POSTURES[id].desc}
+                onClick={() => onPost(sec, id)}
+                className={`cc-postbtn ${myPost[sec] === id ? "cc-poston" : ""}`}>
+                {POSTURES[id].name}
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -7349,160 +7513,145 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose }) {
 
   return (
     <Overlay>
-      <div className="cc-w-1020px cc-max-w-96vw cc-max-h-93vh rounded-lg border cc-border-3a2a26 cc-bg-0d1116 flex flex-col overflow-hidden"
+      <div className="cc-w-1180px cc-max-w-96vw cc-max-h-93vh rounded-lg border cc-border-3a2a26 cc-bg-0d1116 flex flex-col overflow-hidden"
         style={{ boxShadow: "0 0 80px rgba(224,100,74,.14)" }}>
 
-        {/* who, where, how long */}
         <div className="px-5 py-3 border-b cc-border-2a1f1c"
           style={{ background: "linear-gradient(90deg,#1a1210,#0d1116)" }}>
           <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5">
             <Target size={18} className="cc-text-e0644a shrink-0" />
             <div className="disp cc-text-21px">The field at {b.provName}</div>
+            <div className="cc-text-12d5px cc-text-95aab6">
+              {aN.short} <span className="num">{strOf(b.a.units)}</span> against{" "}
+              {dN.short} <span className="num">{strOf(b.d.units)}</span>
+            </div>
             <div className="flex items-center gap-1.5 ml-auto">
               <span className="cc-text-12px cc-text-c6d6de">round</span>
               {Array.from({ length: 10 }, (_, i) => (
                 <span key={i} className="cc-w-7px cc-h-7px rounded-sm"
-                  style={{ background: i < Math.min(b.round, 10) - (b.over ? 0 : 1) ? "#e0644a" : "#2c3d47" }} />
+                  style={{ background: i < Math.min(b.round, 10) - (b.over || deploying ? 0 : 1) ? "#e0644a" : "#2c3d47" }} />
               ))}
             </div>
           </div>
-          <div className="cc-text-12d5px cc-text-c6d6de mt-1.5">
-            Ground gives the defender <span className="num cc-text-8fe3d6">{b.terrainDef > 0 ? "+" : ""}{b.terrainDef}%</span>
-            {b.defenderBonus ? <> plus <span className="num cc-text-8fe3d6">+{b.defenderBonus}%</span> from their own doctrine</> : null}
-            . Attackers usually need about a third more men to carry a defended position.
-          </div>
         </div>
 
-        {/* who is winning, in one bar */}
-        <div className="px-5 pt-3 shrink-0">
-          <div className="flex cc-h-9px rounded overflow-hidden border cc-border-31454f">
-            <div className="h-full cc-bar" style={{ width: `${(aStr / tot) * 100}%`, background: aN.color }} />
-            <div className="h-full cc-bar" style={{ width: `${(dStr / tot) * 100}%`, background: dN.color }} />
+        {deploying && (
+          <div className="px-5 py-2.5 border-b cc-border-2a1f1c flex items-center flex-wrap gap-2">
+            <span className="cc-text-12d5px cc-text-a7bac6 mr-1">Draw them up:</span>
+            {FORMATION_IDS.map((id) => (
+              <button key={id} type="button" title={FORMATIONS[id].desc}
+                onClick={() => onDeploy(deployUnits(mine, id))}
+                className="cc-formbtn">{FORMATIONS[id].name}</button>
+            ))}
+            <span className="cc-text-11d5px cc-text-6f8794 ml-auto">
+              drag a company, or tap it and tap where it should stand
+            </span>
           </div>
-          <div className="flex justify-between cc-text-11d5px cc-text-95aab6 mt-1">
-            <span className="num">{aStr} attacking</span>
-            <span className="num">{dStr} defending</span>
+        )}
+
+        <div className="flex-1 overflow-y-auto thin p-4">
+          <div className="cc-line">
+            {SECTORS.map((sec) => <Sector key={sec} sec={sec} />)}
           </div>
+
+          <div className="cc-reserve mt-3"
+            onDragOver={(e) => deploying && e.preventDefault()}
+            onDrop={deploying ? drop("res") : undefined}
+            onClick={deploying && held ? () => place(held, "res") : undefined}>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="disp cc-text-14px cc-text-e5eef3">Reserve</span>
+              <span className="cc-text-11d5px cc-text-93a9b5">
+                held back — they take nothing and give nothing until you send them in
+              </span>
+              {!deploying && reserve.length > 0 && (
+                <span className="ml-auto flex gap-1.5">
+                  {SECTORS.map((sec) => (
+                    <button key={sec} type="button" onClick={() => onCommit(sec)} className="cc-formbtn">
+                      Send in on the {sec}
+                    </button>
+                  ))}
+                </span>
+              )}
+            </div>
+            <div className="cc-reserverow">
+              {reserve.map((u) => (
+                <CompanyChip key={u.id} u={u} col={myN.color} held={held === u.id}
+                  draggable={deploying}
+                  onDragStart={deploying ? (e) => { e.dataTransfer.setData("text/plain", u.id); setHeld(u.id); } : undefined}
+                  onPick={deploying ? () => setHeld(held === u.id ? null : u.id) : undefined} />
+              ))}
+              {!reserve.length && (
+                <div className="cc-text-11d5px cc-text-6f8794 py-1">
+                  {deploying ? "nothing held back" : "no reserve"}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {!deploying && ex && (
+            <div className="rounded border cc-border-2a1f1c cc-bg-121a20 px-3.5 py-2.5 mt-3">
+              <div className="flex items-center gap-5 flex-wrap">
+                <div>
+                  <div className="num cc-text-20px" style={{ color: aN.color }}>−{ex.aCas}</div>
+                  <div className="cc-text-11d5px cc-text-95aab6">{aN.short} fell</div>
+                </div>
+                <div>
+                  <div className="num cc-text-20px" style={{ color: dN.color }}>−{ex.dCas}</div>
+                  <div className="cc-text-11d5px cc-text-95aab6">{dN.short} fell</div>
+                </div>
+                <div className="cc-text-12d5px cc-text-a7bac6 flex-1 min-w-0">
+                  {b.log.filter((l) => ["rout", "dead", "flank", "give", "end"].includes(l.t)).slice(-3)
+                    .map((l, i) => <div key={i} className="truncate">{l.m}</div>)}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="flex-1 overflow-y-auto thin p-5 pt-3 flex flex-col cc-lg-flex-row gap-5">
-          <Side side="a" nat={aN} label="attacking" />
-
-          <div className="flex-1 min-w-0">
-            {/* what just happened */}
-            {ex ? (
-              <div className="rounded border cc-border-31454f cc-bg-131f27 p-3 mb-3">
-                <div className="cc-text-12px cc-text-a7bac6 mb-2">Round {ex.round}</div>
-                <div className="flex items-center gap-4">
-                  <div className="flex-1">
-                    <div className="num cc-text-24px" style={{ color: aN.color }}>−{ex.aCas}</div>
-                    <div className="cc-text-11d5px cc-text-95aab6">{aN.short} fell</div>
-                  </div>
-                  <div className="flex-1 text-right">
-                    <div className="num cc-text-24px" style={{ color: dN.color }}>−{ex.dCas}</div>
-                    <div className="cc-text-11d5px cc-text-95aab6">{dN.short} fell</div>
-                  </div>
-                </div>
-                <div className="cc-text-12d5px cc-text-c6d6de mt-2.5 pt-2.5 border-t cc-border-243138">
-                  {aN.short} {STANCES[ex.aStance].name.toLowerCase()}; {dN.short} {STANCES[ex.dStance].name.toLowerCase()}.
-                  {ex.aRouted + ex.dRouted > 0 && " Companies broke."}
-                  {(ex.aDry || ex.dDry) && " Guns are firing on scavenged charges."}
-                </div>
+        <div className="px-5 py-3 border-t cc-border-2a1f1c flex items-center gap-2 flex-wrap">
+          {deploying ? (
+            <>
+              <div className="cc-text-12d5px cc-text-93a9b5 flex-1 min-w-0">
+                {inSec(mine, "left").length + inSec(mine, "centre").length + inSec(mine, "right").length === 0
+                  ? "Put somebody in the line first."
+                  : SECTORS.some((sec) => !inSec(mine, sec).length)
+                    ? "An empty sector is an open flank — the enemy will come round it."
+                    : "The line is drawn."}
               </div>
-            ) : (
-              <div className="rounded border cc-border-31454f cc-bg-131f27 p-3 mb-3 cc-text-13px cc-text-c6d6de">
-                Lines are formed. Give an order to begin. Each round both sides act at once,
-                and companies that lose their nerve run before they are killed — you get about
-                half of those back afterwards.
+              <button type="button" onClick={onBegin}
+                disabled={!SECTORS.some((sec) => inSec(mine, sec).length)}
+                className="cc-bigbtn cc-bigfight">Take the field</button>
+            </>
+          ) : b.over ? (
+            <>
+              <div className="disp cc-text-16px flex-1 min-w-0">
+                {b.log[b.log.length - 1]?.m || "It is over."}
               </div>
-            )}
-
-            {/* orders, with what they actually do */}
-            {!b.over && pSide && (
-              <>
-                <div className="cc-text-12px cc-text-a7bac6 mb-1.5">Your order, {mySide}</div>
-                <div className="grid gap-1.5">
-                  {Object.entries(STANCES).map(([id, s]) => {
-                    const on = stance === id;
-                    return (
-                      <button key={id} type="button" onClick={() => setStance(id)}
-                        className={`text-left px-3 py-2 rounded border transition-colors ${on ? "cc-border-4d9aa6 cc-bg-152a30" : "cc-border-31454f cc-hover-border-3d6470"}`}>
-                        <div className="flex items-baseline gap-2">
-                          <span className="cc-text-13d5px flex-1">{s.name}</span>
-                          {on && <span className="cc-text-11d5px cc-text-8fe3d6">chosen</span>}
-                        </div>
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {stanceChips(id).map((c) => (
-                            <span key={c.t}
-                              className={`cc-text-11d5px rounded px-1.5 py-0.5 border ${c.good ? "cc-border-3d5a4a cc-text-9fd6b4" : "cc-border-5a3230 cc-text-e09a8a"}`}>
-                              {c.t}
-                            </span>
-                          ))}
-                        </div>
-                        <div className="cc-text-11d5px cc-text-95aab6 mt-1.5">{s.desc}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {dry && (
-                  <div className="cc-text-12d5px cc-text-e09a8a mt-2">
-                    Not enough powder for this order — you hold {myPowder} and need {need}. Your guns
-                    will fire at a quarter strength.
-                  </div>
-                )}
-
-                <div className="flex gap-2 mt-3">
-                  <button type="button" onClick={() => onStep(stance)}
-                    className="flex-1 py-2.5 rounded cc-bg-5a2f26 cc-hover-bg-6e3a2e border cc-border-8a4a38 cc-text-f3d9cf disp cc-text-15px transition-colors">
-                    Give the order
-                  </button>
-                  <button type="button" onClick={() => onAuto(stance)}
-                    className="py-2.5 px-3 rounded border cc-border-31454f cc-text-c6d6de cc-hover-border-3d6470 cc-text-13px transition-colors">
-                    Fight it out
-                  </button>
-                </div>
-              </>
-            )}
-
-            {b.over && (
-              <div className="rounded border cc-border-8a4a38 p-3 mb-3">
-                <div className="disp cc-text-19px cc-text-f0e2b8">
-                  {b.stalemate ? "The attack is called off at nightfall"
-                    : b.retreat ? `${(b.retreat === "a" ? aN : dN).short} disengages`
-                    : `${(b.winner === "a" ? aN : dN).short} holds the field`}
-                </div>
-                <div className="cc-text-13px cc-text-c6d6de mt-1">
-                  {b.winner === pSide ? "The ground is yours." : "You will have to come back with more."}
-                </div>
-                <button type="button" onClick={onClose}
-                  className="w-full mt-3 py-2.5 rounded cc-bg-1f4a52 cc-hover-bg-2a5f69 border cc-border-356b76 cc-text-d9f0f2 disp cc-text-15px transition-colors">
-                  Count the cost
-                </button>
+              <button type="button" onClick={onClose} className="cc-bigbtn cc-bigfight">Count the cost</button>
+            </>
+          ) : (
+            <>
+              <div className="cc-text-12d5px cc-text-93a9b5 flex-1 min-w-0">
+                <span className="num">{myPowder}</span> powder in hand
+                {reserve.length ? ` · ${reserve.length} in reserve` : ""}
               </div>
-            )}
-
-            {/* the running account, kept secondary */}
-            <details className="mt-3">
-              <summary className="cc-text-12px cc-text-95aab6 cursor-pointer">Runners from the line</summary>
-              <div className="grid gap-1 mt-2 cc-max-h-190px overflow-y-auto thin pr-1">
-                {[...b.log].reverse().map((l, i) => (
-                  <div key={i} className={`cc-text-12d5px leading-snug ${l.t === "end" ? "cc-text-f0e2b8"
-                    : l.t === "dead" ? "cc-text-e0644a" : l.t === "rout" ? "cc-text-d9a63f"
-                    : l.t === "warn" ? "cc-text-c9a37a" : "cc-text-c6d6de"}`}>
-                    {l.m}
-                  </div>
-                ))}
-              </div>
-            </details>
-          </div>
-
-          <Side side="d" nat={dN} label="defending" />
+              <button type="button" onClick={() => onStep("withdraw")} className="cc-bigbtn cc-bigoff">
+                Break off
+              </button>
+              <button type="button" onClick={() => onAuto(null)} className="cc-bigbtn cc-bigoff">
+                Fight it out
+              </button>
+              <button type="button" onClick={() => onStep(null)} className="cc-bigbtn cc-bigfight">
+                Give the order
+              </button>
+            </>
+          )}
         </div>
       </div>
     </Overlay>
   );
 }
+
 
 
 /* ------------------------------ SEAT OF POWER -----------------------------

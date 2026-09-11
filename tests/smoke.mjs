@@ -135,12 +135,17 @@ const purse = () => page.evaluate(() => {
   };
   return { scrap: g("Scrap"), food: g("Rations"), men: g("Recruits") };
 });
+/* A battle now opens on the deployment screen — the line has to be drawn
+   before anybody swings — so taking the field is step one of fighting one. */
+const inBattle = () => page.evaluate(() =>
+  /Take the field|Give the order/.test(document.body.innerText));
 const fightOut = async (rounds = 14) => {
+  await click("Take the field"); await wait(300);
   for (let i = 0; i < rounds; i++) {
     const t = await page.evaluate(() => document.body.innerText);
     if (!/Give the order/.test(t)) break;
     await click("Give the order"); await wait(320);
-    await click("Count the cost|Fight it out|Press on"); await wait(260);
+    await click("Count the cost"); await wait(260);
   }
   await page.evaluate(() => {
     const ov = document.querySelector(".fixed.inset-0.z-50");
@@ -149,10 +154,10 @@ const fightOut = async (rounds = 14) => {
   await wait(400);
 };
 const beforeHost = await purse();
-let metHost = await page.evaluate(() => /Give the order/.test(document.body.innerText));
+let metHost = await inBattle();
 for (let i = 0; i < 6 && !metHost; i++) {
   await click("End (spring|summer|autumn|winter)"); await wait(360);
-  metHost = await page.evaluate(() => /Give the order/.test(document.body.innerText));
+  metHost = await inBattle();
 }
 check("the opening host comes for the seat", metHost);
 await fightOut();
@@ -389,17 +394,61 @@ await page.evaluate(() => window.__ccPick(20, 77)); await wait(200);
 // a waster hold got you the ground and nothing else.
 const canAttack = await click("Attack the");
 await wait(700);
+const deploy = await page.evaluate(() => ({
+  open: !!document.querySelector(".fixed.inset-0.z-50"),
+  sectors: document.querySelectorAll(".cc-sector").length,
+  ground: [...document.querySelectorAll(".cc-groundtag")].map((x) => x.textContent).join("/"),
+  presets: [...document.querySelectorAll(".cc-formbtn")].length,
+}));
+check("a battle opens on the line, not the first blow", deploy.open && deploy.sectors === 3,
+  `${deploy.sectors} sectors, ground ${deploy.ground}, ${deploy.presets} formations`);
+// Drop a company somewhere else and check it actually moves.
+const spread = () => page.evaluate(() => [...document.querySelectorAll(".cc-sector")]
+  .map((s) => s.querySelectorAll(".cc-chippick").length).join(","));
+const shifted = { was: await spread() };
+// Two separate gestures: picking a company up is a render, and the sector
+// only takes a drop once it knows something is in hand.
+await page.evaluate(() => {
+  const chips = [...document.querySelectorAll(".cc-chippick")];
+  chips[chips.length - 1]?.click();
+});
+await wait(250);
+await page.evaluate(() => document.querySelectorAll(".cc-sector")[0].click());
+await wait(300);
+const nowAt = await page.evaluate(() => [...document.querySelectorAll(".cc-sector")]
+  .map((s) => s.querySelectorAll(".cc-chippick").length).join(","));
+check("a company can be moved along the line", shifted.was !== nowAt,
+  `${shifted.was} -> ${nowAt}`);
+
+// And by actually dragging one, with a real DataTransfer, which is what a
+// person's mouse hands the handlers. Tapping is the fallback, not the feature.
+const dragged = await page.evaluate(() => {
+  const chip = [...document.querySelectorAll(".cc-chippick")].pop();
+  const res = document.querySelector(".cc-reserve");
+  if (!chip || !res) return false;
+  const dt = new DataTransfer();
+  chip.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }));
+  res.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }));
+  res.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+  return true;
+});
+await wait(350);
+const held = await page.evaluate(() => document.querySelectorAll(".cc-reserverow .cc-chip").length);
+check("a company can be dragged into reserve", dragged && held > 0, `${held} held back`);
+await click("Take the field"); await wait(400);
 const battle = await page.evaluate(() => ({
   open: !!document.querySelector(".fixed.inset-0.z-50"),
   kids: document.getElementById("root")?.children.length ?? 0,
   orders: /Give the order/.test(document.body.innerText),
+  postures: document.querySelectorAll(".cc-postbtn").length,
 }));
+check("every sector takes its own order", battle.postures >= 3, `${battle.postures} buttons`);
 check("a battle can be started", canAttack && battle.open, canAttack ? "" : "no attack order offered");
 check("the battle screen renders", battle.kids > 0 && battle.orders,
   `#root children ${battle.kids}, orders ${battle.orders}`);
 if (battle.open) {
   await click("Give the order"); await wait(500);
-  await click("Count the cost|Fight it out|Press on"); await wait(400);
+  await click("Count the cost"); await wait(400);
   await page.evaluate(() => {
     const ov = document.querySelector(".fixed.inset-0.z-50");
     if (ov) [...ov.querySelectorAll("button")].pop()?.click();
