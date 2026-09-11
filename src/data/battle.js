@@ -95,3 +95,28 @@ export const FLANK_MORALE = 11;
 // the whole army does.
 export const SHAKEN_NEAR = 8;
 export const SHAKEN_SECTOR = 14;
+
+/* -------------------------------- SIEGES -----------------------------------
+   A walled place is not taken by walking at it. Sitting in front of one stops
+   it paying anything, starves the people inside and wears the garrison down —
+   and every few seasons the wall itself gives somewhere, which is what turns
+   an unwinnable storm into a possible one.
+
+   A storm is an ordinary battle fought against the wall: every sector is
+   `walls` ground until a breach opens it. One breach opens the centre, where
+   the gate is; the second opens a flank. Three breaches and there is no wall
+   left worth the name and you are simply fighting whoever is behind it.
+   ------------------------------------------------------------------------ */
+export const SIEGE = {
+  // A place is walled if its works and its seat come to this much defence.
+  wallsAt: 15,
+  // Seasons of investment per breach, and how many the wall can take.
+  perBreach: 3,
+  maxBreach: 3,
+  // What a season of investment does to the place, and to the besieger.
+  starve: 0.04,          // of the population, every season
+  garrison: 0.06,        // of every defending company's strength
+  upkeep: 6,             // extra rations a season, for sitting still in the mud
+};
+// Which sector the next breach opens. The gate first, then a flank.
+export const BREACH_ORDER = ["centre", "left", "right"];

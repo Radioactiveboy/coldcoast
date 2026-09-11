@@ -482,6 +482,16 @@ for (let i = 0; i < 200 && seasons < 40; i++) {
   seasons++;
 }
 check("forty seasons pass", seasons === 40, `${seasons}`);
+
+/* Sieges. Walls have to appear on their own for a siege to ever be offered, and
+   a wall has to stop being a wall once the siege has opened it. */
+{
+  const sg = await page.evaluate(() => window.__ccSiege && window.__ccSiege());
+  check("walls go up somewhere in forty seasons", !!sg && sg.walled > 0, `${sg?.walled} walled`);
+  check("a whole wall is a wall in every sector", sg?.storm?.[0] === "walls/walls/walls", sg?.storm?.[0]);
+  check("the first breach opens the centre", sg?.storm?.[1] === "walls/rough/walls", sg?.storm?.[1]);
+  check("three breaches leave no wall standing", sg?.storm?.[3] === "rough/rough/rough", sg?.storm?.[3]);
+}
 check("no NaN on screen", !/NaN/.test(await page.evaluate(() => document.body.innerText)));
 check("no page errors", errors.length === 0, errors.slice(0, 2).join(" | "));
 

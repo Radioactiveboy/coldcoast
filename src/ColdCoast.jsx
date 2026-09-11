@@ -17,7 +17,8 @@ import { TECHS, TECH_IDS, TECH_TIERS, TIER_OF, tierGate, tierOpen, tierNeeds } f
 import { ICONS, ICON_AUTHORS, unitIcon, techIcon } from "./data/gameicons.js";
 import { MAP_NAMES } from "./data/places.js";
 import { SECTORS, SECTOR_NAME, ADJACENT, POSTURES, POSTURE_IDS, GROUND, groundFor,
-         FORMATIONS, FORMATION_IDS, FLANK_DEAL, FLANK_MORALE, SHAKEN_NEAR, SHAKEN_SECTOR }
+         FORMATIONS, FORMATION_IDS, FLANK_DEAL, FLANK_MORALE, SHAKEN_NEAR, SHAKEN_SECTOR,
+         SIEGE, BREACH_ORDER }
   from "./data/battle.js";
 import { UNIT_TIERS, UNITS, UNIT_IDS } from "./data/units.js";
 import { SETTLEMENT, WORKS, WORK_IDS } from "./data/settlement.js";
@@ -211,6 +212,7 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-groundtag{font-size:10.5px;border:1px solid #2a3a44;border-radius:3px;padding:1px 5px;color:#7e939f}
 .cc-gr-rough{border-color:#5c5230;color:#c9a37a}
 .cc-gr-anchor{border-color:#2f5768;color:#7fb2cd}
+.cc-breachpip{width:16px;height:5px;border-radius:2px;display:inline-block}
 .cc-chipdark{background:#0c141a;border-style:dashed;border-color:#22303a}
 .cc-blindmark{width:9px;height:9px;border-radius:2px;opacity:.5;display:inline-block}
 .cc-chip{border:1px solid #2a3a44;border-radius:5px;background:#131f27;padding:5px 6px;user-select:none}
@@ -1413,6 +1415,22 @@ function seatDefence(p) {
   Object.keys(p.works || {}).forEach((w) => { d += WORKS[w].def || 0; });
   return d;
 }
+/* ------------------------------- SIEGES ------------------------------------
+   How strong the place is, whether it is worth investing rather than storming,
+   and what a season of sitting in front of it does. */
+const wallsOf = (p) => doneBuilds(p).reduce((n, b) => n + (buildStep(b)?.def || 0), 0) + seatDefence(p);
+const isWalled = (p) => wallsOf(p) >= SIEGE.wallsAt;
+const siegeOf = (p) => p?.siege || null;
+const breachCount = (p) => Math.min(SIEGE.maxBreach, Math.floor((p?.siege?.seasons || 0) / SIEGE.perBreach));
+/* What the ground is when the wall is the thing in your way. Sectors are walls
+   until the siege has opened them. */
+function stormGround(p) {
+  const open = breachCount(p);
+  const g = { left: "walls", centre: "walls", right: "walls" };
+  BREACH_ORDER.slice(0, open).forEach((sec) => { g[sec] = "rough"; });
+  return g;
+}
+
 function seatCap(prov, natId) {
   let c = 0;
   Object.values(prov).forEach((p) => {
@@ -1988,6 +2006,8 @@ function moveInfo(game, army, prov, P, atWar) {
 
 /* ------------------------------- ECONOMY ---------------------------------- */
 function provinceYield(p, natId, nat) {
+  // Invested: the carts do not come out and nothing is going in.
+  if (p.siege) return { food: 0, scrap: 0, metal: 0, fuel: 0, powder: 0, men: 0 };
   const t = TERRAIN[p.t];
   // men comes from who lives here rather than from the terrain itself. The
   // population table is set so an ordinary tile yields exactly what its
@@ -2324,8 +2344,14 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
   const prov = provinces[k];
   if (!attacker || !defender || !prov) return null;
   const works = doneBuilds(prov).reduce((n, b) => n + (buildStep(b)?.def || 0), 0);
-  const terrainDef = TERRAIN[prov.t].def + works;
-  const ground = groundFor(prov.t, coastal(prov.c, prov.r), prov.c + prov.r);
+  // A place under siege by this attacker is stormed, not met in the open.
+  const storming = prov.siege && prov.siege.by === attacker.owner && isWalled(prov);
+  const ground = storming ? stormGround(prov)
+    : groundFor(prov.t, coastal(prov.c, prov.r), prov.c + prov.r);
+  // In a storm the wall is the ground, sector by sector, and a breach is a hole
+  // in it. Counting the works a second time on top of that would make a
+  // breached wall as strong as a whole one.
+  const terrainDef = TERRAIN[prov.t].def + (storming ? 0 : works);
   let defenderBonus = 0;
   if (defender.owner === "alpine" && ["h", "m"].includes(prov.t)) defenderBonus += 35;
   if (isMinor(defender.owner)) defenderBonus += MINORS[defender.owner].defBonus;
@@ -2336,7 +2362,7 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
     aArmy: attacker.id, dArmy: defender.id,
     hex: { c: prov.c, r: prov.r }, provName: prov.name,
     // The defender picked the ground; the attacker has to come at it.
-    ground,
+    ground, storming: !!storming, breach: storming ? breachCount(prov) : 0,
     a: { units: deployUnits(attacker.units.map((u) => ({ ...u })), "even"), routed: [] },
     d: { units: deployUnits(defender.units.map((u) => ({ ...u })), aiFormation(defender.units, ground)), routed: [] },
     aPost: { left: "press", centre: "press", right: "press" },
@@ -2352,7 +2378,11 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
     aCommander: !!attacker.lord, dCommander: !!defender.lord,
     log: [{
       t: "open",
-      m: `${nations[attacker.owner].short} strikes at ${prov.name}. ${TERRAIN[prov.t].name} favours the defender by ${terrainDef}%.`,
+      m: storming
+        ? `${nations[attacker.owner].short} storms ${prov.name}. ${breachCount(prov)
+          ? `${breachCount(prov)} breach${breachCount(prov) > 1 ? "es" : ""} stand open.`
+          : "The wall is whole."}`
+        : `${nations[attacker.owner].short} strikes at ${prov.name}. ${TERRAIN[prov.t].name} favours the defender by ${terrainDef}%.`,
     }],
     // Nobody strikes a blow until the line is drawn. Every battle that reaches
     // a screen has the player on one side of it; the ones that do not are
@@ -3189,6 +3219,37 @@ export default function ColdCoast() {
     });
   }
 
+  /* Sitting down in front of a walled place. Nothing about it is fast: it pays
+     nothing while you are there, its people go hungry, its garrison thins, and
+     every third season the wall gives somewhere. */
+  function invest(k) {
+    setGame((g) => {
+      const pr = g.provinces[k];
+      if (!pr || !pr.owner || pr.owner === P || !isWalled(pr) || pr.siege) return g;
+      const near = g.armies.some((a) => a.owner === P && a.units.length
+        && hexDist(a.c, a.r, pr.c, pr.r) === 1);
+      if (!near) return g;
+      Sound.play("horn");
+      return {
+        ...g,
+        provinces: { ...g.provinces, [k]: { ...pr, siege: { by: P, seasons: 0 } } },
+        log: [{ turn: g.turn, m: `${pr.name} is invested. Nothing goes in and nothing comes out.` },
+              ...g.log].slice(0, 60),
+      };
+    });
+  }
+  function liftSiege(k) {
+    setGame((g) => {
+      const pr = g.provinces[k];
+      if (!pr?.siege || pr.siege.by !== P) return g;
+      return {
+        ...g,
+        provinces: { ...g.provinces, [k]: { ...pr, siege: null } },
+        log: [{ turn: g.turn, m: `The siege of ${pr.name} is lifted.` }, ...g.log].slice(0, 60),
+      };
+    });
+  }
+
   function claim(k) {
     setGame((g) => {
       const pr = g.provinces[k];
@@ -3547,8 +3608,10 @@ export default function ColdCoast() {
           }
         }
 
-        // move & fight
-        armies.filter((a) => a.owner === id).forEach((a) => {
+        // move & fight. A force bound to a place — a lair, or a garrison with a
+        // besieging army camped outside the gate — stays where it is.
+        armies.filter((a) => a.owner === id && !a.lairBound
+          && !provinces[key(a.c, a.r)]?.siege).forEach((a) => {
           a.route = [[a.c, a.r]];
           let mp = a.mp;
           let guard = 0;
@@ -3714,6 +3777,68 @@ export default function ColdCoast() {
         const back = neighbours(a.c, a.r).find(([x, y]) => provinces[key(x, y)]
           && !armies.some((z) => z.c === x && z.r === y && z.owner !== a.owner));
         if (back) { a.c = back[0]; a.r = back[1]; a.route = null; a.seq = (a.seq || 0) + 1; }
+      });
+
+      /* Rivals sit down in front of walls too. A host that has marched up to a
+         walled place it is at war with invests rather than throwing itself at
+         the stonework. */
+      armies.forEach((a) => {
+        if (a.owner === g.player || isMinor(a.owner) || !a.units.length) return;
+        neighbours(a.c, a.r).forEach(([x, y]) => {
+          const q = provinces[key(x, y)];
+          if (!q || !q.owner || q.owner === a.owner || q.siege || !isWalled(q)) return;
+          if (!isMinor(q.owner) && !war[warKey(a.owner, q.owner)]) return;
+          if (Math.random() > 0.5) return;
+          provinces[key(x, y)] = { ...q, siege: { by: a.owner, seasons: 0 } };
+          if (q.owner === g.player) {
+            notice("raid", `${NATIONS[a.owner]?.short || "A host"} has sat down in front of ${q.name}.`, key(x, y));
+          }
+        });
+      });
+
+      /* --- sieges ---
+         A siege is a thing you keep doing, not a thing you did. Walk away and
+         it lifts itself; stay and the place pays nobody, its people go hungry
+         and the men on the wall get thinner every season. */
+      Object.values(provinces).forEach((pv) => {
+        const sg = pv.siege;
+        if (!sg) return;
+        const k2 = key(pv.c, pv.r);
+        const still = armies.some((a) => a.owner === sg.by && a.units.length
+          && hexDist(a.c, a.r, pv.c, pv.r) === 1);
+        if (!still || pv.owner === sg.by) {
+          provinces[k2] = { ...pv, siege: null };
+          if (sg.by === g.player && pv.owner !== sg.by) {
+            newLog.push({ turn: g.turn, m: `The siege of ${pv.name} lapses — nobody is standing in front of it.` });
+          }
+          return;
+        }
+        const was = Math.floor(sg.seasons / SIEGE.perBreach);
+        const seasons = sg.seasons + 1;
+        const now = Math.min(SIEGE.maxBreach, Math.floor(seasons / SIEGE.perBreach));
+        provinces[k2] = {
+          ...pv, siege: { ...sg, seasons },
+          pop: Math.max(0, Math.round((pv.pop || 0) * (1 - SIEGE.starve))),
+        };
+        // The garrison thins on short rations as surely as the town does.
+        armies.forEach((a) => {
+          if (a.c !== pv.c || a.r !== pv.r || a.owner !== pv.owner) return;
+          a.units = a.units.map((u) => ({ ...u, str: Math.max(1, Math.round(u.str * (1 - SIEGE.garrison))) }));
+        });
+        // Sitting still in the mud costs the besieger rations.
+        const bn = nations[sg.by];
+        if (bn) nations[sg.by] = { ...bn, res: { ...bn.res, food: Math.max(0, bn.res.food - SIEGE.upkeep) } };
+        if (now > was) {
+          const where = BREACH_ORDER[now - 1];
+          if (sg.by === g.player) {
+            newLog.push({ turn: g.turn, m: `The wall at ${pv.name} gives way on the ${where}.` });
+            notice("built", `A breach is open at ${pv.name}. Storm it while it stands open.`, k2);
+          } else if (pv.owner === g.player) {
+            notice("raid", `The wall at ${pv.name} has been breached on the ${where}.`, k2);
+          }
+        } else if (pv.owner === g.player && seasons === 1) {
+          notice("raid", `${pv.name} is invested. It pays you nothing while they sit there.`, k2);
+        }
       });
 
       // --- the Wasters ---
@@ -4053,6 +4178,7 @@ export default function ColdCoast() {
             onBuild={build} onRecruitOpen={(k) => setGame((g) => ({ ...g, recruit: k }))}
             onWar={toggleWar} onDeselect={deselect}
             onInvestigate={investigate} onClaim={claim} onMarch={march}
+            onInvest={invest} onLift={liftSiege}
             onSeat={(k) => setGame((g) => ({ ...g, seat: k }))} onResearch={research}
             onOpenTree={() => setGame((g) => ({ ...g, tree: true }))} onRepair={repair}
             onDistrict={(k) => setGame((g) => ({ ...g, district: k }))}
@@ -5327,6 +5453,10 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
   const selRef = useRef(onSelect);
   const deselRef = useRef(onDeselect);
   const provRef = useRef(game.provinces);
+  // The debug hooks below are installed once, so they must not close over the
+  // turn they were installed on.
+  const gameRef = useRef(game);
+  gameRef.current = game;
   selRef.current = onSelect;
   // With the per-province click targets gone there is nothing in the document
   // to address a hex by, so expose one hook for tests to drive selection.
@@ -5336,7 +5466,25 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
     /* For the smoke test: how much of the wild is actually holding something.
        There is no way to check the spawn rate by playing — you would have to
        walk into every wood on the continent. */
+    /* For the smoke test and for probes: enough of the position to check a
+       rule without playing forty seasons by hand. */
+    if (typeof window !== "undefined") window.__ccSiege = () => {
+      const game = gameRef.current;
+      const walled = Object.values(game.provinces).filter((p) => p.owner && isWalled(p));
+      return {
+        walled: walled.length,
+        besieged: walled.filter((p) => p.siege).map((p) => ({
+          name: p.name, by: p.siege.by, seasons: p.siege.seasons, at: key(p.c, p.r),
+        })),
+        mine: game.armies.filter((a) => a.owner === game.player).map((a) => `${a.c},${a.r}:${a.units.length}`),
+        // What a storm would find at each stage of a siege. Read-only: it asks
+        // the same helpers the battle does, without touching the position.
+        storm: [0, 1, 2, 3].map((n) => SECTORS
+          .map((sec) => stormGround({ siege: { seasons: n * SIEGE.perBreach } })[sec]).join("/")),
+      };
+    };
     if (typeof window !== "undefined") window.__ccWild = () => {
+      const game = gameRef.current;
       const all = Object.values(game.provinces);
       const woods = all.filter((p) => p.t === "f" && !p.owner);
       return {
@@ -5797,7 +5945,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
 }
 
 /* -------------------------------- SIDEBAR --------------------------------- */
-function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict,}) {
+function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift }) {
   const [tab, setTab] = useState("here");
   // Only the two that are about what is in front of you. The realm-wide
   // screens moved to the top bar; six tabs did not fit this column.
@@ -5821,6 +5969,7 @@ function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecr
             onBuild={onBuild} onRecruitOpen={onRecruitOpen} onDisband={onDisband}
             onDeselect={onDeselect} onInvestigate={onInvestigate} onClaim={onClaim}
             onMarch={onMarch} atWar={atWar} onSeat={onSeat} onRepair={onRepair} onDistrict={onDistrict}
+            onInvest={onInvest} onLift={onLift}
             onTake={onTake} onMerge={onMerge} onReinforce={onReinforce} onCommand={onCommand}
             onInvestPop={onInvestPop} onRename={onRename} onSplit={onSplit} />
         )}
@@ -6029,7 +6178,7 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair })
   );
 }
 
-function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict }) {
+function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift }) {
   if (!selProv) return (
     <div className="cc-text-13d5px cc-text-93a9b5 leading-relaxed">
       <p className="mb-3">Pick a hex to see what it grows and what it hides.</p>
@@ -6276,6 +6425,68 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
           })}
         </Section>
       )}
+
+      {/* A walled place somebody else holds. You can walk at it and be shot off
+          the wall, or you can sit down in front of it and wait. */}
+      {selProv.owner && selProv.owner !== P && isWalled(selProv) && (() => {
+        const k = key(selProv.c, selProv.r);
+        const sg = siegeOf(selProv);
+        const mine = sg && sg.by === P;
+        const near = game.armies.some((a) => a.owner === P && a.units.length
+          && hexDist(a.c, a.r, selProv.c, selProv.r) === 1);
+        const br = breachCount(selProv);
+        const next = SIEGE.perBreach - ((sg?.seasons || 0) % SIEGE.perBreach);
+        return (
+          <Section title={mine ? "Your siege" : `Walled — ${wallsOf(selProv)}% to the defender`}>
+            {mine ? (
+              <>
+                <div className="cc-text-13px cc-text-c6d6de leading-relaxed mb-2">
+                  Invested <span className="num">{sg.seasons}</span>{" "}
+                  {sg.seasons === 1 ? "season" : "seasons"}. Nothing goes in and nothing comes out:
+                  it pays you nothing, its people are going hungry and its garrison is thinning.
+                </div>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  {Array.from({ length: SIEGE.maxBreach }, (_, i) => (
+                    <span key={i} className="cc-breachpip" style={{ background: i < br ? "#e0644a" : "#2c3d47" }} />
+                  ))}
+                  <span className="cc-text-12px cc-text-a0b6c1">
+                    {br === 0 ? "the wall is whole" : br >= SIEGE.maxBreach ? "the wall is gone"
+                      : `${br} ${br === 1 ? "breach" : "breaches"}`}
+                    {br < SIEGE.maxBreach ? ` · next in ${next} ${next === 1 ? "season" : "seasons"}` : ""}
+                  </span>
+                </div>
+                <div className="cc-text-12px cc-text-93a9b5 leading-snug mb-2">
+                  {br === 0 ? "Storm it now and your companies go at a standing wall."
+                    : br === 1 ? "The gate has gone. A storm reaches the centre without climbing."
+                    : br === 2 ? "The gate and one flank are open."
+                    : "There is no wall left worth the name."}
+                </div>
+                <button type="button" onClick={() => onLift(k)}
+                  className="w-full py-2 rounded border cc-border-31454f cc-text-c3d5de cc-text-13px cc-hover-border-3d6470 transition-colors">
+                  Lift the siege
+                </button>
+              </>
+            ) : sg ? (
+              <div className="cc-text-13px cc-text-c6d6de leading-relaxed">
+                {FACTION[sg.by]?.short || "Somebody"} already has it invested.
+              </div>
+            ) : (
+              <>
+                <div className="cc-text-13px cc-text-c6d6de leading-relaxed mb-2">
+                  Works and walls give the defender <span className="num">{wallsOf(selProv)}%</span>.
+                  Storming that costs companies. Sitting in front of it costs seasons.
+                </div>
+                <button type="button" disabled={!near} onClick={() => onInvest(k)}
+                  className={`w-full py-2.5 rounded disp cc-text-14d5px border transition-colors ${near
+                    ? "cc-bg-2a3a4a cc-hover-bg-35495c cc-border-4d7488 cc-text-dfeaf0"
+                    : "cc-border-25313a cc-text-78909e"}`}>
+                  {near ? "Invest the place" : "March a warband alongside it first"}
+                </button>
+              </>
+            )}
+          </Section>
+        );
+      })()}
 
       {!selProv.owner && (() => {
         const here = game.armies.find((a) => a.owner === P && a.c === selProv.c && a.r === selProv.r);
@@ -7481,8 +7692,12 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost
 
   const mine = pSide ? b[pSide].units : [];
   const theirs = pSide ? b[foe].units : b.d.units;
-  // Before the lines close you only know what your outriders brought back.
-  const seen = deploying ? scoutLevel(mine) : 2;
+  // Before the lines close you only know what your outriders brought back —
+  // unless you have spent seasons camped in front of the place, in which case
+  // you have watched them on the wall every morning and know exactly who is up
+  // there.
+  const besieger = !!b.storming && pSide === "a";
+  const seen = deploying ? (besieger ? 2 : scoutLevel(mine)) : 2;
   const myPost = (pSide === "a" ? b.aPost : b.dPost) || {};
   const inSec = (list, sec) => list.filter((u) => u.pos === sec);
   const strOf = (list) => list.reduce((n, u) => n + u.str, 0);
@@ -7628,7 +7843,8 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost
                 className="cc-formbtn">{FORMATIONS[id].name}</button>
             ))}
             <span className={`cc-text-11d5px ml-auto ${seen === 0 ? "cc-text-e8b98a" : "cc-text-6f8794"}`}>
-              {seen === 2 ? "Your outriders have counted them and named them."
+              {besieger ? "You have watched this wall for seasons. You know every man on it."
+                : seen === 2 ? "Your outriders have counted them and named them."
                 : seen === 1 ? "Your scouts can count them, no more than that."
                 : "Nobody scouted. You are drawing up blind."}
             </span>
