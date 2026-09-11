@@ -30,6 +30,18 @@ export const UNITS = {
     scrap: 13, moraleBase: 50,
     scout: 1, desc: "They fed the ward through nineteen winters. A man is a larger target than a hare.",
   },
+  /* The carts. Not a fighting company at all — it is the reason the fighting
+     companies are still alive four hexes from anywhere. `carry` is how many
+     hexes of supply line it makes up for; two of them is the most any column
+     can actually manage on one set of roads. It is slow, it eats, it is worth
+     nothing in a line of battle, and losing it in the middle of somebody
+     else's country is how a campaign ends. */
+  baggage: {
+    name: "Baggage Train", tier: "tribal", needs: "carting", role: "The reason they are still standing",
+    size: 60, melee: 1, ranged: 0, def: 3, food: 2, powder: 0,
+    scrap: 24, moraleBase: 30, carry: 2, slow: 1,
+    desc: "Carts, drovers, and four hundred head of whatever will walk behind them. It decides how far you can go, and nothing else does.",
+  },
   pikemen: {
     name: "Pikemen", tier: "forged", needs: "smelting", role: "A hedge no horse will take",
     size: 150, melee: 8, ranged: 0, def: 8, antiCav: 2.1, food: 3, powder: 0,

@@ -21,6 +21,8 @@ import { SECTORS, SECTOR_NAME, ADJACENT, POSTURES, POSTURE_IDS, GROUND, groundFo
          SIEGE, BREACH_ORDER }
   from "./data/battle.js";
 import { UNIT_TIERS, UNITS, UNIT_IDS } from "./data/units.js";
+import { SUPPLY_MAX, SUPPLY_BANDS, bandAt, HARD_GROUND, WINTER_WASTE,
+         CART_RELIEF_CAP, QUARTER_RELIEF, QUARTER_EASE } from "./data/supply.js";
 import { SETTLEMENT, WORKS, WORK_IDS } from "./data/settlement.js";
 import { seasonOf, yearOf } from "./data/seasons.js";
 import { BUILDINGS, buildStep, buildNext, buildName } from "./data/buildings.js";
@@ -122,7 +124,14 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-text-d3e5ec{color:#eef6f9}
 .cc-text-14d5px{font-size:14.5px}
 .cc-border-3d5a4a{border-color:#3d5a4a}
+.cc-border-5a4636{border-color:#5a4636}
 .cc-text-9fd6b4{color:#9fd6b4}
+/* Three warning tones that were being used all over the interface and had no
+   rule behind them, so every "this is going badly" line was quietly rendering
+   in the body colour. */
+.cc-text-e8b98a{color:#e8b98a}
+.cc-text-e08a6a{color:#e08a6a}
+.cc-text-4d5f6b{color:#4d5f6b}
 .cc-border-5a3230{border-color:#5a3230}
 .cc-text-e09a8a{color:#e09a8a}
 .cc-text-cfe0e8{color:#eaf3f7}
@@ -1833,6 +1842,58 @@ function neighbours(c, r) {
     .filter(([x, y]) => x >= 0 && x < W && y >= 0 && y < H);
 }
 
+/* -------------------------------- SUPPLY -----------------------------------
+   How far from anything this realm holds a warband is standing, counted in
+   hexes and traced only through ground nobody else holds. Territory belonging
+   to somebody else does not carry your rations, so a column that walks past a
+   rival's border can be cut off while standing three hexes from its own.
+
+   The search is bounded at SUPPLY_MAX, which is the whole point: at worst it
+   looks at the sixty-odd hexes within four of the column rather than walking
+   a map of eight thousand provinces. */
+function supplyDist(provinces, natId, c, r) {
+  const here = provinces[key(c, r)];
+  if (!here) return SUPPLY_MAX;
+  if (here.owner === natId) return 0;
+  const seen = new Set([key(c, r)]);
+  let edge = [[c, r]];
+  for (let d = 1; d < SUPPLY_MAX; d++) {
+    const next = [];
+    for (const [x, y] of edge) {
+      for (const [nx, ny] of neighbours(x, y)) {
+        const k2 = key(nx, ny);
+        if (seen.has(k2)) continue;
+        seen.add(k2);
+        const q = provinces[k2];
+        if (!q) continue;                 // sea: nothing walks across it
+        if (q.owner === natId) return d;   // the line reaches this far
+        if (!q.owner) next.push([nx, ny]); // open country carries it onward
+      }
+    }
+    if (!next.length) break;
+    edge = next;
+  }
+  return SUPPLY_MAX;
+}
+
+/* What pulls that distance back in: the carts the column drags with it, and
+   whether the realm has learned to keep a road open behind an army. */
+function supplyRelief(army, nat) {
+  const carts = Math.min(CART_RELIEF_CAP, army.units.reduce((n, u) =>
+    n + (u.str > 0 ? (UNITS[u.type]?.carry || 0) : 0), 0));
+  const road = nat?.known?.quartering ? QUARTER_RELIEF : 0;
+  return { carts, road, total: carts + road };
+}
+
+/* Where a warband actually stands: how far the line really is, how far it
+   feels after the carts, and what that band costs. */
+function supplyOf(provinces, nat, natId, army) {
+  const raw = supplyDist(provinces, natId, army.c, army.r);
+  const relief = supplyRelief(army, nat);
+  const d = Math.max(0, raw - relief.total);
+  return { raw, relief, d, band: bandAt(d) };
+}
+
 /* Distance in hexes, through the cube coordinates an odd-r grid is really
    made of. Only the marching host needs it, and it needs it every season. */
 function hexDist(c1, r1, c2, r2) {
@@ -1958,6 +2019,12 @@ const warKey = (a, b) => [a, b].sort().join("|");
    warlord folded in, so a host with a base of five shows six all summer and
    reads as a bug unless the extra is named. Mirrors the sum the turn loop
    does; if that changes, this has to change with it. */
+/* A column only moves as fast as its slowest cart. One baggage train costs a
+   point of movement; a second one is not free either, but it does not cost
+   twice — the drovers are already going at the pace of the waggons. */
+const cartDrag = (army) => Math.min(2, army.units.reduce((n, u) =>
+  n + (u.str > 0 ? (UNITS[u.type]?.slow || 0) : 0), 0));
+
 function moveAllowance(game, army) {
   const nat = game.nations?.[army.owner];
   const ed = EDICTS[nat?.edict || "none"] || EDICTS.none;
@@ -1965,12 +2032,14 @@ function moveAllowance(game, army) {
   const seaMove = sea.move || 0;
   const edMove = ed.move || 0;
   const lordMove = lordMul(army.owner, nat).move || 0;
+  const cartMove = -cartDrag(army);
   const sign = (n) => `${n > 0 ? "+" : "\u2212"}${Math.abs(n)}`;
   const from = [];
   if (seaMove) from.push(`${sea.name.toLowerCase()} ${sign(seaMove)}`);
   if (edMove) from.push(`${ed.name.toLowerCase()} ${sign(edMove)}`);
   if (lordMove) from.push(`your warlord ${sign(lordMove)}`);
-  const total = Math.max(1, (army.maxMp || 0) + seaMove + edMove + lordMove);
+  if (cartMove) from.push(`the carts ${sign(cartMove)}`);
+  const total = Math.max(1, (army.maxMp || 0) + seaMove + edMove + lordMove + cartMove);
   // Movement was granted at the end of last season. Change an edict now and
   // these modifiers no longer describe what the warband is carrying — it has
   // more than the sum says, and the change bites at the turn of the season.
@@ -2064,15 +2133,19 @@ function nationIncome(state, natId, turn) {
   ["food", "scrap", "men"].forEach((k) => { gross[k] = Math.round(gross[k] * (sea[k] ?? 1)); });
   Object.entries(ed.mul || {}).forEach(([k, v]) => { gross[k] = Math.round(gross[k] * v); });
   Object.entries(lord.mul).forEach(([k, v]) => { gross[k] = Math.round(gross[k] * v); });
-  // ...then the warbands take their share
+  /* ...then the warbands take their share, and what that share is depends on
+     where they are standing. A company at home eats what the table says. The
+     same company four hexes into somebody else's country eats five times it,
+     because everything it eats has to be dragged there. */
   const keep = (ed.upkeep || 1) * lord.upkeep;
   state.armies.filter((a) => a.owner === natId).forEach((a) => {
+    const draw = supplyOf(state.provinces, state.nations?.[natId], natId, a).band.draw;
     a.units.forEach((u) => {
       const st = unitStats(u);
       let f = st.food;
       if (natId === "horde" && st.cav) f = Math.round(f * 0.5);
-      gross.food -= Math.round(f * keep);
-      gross.fuel -= Math.round(st.fuel * keep);
+      gross.food -= Math.round(f * keep * draw);
+      gross.fuel -= Math.round(st.fuel * keep * draw);
     });
   });
   return gross;
@@ -2105,10 +2178,16 @@ const deployWeight = (u) => {
   return st.def * 2 + st.melee * 3 + (st.cav ? -12 : 0) + (st.ranged > 8 ? -8 : 0);
 };
 function deployUnits(units, formation) {
-  const lay = (FORMATIONS[formation] || FORMATIONS.even).lay(units.length);
-  const order = units.map((u, i) => ({ u, i })).sort((x, y) => deployWeight(y.u) - deployWeight(x.u));
+  // Carts are not drawn up. They go behind the line and stay there, and a
+  // formation is laid out over the companies that can actually hold ground.
+  const idx = units.map((u, i) => ({ u, i }));
+  const carts = idx.filter(({ u }) => UNITS[u.type]?.carry);
+  const fighting = idx.filter(({ u }) => !UNITS[u.type]?.carry);
+  const lay = (FORMATIONS[formation] || FORMATIONS.even).lay(fighting.length);
+  const order = fighting.sort((x, y) => deployWeight(y.u) - deployWeight(x.u));
   const out = units.map((u) => ({ ...u }));
   order.forEach(({ i }, rank) => { out[i] = { ...out[i], pos: lay[rank] }; });
+  carts.forEach(({ i }) => { out[i] = { ...out[i], pos: "res" }; });
   return out;
 }
 
@@ -3521,7 +3600,10 @@ export default function ColdCoast() {
         const open2 = unitsFor(nat2);
         const want = id === "horde" ? ["riders", "technicals"] : id === "boreal" ? ["axemen", "riders"]
           : id === "alpine" ? ["ironclad", "vaultguard"] : id === "solar" ? ["riflemen", "musketeers"] : [];
-        const order = ["spearmen", "hunters", "axemen", "bowmen", "pikemen", "riders", "ironclad",
+        // Ranked worst to best; the AI takes from the end. Baggage sits at the
+        // front deliberately — a cart is not something a realm recruits when
+        // it is deciding what to put in the field.
+        const order = ["baggage", "spearmen", "hunters", "axemen", "bowmen", "pikemen", "riders", "ironclad",
                        "line", "musketeers", "technicals", "guncrew", "riflemen", "vaultguard"];
         const pool = open2.slice().sort((a, b) => order.indexOf(a) - order.indexOf(b));
         const liked = pool.filter((u) => want.includes(u));
@@ -4098,12 +4180,36 @@ export default function ColdCoast() {
         nations[id] = { ...nations[id], res };
       });
 
-      armies = armies.map((a) => ({
-        ...a,
-        units: a.units.filter((u) => u.str > 0).map((u) => ({ ...u, morale: Math.min(u.maxMorale, u.morale + 12) })),
-        mp: Math.max(1, a.maxMp + ((EDICTS[nations[a.owner]?.edict || "none"] || EDICTS.none).move || 0)
-          + lordMul(a.owner, nations[a.owner]).move + seasonOf(g.turn + 1).move),
-      })).filter((a) => a.units.length > 0);
+      /* --- supply ---
+         The last word on a season. A warband at home sleeps, eats and gets its
+         nerve back; one on the end of a long line does none of those things.
+         Distance does the work, and hard ground and winter make it worse. */
+      const cold = seasonOf(g.turn).id === "winter" ? WINTER_WASTE : 1;
+      armies = armies.map((a) => {
+        const nat = nations[a.owner];
+        const sup = supplyOf(provinces, nat, a.owner, a);
+        const ease = nat?.known?.quartering ? QUARTER_EASE : 1;
+        const hard = HARD_GROUND[provinces[key(a.c, a.r)]?.t] || 1;
+        const waste = sup.band.waste * hard * cold * ease;
+        const shake = Math.round(sup.band.morale * ease);
+        if (a.owner === g.player && sup.d >= 3 && (a.supply || 0) < 3) {
+          notice("raid", `${a.name} is ${sup.band.name.toLowerCase()} — ${sup.raw} hexes from anything you hold. They are losing men every season out there.`, key(a.c, a.r));
+        }
+        return {
+          ...a,
+          supply: sup.d,
+          units: a.units.filter((u) => u.str > 0).map((u) => ({
+            ...u,
+            str: waste ? Math.max(0, u.str - Math.ceil(u.max * waste)) : u.str,
+            // Nobody rests well on short rations, so the season that would have
+            // put their nerve back takes some of it instead.
+            morale: Math.max(0, shake ? u.morale - shake : Math.min(u.maxMorale, u.morale + 12)),
+          })),
+          mp: Math.max(1, a.maxMp + ((EDICTS[nations[a.owner]?.edict || "none"] || EDICTS.none).move || 0)
+            + lordMul(a.owner, nations[a.owner]).move + seasonOf(g.turn + 1).move - cartDrag(a)),
+        };
+      }).map((a) => ({ ...a, units: a.units.filter((u) => u.str > 0) }))
+        .filter((a) => a.units.length > 0);
 
       // --- victory / defeat ---
       const counts = {};
@@ -5483,6 +5589,19 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
           .map((sec) => stormGround({ siege: { seasons: n * SIEGE.perBreach } })[sec]).join("/")),
       };
     };
+    /* What the selected warband would eat standing at home, so a test can
+       check it is really being charged more for standing somewhere else. */
+    if (typeof window !== "undefined") window.__ccSupply = () => {
+      const game = gameRef.current;
+      const a = game.armies.find((x) => x.id === game.sel?.armyId)
+        || game.armies.find((x) => x.owner === game.player);
+      if (!a) return null;
+      const sup = supplyOf(game.provinces, game.nations[a.owner], a.owner, a);
+      return {
+        base: a.units.reduce((n, u) => n + unitStats(u).food, 0),
+        raw: sup.raw, d: sup.d, draw: sup.band.draw, band: sup.band.name,
+      };
+    };
     if (typeof window !== "undefined") window.__ccWild = () => {
       const game = gameRef.current;
       const all = Object.values(game.provinces);
@@ -5755,6 +5874,19 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
     });
     return out;
   }, [placeLabels, armySpots, labels]);
+  /* Which of your own columns are past the end of their supply line. The
+     panel says it in words when you select one; this is so you can see at a
+     glance which of four warbands is the one quietly dying. */
+  const outOfSupply = useMemo(() => {
+    const out = {};
+    game.armies.forEach((a) => {
+      if (a.owner !== P) return;
+      const d = supplyOf(game.provinces, game.nations[P], P, a).d;
+      if (d >= 3) out[a.id] = d;
+    });
+    return out;
+  }, [game.armies, game.provinces, game.nations, P]);
+
   const selArmy = game.sel?.armyId ? game.armies.find((a) => a.id === game.sel.armyId) : null;
   const targets = new Set();
   if (selArmy && selArmy.owner === P && selArmy.mp > 0) {
@@ -5899,6 +6031,16 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
                       <path d="M-4.4 -12.6l1.8 3 2.6 -3.6 2.6 3.6 1.8 -3 0.7 4.4h-10.2z"
                         fill="#f0e2b8" stroke="#0a1015" strokeWidth="0.6" />
                     )}
+                    {outOfSupply[a.id] && (() => {
+                      const warn = outOfSupply[a.id] >= 4 ? "#e08a6a" : "#e8b98a";
+                      return (
+                        <g transform="translate(9,-8.6)">
+                          <circle r="4.4" fill="#170d09" stroke={warn} strokeWidth="1.1" />
+                          <path d="M0 -2.3v2.4" stroke={warn} strokeWidth="1.3" strokeLinecap="round" />
+                          <circle cy="1.9" r="0.75" fill={warn} />
+                        </g>
+                      );
+                    })()}
                     {a.owner === P && chosen && (
                       <g>
                         {Array.from({ length: a.maxMp }, (_, i) => (
@@ -6638,6 +6780,42 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
   );
 }
 
+/* Where the warband stands in relation to anything you hold, said plainly,
+   because it is the number that decides whether a campaign is a campaign or a
+   slow way of losing an army. */
+function SupplyLine({ sup }) {
+  const tone = sup.band.tone === "good" ? "cc-text-9fd6b4"
+    : sup.band.tone === "warn" ? "cc-text-e8b98a" : "cc-text-e08a6a";
+  return (
+    <div className="rounded border cc-border-31454f cc-bg-131f27 px-2.5 py-2 mb-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className={`cc-text-13px ${tone}`}>{sup.band.name}</span>
+        <span className="cc-text-11d5px cc-text-93a9b5">
+          rations <span className="num">&times;{sup.band.draw}</span>
+        </span>
+      </div>
+      <div className="cc-text-12px cc-text-93a9b5 mt-0.5">{sup.band.note}</div>
+      {sup.raw > sup.d && (() => {
+        const by = [];
+        if (sup.relief.carts) by.push(`the waggons ${sup.relief.carts > 1 ? "(two trains)" : ""}`.trim());
+        if (sup.relief.road) by.push("your quartermasters");
+        return (
+          <div className="cc-text-11d5px cc-text-9fd6b4 mt-1">
+            <span className="num">{sup.raw}</span> hexes from your nearest holding, counting
+            as <span className="num">{sup.d}</span> thanks to {by.join(" and ")}.
+          </div>
+        );
+      })()}
+      {sup.band.waste > 0 && (
+        <div className="cc-text-11d5px cc-text-e08a6a mt-1">
+          Losing <span className="num">{Math.round(sup.band.waste * 100)}%</span> of every
+          company each season, and nerve with it. Worse on hard ground, worse again in winter.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, onReinforce, onCommand, onRename, onSplit }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(army.name);
@@ -6651,6 +6829,7 @@ function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, o
     const s = unitStats(u);
     acc.food += s.food; acc.fuel += s.fuel; return acc;
   }, { food: 0, fuel: 0 });
+  const sup = supplyOf(game.provinces, nat, army.owner, army);
 
   return (
     <Section title={own ? (held ? "In hand" : "Also standing here") : "Warband sighted"}>
@@ -6693,10 +6872,12 @@ function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, o
           return (
             <> · <span className="num">{army.mp}</span> of <span className="num">{allow.total}</span> movement
               {allow.note && <span className="cc-text-9fd6b4"> ({allow.note})</span>}
-              {" "}· eats <span className="num">{upkeep.food}</span> rations{upkeep.fuel > 0 && <>, <span className="num">{upkeep.fuel}</span> fuel</>}</>
+              {" "}· eats <span className="num">{Math.round(upkeep.food * sup.band.draw)}</span> rations
+              {upkeep.fuel > 0 && <>, <span className="num">{Math.round(upkeep.fuel * sup.band.draw)}</span> fuel</>}</>
           );
         })()}
       </div>
+      {own && <SupplyLine sup={sup} />}
       <div className="grid gap-1.5">
         {army.units.map((u) => {
           const s = unitStats(u);
@@ -7524,6 +7705,9 @@ function RecruitPanel({ natId, nat, provName, prov, onClose, onConfirm }) {
                     {d.antiCav > 1 && <span className="cc-text-11d5px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">×{d.antiCav} against horse</span>}
                     {d.cav && <span className="cc-text-11d5px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">mounted</span>}
                     {d.siege && <span className="cc-text-11d5px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">siege piece</span>}
+                    {d.scout > 0 && <span className="cc-text-11d5px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">{d.scout >= 2 ? "names what it sees" : "counts what it sees"}</span>}
+                    {d.carry > 0 && <span className="cc-text-11d5px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">carries the line {d.carry} hexes further</span>}
+                    {d.slow > 0 && <span className="cc-text-11d5px rounded px-1.5 py-0.5 border cc-border-5a4636 cc-text-e8b98a">−{d.slow} movement for the whole warband</span>}
                   </div>
                 </div>
               </div>
@@ -9105,8 +9289,14 @@ function Codex({ onClose }) {
             <p>Click a warband and it lifts, ringed in white, with its remaining movement shown as pips beneath. Every hex it can reach lights up with a chevron pointing the way. Click one to march. Click the warband again, press Escape, or click the sea to put it down. Rough ground costs more movement, and stepping onto an enemy warband starts a battle.</p>
           </div>
           <div>
+            <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Supply</div>
+            <p>A warband eats every season, and what it eats depends entirely on where it is standing. On your own ground it eats what the muster roll says. A hex past your border costs half again, two hexes costs nearly two and a half times, and past that there is no supply line at all: they are living on what they carried, losing men and nerve every season, and worse on hard ground and in winter. The warning mark on a marker means that column is past the end of its line.</p>
+            <p className="mt-2">There are two answers and they are both deliberate. Claim ground as you go, so the line moves with you. Or learn carting and put a baggage train in the column: it drags the line two hexes further, costs the whole warband a point of movement, and is worth nothing whatever in a fight. Quartering, later, adds a hex again and halves the wastage.</p>
+          </div>
+          <div>
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Battles</div>
-            <p>Ten rounds at most. Each round you give one order and so does your opponent, and both resolve at once. Every order card lists exactly what it changes — damage dealt, damage taken, nerve, powder — so you can read the trade before committing. Press on open ground, volley to shell an enemy out of good ground, hold to keep your companies together. Companies that lose their nerve run before they are killed, and you get about half of them back.</p>
+            <p>A battle is a line: left, centre and right, with a reserve behind it. Before a blow is struck you draw it up — pick one of the preset formations, or drag companies between sectors and into reserve yourself. You see only what your outriders brought back, so a warband with no scouts deploys blind.</p>
+            <p className="mt-2">Then each sector takes its own order and both lines resolve at once. Every sector fights the one opposite it, on its own ground: broken ground is worth holding and useless to horse, a wall has to come down before anything behind it can be reached. When a sector breaks, the enemy in it turns onto whichever sector is beside it, which is how a line comes apart rather than simply wearing down. Companies that lose their nerve run before they are killed, and you get about half of them back — unless the other side still has horse to chase them.</p>
           </div>
           <div>
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Winning</div>

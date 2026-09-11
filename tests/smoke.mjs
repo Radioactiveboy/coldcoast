@@ -371,6 +371,27 @@ for (let step = 0; step < 30 && ac > 20; step++) {
 }
 check("the host can march to the lair", ac === 20, `stopped at ${ac},${ar}`);
 
+/* Supply. Five hexes west of Lunden is past the end of any line the player
+   has at this point, and the panel has to say so plainly — this is the number
+   that decides whether a campaign is a campaign or a slow way of losing an
+   army, so it must never be something you have to work out. */
+{
+  await page.evaluate((c, r) => window.__ccPick(c, r), ac, ar);
+  await wait(300);
+  const panel = await page.evaluate(() => document.querySelector("aside")?.innerText || "");
+  check("a column out in the wild says it is out of supply",
+    /Cut off|Off the waggons/.test(panel), panel.split("\n").find((l) => /rations ×/.test(l)) || "no supply line");
+  check("and says what the rations now cost", /rations ×(2\.4|3\.6|5)/.test(panel),
+    panel.match(/rations ×[\d.]+/)?.[0] || "no multiplier");
+  const eats = +(panel.match(/eats\s+(\d+)\s+rations/)?.[1] || 0);
+  const base = await page.evaluate(() => {
+    const a = window.__ccSupply && window.__ccSupply();
+    return a ? a.base : 0;
+  });
+  check("and is actually charged for it", base > 0 && eats >= base * 2,
+    `${base} at home, ${eats} out here`);
+}
+
 // Investigate it — that is what puts a waster warband in the ruin.
 for (let i = 0; i < 8; i++) {
   await page.evaluate((c, r) => window.__ccPick(c, r), 20, 77);
