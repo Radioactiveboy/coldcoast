@@ -402,6 +402,16 @@ const deploy = await page.evaluate(() => ({
 }));
 check("a battle opens on the line, not the first blow", deploy.open && deploy.sectors === 3,
   `${deploy.sectors} sectors, ground ${deploy.ground}, ${deploy.presets} formations`);
+/* You see what your outriders brought back and nothing else. By this point the
+   host has a company of hunters in it, so it can count them but not name them:
+   the strength comes back rounded, never exact, and the companies opposite are
+   anonymous. Exact numbers here would mean the scouting level is being ignored. */
+const blind = await page.evaluate(() =>
+  document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+const vague = /drawing up blind|nobody sent to look/.test(blind)
+  || (/about \d+/.test(blind) && /a company/.test(blind));
+check("you only see what you scouted", vague,
+  vague ? "" : blind.split("\n").slice(0, 2).join(" / "));
 // Drop a company somewhere else and check it actually moves.
 const spread = () => page.evaluate(() => [...document.querySelectorAll(".cc-sector")]
   .map((s) => s.querySelectorAll(".cc-chippick").length).join(","));

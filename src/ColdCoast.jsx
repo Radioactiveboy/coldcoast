@@ -211,6 +211,8 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-groundtag{font-size:10.5px;border:1px solid #2a3a44;border-radius:3px;padding:1px 5px;color:#7e939f}
 .cc-gr-rough{border-color:#5c5230;color:#c9a37a}
 .cc-gr-anchor{border-color:#2f5768;color:#7fb2cd}
+.cc-chipdark{background:#0c141a;border-style:dashed;border-color:#22303a}
+.cc-blindmark{width:9px;height:9px;border-radius:2px;opacity:.5;display:inline-block}
 .cc-chip{border:1px solid #2a3a44;border-radius:5px;background:#131f27;padding:5px 6px;user-select:none}
 .cc-chippick{cursor:grab}
 .cc-chippick:hover{border-color:#4d9aa6}
@@ -940,6 +942,7 @@ function unitStats(u) {
     powder: d.powder || 0,
     food: d.food, fuel: d.fuel || 0,
     antiCav: d.antiCav || 1, cav: !!d.cav, siege: !!d.siege, beast: !!d.beast,
+    scout: d.scout || 0,
     speedBonus: d.speed || 0, hold: d.hold || 1, press: d.press || 1,
   };
 }
@@ -1451,7 +1454,8 @@ const Sound = (() => {
   let ctx = null, master = null, musicBus = null, sfxBus = null, ambBus = null;
   let noiseBuf = null, playing = false, timer = null, voices = [];
   let wantMusic = true, wantSfx = true;
-  let amb = null, ambTimer = null, scene = { season: "spring", coast: false, forge: false, ruins: false };
+  let amb = null, ambTimer = null, field = null;
+  let scene = { season: "spring", coast: false, forge: false, ruins: false };
 
   const ok = () => ctx && ctx.state !== "closed";
 
@@ -1508,6 +1512,14 @@ const Sound = (() => {
     volley:  () => { for (let i = 0; i < 7; i++) noise(0.09, "bandpass", 900 + Math.random() * 1500, 2, 0.06, Math.random() * 0.22); },
     clash:   () => { for (let i = 0; i < 5; i++) noise(0.16, "bandpass", 500 + Math.random() * 900, 3, 0.07, i * 0.05); tone(82, 0.5, "sawtooth", 0.05); },
     turn:    () => { tone(98, 1.1, "sawtooth", 0.05); tone(147, 1.1, "sawtooth", 0.03, 0.04); },
+    // The orders given, and what happens when they are obeyed.
+    horn:    () => { tone(116, 1.5, "sawtooth", 0.055); tone(174, 1.4, "sawtooth", 0.032, 0.06);
+                     tone(233, 1.1, "triangle", 0.02, 0.12); },
+    charge:  () => { for (let i = 0; i < 6; i++) noise(0.1, "lowpass", 180 - i * 8, 1, 0.06, i * 0.07);
+                     tone(87, 0.8, "sawtooth", 0.045, 0.1, 131); },
+    give:    () => { tone(220, 1.2, "sawtooth", 0.05, 0, 82); noise(0.7, "bandpass", 620, 2, 0.05, 0.05); },
+    flanked: () => { tone(65, 1.4, "sawtooth", 0.055, 0, 49); tone(98, 1.2, "triangle", 0.03, 0.08, 73); },
+    chase:   () => { for (let i = 0; i < 8; i++) noise(0.11, "lowpass", 240 - i * 14, 1, 0.05, i * 0.065); },
     win:     () => { [220, 277.2, 329.6, 440].forEach((f, i) => tone(f, 2.2, "sawtooth", 0.05, i * 0.16)); },
     lose:    () => { [220, 207.7, 174.6, 146.8].forEach((f, i) => tone(f, 2.4, "sawtooth", 0.05, i * 0.22)); },
   };
@@ -1737,6 +1749,27 @@ const Sound = (() => {
     /* Where the player is and what season it is. Called whenever either
        changes; cheap enough to call on every selection, since nothing here
        restarts — the layers are already running and only their gains move. */
+    /* The field, while you are standing on it: a long way off, a great many
+       people shouting, and iron every so often. It rides the ambience bus, so
+       the same switch silences it, and it is torn down when the screen closes.
+       Built rather than sampled, like everything else here. */
+    field(on) {
+      if (!ensure() || !amb) { if (!on) return; if (!ensure()) return; }
+      if (on) {
+        if (field || !ok()) return;
+        if (ctx.state === "suspended") ctx.resume();
+        const roar = loop(320, 0.7, "bandpass", 0.0001, 0.09, 0.02);
+        const iron = loop(2100, 5, "bandpass", 0.0001, 0.7, 0.004);
+        fade(roar.g, 0.05, 2.5);
+        fade(iron.g, 0.012, 2.5);
+        field = { roar, iron };
+      } else {
+        if (!field) return;
+        fade(field.roar.g, 0.0001, 1.4);
+        fade(field.iron.g, 0.0001, 1.4);
+        field = null;
+      }
+    },
     scene(next) {
       const same = Object.keys(next).every((k) => scene[k] === next[k]);
       if (same) return;
@@ -2032,6 +2065,18 @@ function nationIncome(state, natId, turn) {
    the enemy turns onto whatever is beside it, which is how a line comes apart
    rather than simply wearing down.
    ------------------------------------------------------------------------ */
+
+/* What you can see of the other line before a blow is struck, which is what
+   outriders are actually for. Nothing brought, nothing known: you deploy blind
+   and find out when the fighting starts. A company of hunters can count them.
+   Horse gets close enough to see what they are.
+
+   0 — nothing at all      1 — how many stand in each sector
+   2 — what they are, and how many                                        */
+const scoutLevel = (units) => {
+  const eyes = units.reduce((n, u) => n + (u.str > 0 ? unitStats(u).scout : 0), 0);
+  return eyes >= 3 ? 2 : eyes >= 1 ? 1 : 0;
+};
 
 /* Heaviest first, so a formation's idea of "the centre" gets the companies
    that can hold one. */
@@ -7416,11 +7461,28 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost
   const myN = pSide === "a" ? aN : dN, theirN = pSide === "a" ? dN : aN;
   const [held, setHeld] = useState(null);
   const deploying = b.phase === "deploy" && !!pSide;
+
+  /* The field is loud while you are on it, and quiet the moment you leave. */
+  useEffect(() => { Sound.field(true); return () => Sound.field(false); }, []);
+  /* One pass over what the last round produced, so the ear hears the same
+     things the log reports: a line giving way, a flank turned, a pursuit. */
+  const heard = useRef(0);
+  useEffect(() => {
+    if (deploying || heard.current === b.round) return;
+    heard.current = b.round;
+    const tail = b.log.slice(-8);
+    if (tail.some((l) => l.t === "flank")) Sound.play("flanked");
+    if (tail.some((l) => l.t === "give")) Sound.play("give");
+    else if (tail.some((l) => l.t === "rout" || l.t === "dead")) Sound.play("give");
+    if (b.over) Sound.play(b.winner === pSide ? "charge" : "flanked");
+  }, [b.round, b.over, deploying]);
   const ex = b.lastExchange;
   const ground = b.ground || { left: "open", centre: "open", right: "open" };
 
   const mine = pSide ? b[pSide].units : [];
   const theirs = pSide ? b[foe].units : b.d.units;
+  // Before the lines close you only know what your outriders brought back.
+  const seen = deploying ? scoutLevel(mine) : 2;
   const myPost = (pSide === "a" ? b.aPost : b.dPost) || {};
   const inSec = (list, sec) => list.filter((u) => u.pos === sec);
   const strOf = (list) => list.reduce((n, u) => n + u.str, 0);
@@ -7459,10 +7521,27 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost
             : ground[sec] === "anchored" ? "cc-gr-anchor" : ""}`} title={gr.desc}>{gr.name}</span>
         </div>
 
-        <div className="cc-facing" style={{ color: theirN.color }}>{theirN.short}</div>
+        <div className="cc-facing" style={{ color: theirN.color }}>
+          {seen === 0 ? "Opposite" : theirN.short}
+        </div>
         <div className="grid gap-1">
-          {them.map((u) => <CompanyChip key={u.id} u={u} col={theirN.color} small />)}
-          {!them.length && (
+          {seen === 2 && them.map((u) => <CompanyChip key={u.id} u={u} col={theirN.color} small />)}
+          {seen === 1 && them.map((u) => (
+            <div key={u.id} className="cc-chip cc-chipdark">
+              <div className="flex items-center gap-1.5">
+                <span className="cc-blindmark" style={{ background: theirN.color }} />
+                <span className="cc-text-11d5px cc-text-8399a6">a company</span>
+              </div>
+            </div>
+          ))}
+          {seen === 0 && (
+            <div className="cc-chip cc-chipdark">
+              <div className="cc-text-11d5px cc-text-6f8794">
+                dust, and nobody sent to look
+              </div>
+            </div>
+          )}
+          {seen > 0 && !them.length && (
             <div className={`cc-text-11d5px py-1 ${theirGone ? "cc-text-9fd6b4" : "cc-text-6f8794"}`}>
               {theirGone ? "swept off this ground" : "nobody opposite"}
             </div>
@@ -7522,8 +7601,13 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost
             <Target size={18} className="cc-text-e0644a shrink-0" />
             <div className="disp cc-text-21px">The field at {b.provName}</div>
             <div className="cc-text-12d5px cc-text-95aab6">
-              {aN.short} <span className="num">{strOf(b.a.units)}</span> against{" "}
-              {dN.short} <span className="num">{strOf(b.d.units)}</span>
+              {/* A blind commander does not know their strength either, and a
+                  scout who could only count heads brings back a round number. */}
+              {myN.short} <span className="num">{strOf(mine)}</span> against{" "}
+              {seen === 0 ? "an unknown number"
+                : seen === 1
+                  ? <>about <span className="num">{Math.round(strOf(theirs) / 50) * 50}</span> of {theirN.short}</>
+                  : <>{theirN.short} <span className="num">{strOf(theirs)}</span></>}
             </div>
             <div className="flex items-center gap-1.5 ml-auto">
               <span className="cc-text-12px cc-text-c6d6de">round</span>
@@ -7543,8 +7627,10 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost
                 onClick={() => onDeploy(deployUnits(mine, id))}
                 className="cc-formbtn">{FORMATIONS[id].name}</button>
             ))}
-            <span className="cc-text-11d5px cc-text-6f8794 ml-auto">
-              drag a company, or tap it and tap where it should stand
+            <span className={`cc-text-11d5px ml-auto ${seen === 0 ? "cc-text-e8b98a" : "cc-text-6f8794"}`}>
+              {seen === 2 ? "Your outriders have counted them and named them."
+                : seen === 1 ? "Your scouts can count them, no more than that."
+                : "Nobody scouted. You are drawing up blind."}
             </span>
           </div>
         )}
@@ -7618,7 +7704,7 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost
                     ? "An empty sector is an open flank — the enemy will come round it."
                     : "The line is drawn."}
               </div>
-              <button type="button" onClick={onBegin}
+              <button type="button" onClick={() => { Sound.play("charge"); onBegin(); }}
                 disabled={!SECTORS.some((sec) => inSec(mine, sec).length)}
                 className="cc-bigbtn cc-bigfight">Take the field</button>
             </>
@@ -7641,7 +7727,8 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost
               <button type="button" onClick={() => onAuto(null)} className="cc-bigbtn cc-bigoff">
                 Fight it out
               </button>
-              <button type="button" onClick={() => onStep(null)} className="cc-bigbtn cc-bigfight">
+              <button type="button" onClick={() => { Sound.play("horn"); onStep(null); }}
+                className="cc-bigbtn cc-bigfight">
                 Give the order
               </button>
             </>
