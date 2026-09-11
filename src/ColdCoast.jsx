@@ -16,6 +16,9 @@ import {
 import { TECHS, TECH_IDS, TECH_TIERS, TIER_OF, tierGate, tierOpen, tierNeeds } from "./data/techs.js";
 import { ICONS, ICON_AUTHORS, unitIcon, techIcon } from "./data/gameicons.js";
 import { MAP_NAMES } from "./data/places.js";
+import { SECTORS, SECTOR_NAME, ADJACENT, POSTURES, POSTURE_IDS, GROUND, groundFor,
+         FORMATIONS, FORMATION_IDS, FLANK_DEAL, FLANK_MORALE, SHAKEN_NEAR, SHAKEN_SECTOR }
+  from "./data/battle.js";
 import { UNIT_TIERS, UNITS, UNIT_IDS } from "./data/units.js";
 import { SETTLEMENT, WORKS, WORK_IDS } from "./data/settlement.js";
 import { seasonOf, yearOf } from "./data/seasons.js";
@@ -1987,7 +1990,48 @@ function nationIncome(state, natId, turn) {
   return gross;
 }
 
-/* ------------------------------- COMBAT ----------------------------------- */
+/* ------------------------------- COMBAT -----------------------------------
+   A battle is a line of three sectors and a reserve behind it. Every company
+   stands somewhere; `u.pos` is where. Sectors fight each other separately,
+   which is what makes where you put things matter — and when one of them goes,
+   the enemy turns onto whatever is beside it, which is how a line comes apart
+   rather than simply wearing down.
+   ------------------------------------------------------------------------ */
+
+/* Heaviest first, so a formation's idea of "the centre" gets the companies
+   that can hold one. */
+const deployWeight = (u) => {
+  const st = unitStats(u);
+  return st.def * 2 + st.melee * 3 + (st.cav ? -12 : 0) + (st.ranged > 8 ? -8 : 0);
+};
+function deployUnits(units, formation) {
+  const lay = (FORMATIONS[formation] || FORMATIONS.even).lay(units.length);
+  const order = units.map((u, i) => ({ u, i })).sort((x, y) => deployWeight(y.u) - deployWeight(x.u));
+  const out = units.map((u) => ({ ...u }));
+  order.forEach(({ i }, rank) => { out[i] = { ...out[i], pos: lay[rank] }; });
+  return out;
+}
+
+/* Which of a side's sectors have nobody left standing in them. A sector nobody
+   was ever put in counts as broken the moment the enemy has somebody there:
+   an empty wing is not a clever economy, it is an open flank. */
+function brokenSectors(mine, theirs) {
+  const out = {};
+  SECTORS.forEach((s) => {
+    const me = mine.filter((u) => u.pos === s && u.str > 0).length;
+    const them = theirs.filter((u) => u.pos === s && u.str > 0).length;
+    out[s] = me === 0 && them > 0;
+  });
+  return out;
+}
+
+/* How many broken neighbours a sector has beside it. Anchored ground — a
+   river, a shore — cannot be turned however the rest of the line is going. */
+function flanksOn(broken, ground, s) {
+  if (GROUND[ground[s]]?.safe) return 0;
+  return ADJACENT[s].filter((t) => broken[t]).length;
+}
+
 function sidePower(units, stance, hasPowder) {
   let melee = 0, ranged = 0, defSum = 0, strSum = 0, cavStr = 0, antiCav = 0, beastStr = 0;
   units.forEach((u) => {
@@ -2045,115 +2089,145 @@ function stanceChips(id) {
 
 function resolveRound(bt) {
   const b = { ...bt, log: [...bt.log] };
-  const aStance = STANCES[b.aStance], dStance = STANCES[b.dStance];
+  const aPost = b.aPost, dPost = b.dPost;
+  const aL = b.aLord || { dealt: 1, taken: 1, morale: 1 };
+  const dL = b.dLord || { dealt: 1, taken: 1, morale: 1 };
 
-  const aPowderNeed = b.a.units.reduce((n, u) => n + unitStats(u).powder, 0) * (aStance.powder || 1);
-  const dPowderNeed = b.d.units.reduce((n, u) => n + unitStats(u).powder, 0) * (dStance.powder || 1);
-  const aHas = b.aPowder >= aPowderNeed;
-  const dHas = b.dPowder >= dPowderNeed;
-  b.aPowder = Math.max(0, b.aPowder - (aHas ? aPowderNeed : 0));
-  b.dPowder = Math.max(0, b.dPowder - (dHas ? dPowderNeed : 0));
-  if (!aHas && aPowderNeed > 0) b.log.push({ t: "warn", s: "a", m: "Attacking guns are down to scavenged charges." });
-  if (!dHas && dPowderNeed > 0) b.log.push({ t: "warn", s: "d", m: "Defending guns are down to scavenged charges." });
+  /* Powder is drawn for the whole army, once, for whatever part of the line is
+     shooting this round. A sector that is not on volley still fires, it just
+     does not burn double doing it. */
+  const need = (units, post) => units.reduce((n, u) =>
+    n + unitStats(u).powder * ((POSTURES[post[u.pos]] || POSTURES.hold).powder || 1), 0);
+  const aNeed = need(b.a.units, aPost), dNeed = need(b.d.units, dPost);
+  const aHas = b.aPowder >= aNeed, dHas = b.dPowder >= dNeed;
+  b.aPowder = Math.max(0, b.aPowder - (aHas ? aNeed : 0));
+  b.dPowder = Math.max(0, b.dPowder - (dHas ? dNeed : 0));
+  if (!aHas && aNeed > 0) b.log.push({ t: "warn", s: "a", m: "Attacking guns are down to scavenged charges." });
+  if (!dHas && dNeed > 0) b.log.push({ t: "warn", s: "d", m: "Defending guns are down to scavenged charges." });
 
-  const A = sidePower(b.a.units, aStance, aHas);
-  const D = sidePower(b.d.units, dStance, dHas);
-
+  const aBroke = brokenSectors(b.a.units, b.d.units);
+  const dBroke = brokenSectors(b.d.units, b.a.units);
+  const ground = b.ground || { left: "open", centre: "open", right: "open" };
   const terrDef = b.terrainDef / 100;
-  const rng = () => 0.85 + Math.random() * 0.3;
 
-  const aL = b.aLord || { dealt: 1, taken: 1, morale: 1 }, dL = b.dLord || { dealt: 1, taken: 1, morale: 1 };
-  let aOut = (A.ranged * (aStance.ranged || 1) + A.melee * (aStance.melee || 1)) * aStance.deal * aL.dealt;
-  let dOut = (D.ranged * (dStance.ranged || 1) + D.melee * (dStance.melee || 1)) * dStance.deal * dL.dealt;
+  let aTotal = 0, dTotal = 0;
+  const shaken = { a: 0, d: 0 };
+  const notes = [];
 
-  // Cavalry charges bite unless pikes are waiting.
-  if (A.cavStr > 0 && D.antiCav < D.strSum * 0.3) aOut *= 1.25;
-  if (D.cavStr > 0 && A.antiCav < A.strSum * 0.3) dOut *= 1.25;
+  SECTORS.forEach((sec) => {
+    const aU = b.a.units.filter((u) => u.pos === sec && u.str > 0);
+    const dU = b.d.units.filter((u) => u.pos === sec && u.str > 0);
+    if (!aU.length && !dU.length) return;
 
-  /* Animals against arrows. A beast has no armour, no shot and no reason to
-     stand in the open being hit from thirty yards, so a side that is mostly
-     beasts suffers by exactly as much as its enemy can shoot: a warband of
-     hunters roughly doubles its output, a warband of axemen gains nothing and
-     has to go in among the teeth. */
-  const BEAST_BOW = 1.15;
-  if (D.beastFrac > 0.5) aOut *= 1 + BEAST_BOW * A.rangedShare;
-  if (A.beastFrac > 0.5) dOut *= 1 + BEAST_BOW * D.rangedShare;
+    const aS = POSTURES[aPost[sec]] || POSTURES.hold;
+    const dS = POSTURES[dPost[sec]] || POSTURES.hold;
+    const A = sidePower(aU, aS, aHas);
+    const D = sidePower(dU, dS, dHas);
+    const gr = GROUND[ground[sec]] || GROUND.open;
 
-  // Standing off and shooting denies the defender much of their ground advantage.
-  const groundMul = aStance.ignoresGround || 1;
-  dOut *= 1 + terrDef * groundMul;
-  if (b.defenderBonus) dOut *= 1 + (b.defenderBonus / 100) * groundMul;
+    let aOut = (A.ranged * (aS.ranged || 1) + A.melee * (aS.melee || 1)) * aS.deal * aL.dealt;
+    let dOut = (D.ranged * (dS.ranged || 1) + D.melee * (dS.melee || 1)) * dS.deal * dL.dealt;
 
-  // Each side's output is already stance-adjusted; here we apply the *receiving*
-  // side's stance and its armour.
-  const K = 3.4;
-  const aCas = Math.round((dOut * K * rng() * aStance.take * aL.taken) / (1 + A.avgDef / 5));
-  const dCas = Math.round((aOut * K * rng() * dStance.take * dL.taken) / (1 + D.avgDef / 5));
+    // Horse is worth what the ground lets it be worth.
+    if (A.cavStr > 0 && D.antiCav < D.strSum * 0.3) aOut *= 1 + 0.25 * gr.horse;
+    if (D.cavStr > 0 && A.antiCav < A.strSum * 0.3) dOut *= 1 + 0.25 * gr.horse;
 
-  const apply = (side, total, stanceMul) => {
-    const units = side.units;
-    const strTotal = units.reduce((n, u) => n + u.str, 0) || 1;
-    const routed = [];
-    units.forEach((u) => {
-      const share = u.str / strTotal;
-      const loss = Math.min(u.str, Math.round(total * share * (0.7 + Math.random() * 0.6)));
-      u.str -= loss;
-      u.lastLoss = loss;
-      const pct = loss / u.max;
-      u.morale -= pct * 70 * stanceMul + 2;
-      if (u.str <= 0) { u.str = 0; routed.push({ u, dead: true }); }
-      else if (u.morale <= 0) routed.push({ u, dead: false });
-    });
-    return routed;
-  };
+    // Animals against arrows, as before, but sector by sector.
+    const BEAST_BOW = 1.15;
+    if (D.beastFrac > 0.5) aOut *= 1 + BEAST_BOW * A.rangedShare;
+    if (A.beastFrac > 0.5) dOut *= 1 + BEAST_BOW * D.rangedShare;
 
-  const aRouted = apply(b.a, aCas, aStance.morale * (aL.morale || 1));
-  const dRouted = apply(b.d, dCas, dStance.morale * (dL.morale || 1));
+    // Taken in the flank. This is the whole reason the line is worth drawing.
+    const aFlank = flanksOn(aBroke, ground, sec);
+    const dFlank = flanksOn(dBroke, ground, sec);
+    if (dFlank) { aOut *= 1 + FLANK_DEAL * dFlank; notes.push({ s: "a", sec, n: dFlank }); }
+    if (aFlank) { dOut *= 1 + FLANK_DEAL * aFlank; notes.push({ s: "d", sec, n: aFlank }); }
 
-  b.log.push({ t: "round", m: `Round ${b.round}: attackers lose ${aCas}, defenders lose ${dCas}.` });
-  [...aRouted].forEach((x) => b.log.push({
-    t: x.dead ? "dead" : "rout", s: "a",
-    m: x.dead ? `${unitName(x.u)} is wiped out.` : `${unitName(x.u)} breaks and runs.`,
-  }));
-  [...dRouted].forEach((x) => b.log.push({
-    t: x.dead ? "dead" : "rout", s: "d",
-    m: x.dead ? `${unitName(x.u)} is wiped out.` : `${unitName(x.u)} breaks and runs.`,
-  }));
+    // The ground under this sector, and the works on the hex, help whoever is
+    // defending the battle — unless the attacker stands off and shoots.
+    const groundMul = aS.ignoresGround || 1;
+    dOut *= 1 + (terrDef + gr.def / 100) * groundMul;
+    if (b.defenderBonus) dOut *= 1 + (b.defenderBonus / 100) * groundMul;
 
-  b.a.routed = [...b.a.routed, ...aRouted.filter((x) => !x.dead).map((x) => ({ ...x.u, str: Math.round(x.u.str * 0.5) }))];
-  b.d.routed = [...b.d.routed, ...dRouted.filter((x) => !x.dead).map((x) => ({ ...x.u, str: Math.round(x.u.str * 0.5) }))];
+    const K = 3.4;
+    const rng = () => 0.85 + Math.random() * 0.3;
+    const aCas = Math.round((dOut * K * rng() * aS.take * aL.taken) / (1 + A.avgDef / 5));
+    const dCas = Math.round((aOut * K * rng() * dS.take * dL.taken) / (1 + D.avgDef / 5));
+    aTotal += aCas; dTotal += dCas;
+
+    const hit = (units, total, moraleMul, flank) => {
+      const strTotal = units.reduce((n, u) => n + u.str, 0) || 1;
+      const gone = [];
+      units.forEach((u) => {
+        const loss = Math.min(u.str, Math.round(total * (u.str / strTotal) * (0.7 + Math.random() * 0.6)));
+        u.str -= loss;
+        u.lastLoss = loss;
+        u.morale -= (loss / u.max) * 70 * moraleMul + 2 + flank * FLANK_MORALE;
+        if (u.str <= 0) { u.str = 0; gone.push({ u, dead: true }); }
+        else if (u.morale <= 0) gone.push({ u, dead: false });
+      });
+      // The company beside you going is felt by everyone still in the sector.
+      if (gone.length) units.forEach((u) => { if (u.str > 0 && u.morale > 0) u.morale -= gone.length * SHAKEN_NEAR; });
+      return gone;
+    };
+
+    const aGone = hit(aU, aCas, aS.morale * (aL.morale || 1), dFlank);
+    const dGone = hit(dU, dCas, dS.morale * (dL.morale || 1), aFlank);
+    b.a.routed.push(...aGone.map((x) => x.u));
+    b.d.routed.push(...dGone.map((x) => x.u));
+    [[aGone, "a"], [dGone, "d"]].forEach(([list, side]) => list.forEach((x) => b.log.push({
+      t: x.dead ? "dead" : "rout", s: side, sec,
+      m: x.dead ? `${unitName(x.u)} is wiped out on the ${sec}.`
+                : `${unitName(x.u)} breaks on the ${sec}.`,
+    })));
+    if (aGone.length && !aU.some((u) => u.str > 0 && u.morale > 0)) shaken.a += 1;
+    if (dGone.length && !dU.some((u) => u.str > 0 && u.morale > 0)) shaken.d += 1;
+  });
+
   b.a.units = b.a.units.filter((u) => u.str > 0 && u.morale > 0);
   b.d.units = b.d.units.filter((u) => u.str > 0 && u.morale > 0);
 
-  b.lastExchange = {
-    round: b.round, aCas, dCas,
-    aStance: b.aStance, dStance: b.dStance,
-    aRouted: aRouted.length, dRouted: dRouted.length,
-    aDry: !aHas && aPowderNeed > 0, dDry: !dHas && dPowderNeed > 0,
-  };
+  // A whole sector going is felt all down the line, reserve included.
+  if (shaken.a) b.a.units.forEach((u) => { u.morale -= shaken.a * SHAKEN_SECTOR; });
+  if (shaken.d) b.d.units.forEach((u) => { u.morale -= shaken.d * SHAKEN_SECTOR; });
+  b.a.units.filter((u) => u.morale <= 0).forEach((u) => b.a.routed.push(u));
+  b.d.units.filter((u) => u.morale <= 0).forEach((u) => b.d.routed.push(u));
+  b.a.units = b.a.units.filter((u) => u.morale > 0);
+  b.d.units = b.d.units.filter((u) => u.morale > 0);
+
+  notes.forEach((n) => b.log.push({
+    t: "flank", s: n.s === "a" ? "d" : "a",
+    m: `The ${n.s === "a" ? "attacking" : "defending"} ${n.sec} is taken in the flank${n.n > 1 ? " from both sides" : ""}.`,
+  }));
+  if (shaken.a) b.log.push({ t: "give", s: "d", m: `The attacking line gives way on ${shaken.a === 1 ? "a sector" : "two sectors"}.` });
+  if (shaken.d) b.log.push({ t: "give", s: "a", m: `The defending line gives way on ${shaken.d === 1 ? "a sector" : "two sectors"}.` });
+  b.log.push({ t: "round", m: `Round ${b.round}: attackers lose ${aTotal}, defenders lose ${dTotal}.` });
+
+  b.broken = { a: brokenSectors(b.a.units, b.d.units), d: brokenSectors(b.d.units, b.a.units) };
   b.round += 1;
 
+  const allGone = (side) => SECTORS.every((sec) => !b[side].units.some((u) => u.pos === sec && u.str > 0));
   if (b.aStance === "withdraw" && b.a.units.length) { b.over = true; b.winner = "d"; b.retreat = "a"; }
   else if (b.dStance === "withdraw" && b.d.units.length) { b.over = true; b.winner = "a"; b.retreat = "d"; }
   else if (!b.a.units.length && !b.d.units.length) { b.over = true; b.winner = "d"; }
   else if (!b.a.units.length) { b.over = true; b.winner = "d"; }
   else if (!b.d.units.length) { b.over = true; b.winner = "a"; }
+  else if (allGone("a") && !allGone("d")) { b.over = true; b.winner = "d"; b.rolled = "a"; }
+  else if (allGone("d") && !allGone("a")) { b.over = true; b.winner = "a"; b.rolled = "d"; }
   else if (b.round > 10) { b.over = true; b.winner = "d"; b.stalemate = true; }
 
   if (b.over) {
     b.log.push({
       t: "end",
-      m: b.stalemate ? "Light fails. The attack is called off."
-        : b.retreat ? `${b.retreat === "a" ? "Attackers" : "Defenders"} disengage.`
+      m: b.stalemate ? "Both lines are still standing when the light goes."
+        : b.rolled ? `The ${b.rolled === "a" ? "attacking" : "defending"} line is rolled up from the flank.`
+        : b.retreat ? `The ${b.retreat === "a" ? "attackers" : "defenders"} quit the field.`
         : `${b.winner === "a" ? "Attackers" : "Defenders"} hold the field.`,
     });
   }
   return b;
 }
 
-
-/* "40 rations, 60 scrap and 120 recruits" — used for both a lair's hoard and
-   whatever a broken band was carrying, so the two read the same in the log. */
 function spoilsText(bag) {
   const parts = Object.entries(bag || {})
     .filter(([, v]) => v > 0)
@@ -2170,6 +2244,7 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
   if (!attacker || !defender || !prov) return null;
   const works = doneBuilds(prov).reduce((n, b) => n + (buildStep(b)?.def || 0), 0);
   const terrainDef = TERRAIN[prov.t].def + works;
+  const ground = groundFor(prov.t, coastal(prov.c, prov.r), prov.c + prov.r);
   let defenderBonus = 0;
   if (defender.owner === "alpine" && ["h", "m"].includes(prov.t)) defenderBonus += 35;
   if (isMinor(defender.owner)) defenderBonus += MINORS[defender.owner].defBonus;
@@ -2179,8 +2254,14 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
     aNat: attacker.owner, dNat: defender.owner,
     aArmy: attacker.id, dArmy: defender.id,
     hex: { c: prov.c, r: prov.r }, provName: prov.name,
-    a: { units: attacker.units.map((u) => ({ ...u })), routed: [] },
-    d: { units: defender.units.map((u) => ({ ...u })), routed: [] },
+    // The defender picked the ground; the attacker has to come at it.
+    ground,
+    a: { units: deployUnits(attacker.units.map((u) => ({ ...u })), "even"), routed: [] },
+    d: { units: deployUnits(defender.units.map((u) => ({ ...u })), aiFormation(defender.units, ground)), routed: [] },
+    aPost: { left: "press", centre: "press", right: "press" },
+    dPost: { left: "hold", centre: "hold", right: "hold" },
+    broken: { a: { left: false, centre: false, right: false },
+              d: { left: false, centre: false, right: false } },
     aPowder: nations[attacker.owner].res.powder,
     dPowder: nations[defender.owner].res.powder,
     aStance: "press", dStance: "hold",
@@ -2192,6 +2273,10 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
       t: "open",
       m: `${nations[attacker.owner].short} strikes at ${prov.name}. ${TERRAIN[prov.t].name} favours the defender by ${terrainDef}%.`,
     }],
+    // Nobody strikes a blow until the line is drawn. Every battle that reaches
+    // a screen has the player on one side of it; the ones that do not are
+    // settled by the quick resolve in the turn step and never come here.
+    phase: "deploy",
     over: false, winner: null,
   };
 }
@@ -2281,20 +2366,78 @@ function initialState() {
 const baseMove = (natId) => (natId === "lyon" || natId === "horde" ? 6 : 5);
 
 
+/* What a rival draws up. Horse wants a wing and open ground to use it on; a
+   line with nothing to shoot with wants weight in the middle; a realm that
+   knows it is outnumbered keeps something back. */
+function aiFormation(units, ground) {
+  const cav = units.filter((u) => unitStats(u).cav).length;
+  const shot = units.filter((u) => unitStats(u).ranged > 8).length;
+  const openWing = SECTORS.some((s) => s !== "centre" && ground[s] === "open");
+  if (cav >= 2 && openWing) return "horns";
+  if (units.length >= 6) return "reserve";
+  if (shot >= 2) return "wall";
+  return "even";
+}
+
+/* A rival's orders, sector by sector. It presses where it is winning, holds
+   where it is not, shoots if it has anything to shoot with, and throws its
+   reserve at the first sector that is about to go. */
+function aiOrders(b, side) {
+  const foe = side === "a" ? "d" : "a";
+  const post = {};
+  let commit = null, worst = 0;
+  SECTORS.forEach((sec) => {
+    const mine = b[side].units.filter((u) => u.pos === sec).reduce((n, u) => n + u.str, 0);
+    const theirs = b[foe].units.filter((u) => u.pos === sec).reduce((n, u) => n + u.str, 0);
+    const ratio = mine / Math.max(1, theirs);
+    if (theirs === 0) post[sec] = "hold";
+    else if (ratio > 1.3) post[sec] = "press";
+    else if (b[side].units.some((u) => u.pos === sec && unitStats(u).ranged > 8) && Math.random() < 0.5) post[sec] = "volley";
+    else post[sec] = "hold";
+    // The sector most likely to go next is where the reserve is needed.
+    const need = theirs - mine;
+    if (mine > 0 && need > worst) { worst = need; commit = sec; }
+  });
+  return { post, commit };
+}
+
 function advanceBattle(b0, P, playerStance) {
   const pSide = b0.aNat === P ? "a" : b0.dNat === P ? "d" : null;
-  const b = { ...b0 };
-  if (pSide === "a") b.aStance = playerStance;
-  if (pSide === "d") b.dStance = playerStance;
-  const ai = pSide === "a" ? "d" : "a";
-  const mine = b[ai].units.reduce((n, u) => n + u.str, 0);
-  const theirs = b[ai === "a" ? "d" : "a"].units.reduce((n, u) => n + u.str, 0);
-  const ratio = mine / Math.max(1, theirs);
-  let pick = "hold";
-  if (ratio > 1.35) pick = "press";
-  else if (ratio < 0.45 && b.round > 2) pick = "withdraw";
-  else if (b[ai].units.some((u) => unitStats(u).ranged > 8)) pick = Math.random() < 0.5 ? "volley" : "hold";
-  b[ai === "a" ? "aStance" : "dStance"] = pick;
+  const b = { ...b0, a: { ...b0.a, units: b0.a.units.map((u) => ({ ...u })), routed: [...b0.a.routed] },
+                      d: { ...b0.d, units: b0.d.units.map((u) => ({ ...u })), routed: [...b0.d.routed] } };
+  /* The old screen gave one order for the whole army. Until the line is drawn
+     on screen that order is simply given to all three sectors, so a plain
+     "press" still means what it always did. */
+  if (pSide && playerStance) {
+    if (playerStance === "withdraw") b[pSide === "a" ? "aStance" : "dStance"] = "withdraw";
+    else {
+      const key = pSide === "a" ? "aPost" : "dPost";
+      b[key] = { left: playerStance, centre: playerStance, right: playerStance };
+    }
+  }
+  const ai = pSide === "a" ? "d" : pSide === "d" ? "a" : null;
+  if (ai) {
+    const { post, commit } = aiOrders(b, ai);
+    b[ai === "a" ? "aPost" : "dPost"] = post;
+    const mine = b[ai].units.reduce((n, u) => n + u.str, 0);
+    const theirs = b[ai === "a" ? "d" : "a"].units.reduce((n, u) => n + u.str, 0);
+    if (mine < theirs * 0.4 && b.round > 2) b[ai === "a" ? "aStance" : "dStance"] = "withdraw";
+    // Reserves go in when a sector is in trouble, not before.
+    if (commit && b[ai].units.some((u) => u.pos === "res")) {
+      b[ai].units = b[ai].units.map((u) => (u.pos === "res" ? { ...u, pos: commit } : u));
+      b.log = [...b.log, { t: "give", s: ai,
+        m: `The ${ai === "a" ? "attacking" : "defending"} reserve goes in on the ${commit}.` }];
+    }
+  } else {
+    // Nobody here is the player's: both lines are handled the same way.
+    ["a", "d"].forEach((sd) => {
+      const { post, commit } = aiOrders(b, sd);
+      b[sd === "a" ? "aPost" : "dPost"] = post;
+      if (commit && b[sd].units.some((u) => u.pos === "res")) {
+        b[sd].units = b[sd].units.map((u) => (u.pos === "res" ? { ...u, pos: commit } : u));
+      }
+    });
+  }
   return resolveRound(b);
 }
 
@@ -2541,11 +2684,31 @@ export default function ColdCoast() {
       const nations = { ...g.nations };
       const provinces = { ...g.provinces };
 
-      const survivors = (side) => [...b[side].units, ...b[side].routed.filter((u) => u.str > 0)]
-        .map((u) => ({ ...u, morale: Math.max(20, u.maxMorale * 0.7), xp: Math.min(3, u.xp + (b.winner === side ? 1 : 0)) }));
+      /* Pursuit. A broken company is running, not fighting, and horse is what
+         catches it — this is what turns a win into a settled question instead
+         of the same enemy standing in front of you next season. Without a
+         single rider you catch almost nobody. */
+      const chase = (side) => {
+        if (!b.winner || b.winner === side || b.stalemate) return 0;
+        const win = b[b.winner].units;
+        const str = win.reduce((n, u) => n + u.str, 0) || 1;
+        const horse = win.filter((u) => unitStats(u).cav).reduce((n, u) => n + u.str, 0);
+        return Math.min(0.8, 0.1 + (horse / str) * 1.5);
+      };
+      const caught = { a: chase("a"), d: chase("d") };
+      const ridDown = { a: 0, d: 0 };
+      const survivors = (side) => {
+        const ran = b[side].routed.filter((u) => u.str > 0).filter((u) => {
+          if (Math.random() < caught[side]) { ridDown[side] += 1; return false; }
+          return true;
+        });
+        return [...b[side].units, ...ran]
+          .map((u) => ({ ...u, morale: Math.max(20, u.maxMorale * 0.7), xp: Math.min(3, u.xp + (b.winner === side ? 1 : 0)) }));
+      };
 
       const aUnits = survivors("a");
       const dUnits = survivors("d");
+      const rode = ridDown.a + ridDown.d;
 
       // powder spent
       nations[b.aNat] = { ...nations[b.aNat], res: { ...nations[b.aNat].res, powder: Math.max(0, b.aPowder) } };
@@ -2638,7 +2801,10 @@ export default function ColdCoast() {
         if (built) { next = built; rest = queue.slice(i + 1); break; }
       }
 
-      const entries = [{ turn: g.turn, m: msg + spoilMsg }];
+      const chased = rode
+        ? ` ${rode} broken ${rode === 1 ? "company is" : "companies are"} ridden down in the pursuit.`
+        : "";
+      const entries = [{ turn: g.turn, m: msg + chased + spoilMsg }];
       if (msgLord) { entries.unshift({ turn: g.turn, m: msgLord }); if (b.aNat === g.player || b.dNat === g.player) Sound.play("lose"); }
       return {
         ...g, armies, nations, provinces, battle: next, sel: null, pending: rest,
