@@ -41,6 +41,7 @@ export const SAVE_VERSION = 8;
    the player a free escape. */
 const TRANSIENT = {
   sel: null, tree: false, seat: null, lords: false, showCodex: false, district: null, intro: false,
+  summary: null, roster: false,
   recruit: null, survey: null, lair: null, focus: null, notices: [],
   screen: null,
 };

@@ -21,6 +21,7 @@ import { SECTORS, SECTOR_NAME, ADJACENT, POSTURES, POSTURE_IDS, GROUND, groundFo
          SIEGE, BREACH_ORDER }
   from "./data/battle.js";
 import { UNIT_TIERS, UNITS, UNIT_IDS } from "./data/units.js";
+import { GOALS } from "./data/goals.js";
 import { SUPPLY_MAX, SUPPLY_BANDS, bandAt, HARD_GROUND, WINTER_WASTE,
          CART_RELIEF_CAP, QUARTER_RELIEF, QUARTER_EASE } from "./data/supply.js";
 import { SETTLEMENT, WORKS, WORK_IDS } from "./data/settlement.js";
@@ -74,13 +75,15 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 @keyframes cc-halo{0%{opacity:.6;transform:scale(.72)}70%{opacity:0;transform:scale(1.35)}100%{opacity:0;transform:scale(1.35)}}
 .cc-ants{animation:cc-ants 1.1s linear infinite}
 .cc-halo{animation:cc-halo 1.9s ease-out infinite}
+@keyframes cc-idle{0%,100%{opacity:.08}50%{opacity:.42}}
+.cc-idle{animation:cc-idle 2.6s ease-in-out infinite}
 .cc-banner{will-change:transform}
 .cc-picked,.cc-unpicked{transition:transform .18s ease}
 .cc-picked{transform:scale(1.16)}
 .cc-buildprog{transition:stroke-dasharray .45s ease}
 .cc-bar{transition:width .45s cubic-bezier(.3,.1,.2,1)}
 @media (prefers-reduced-motion:reduce){
-  .cc-ants,.cc-halo{animation:none}
+  .cc-ants,.cc-halo,.cc-idle,.cc-fieldhit,.cc-narration>div{animation:none}
   .cc-banner,.cc-picked,.cc-unpicked,.cc-bar,.cc-buildprog{transition:none}
 }
 .cc-min-h-760px{min-height:760px}
@@ -230,6 +233,17 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-chipheld{border-color:#8fe3d6;background:#152a30}
 .cc-chipbar{height:3px;border-radius:2px;background:#26333c;overflow:hidden;display:block}
 .cc-chipbar>span{display:block;height:100%}
+.cc-field{border:1px solid #2a3a44;border-radius:8px;overflow:hidden;background:#0c141a}
+.cc-fieldsvg{display:block;width:100%;height:auto}
+.cc-fieldnum{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;font-weight:600}
+.cc-fieldlabel{font-family:'Barlow Condensed','Inter',sans-serif;font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+@keyframes cc-fieldhit{0%{opacity:0;transform:translateY(6px)}25%{opacity:1}100%{opacity:0;transform:translateY(-10px)}}
+.cc-fieldhit{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;font-weight:700;animation:cc-fieldhit 2.2s ease-out forwards;paint-order:stroke;stroke:#0a1015;stroke-width:2.5px}
+@keyframes cc-narr{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+.cc-narration>div{animation:cc-narr .5s ease-out both}
+.cc-narration>div:nth-child(2){animation-delay:.35s}
+.cc-narration>div:nth-child(3){animation-delay:.7s}
+.cc-narration>div:nth-child(4){animation-delay:1.05s}
 .cc-tug{height:7px;border-radius:3px;overflow:hidden;display:flex;background:#26333c}
 .cc-tug>span{display:block;height:100%}
 .cc-postrow{display:flex;gap:3px}
@@ -328,6 +342,30 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
   border:1px solid #4d9aa6;color:#dff3f6;background:linear-gradient(180deg,#1c4048,#132c33);
   box-shadow:0 4px 18px rgba(4,12,16,.7);transition:filter .15s,transform .15s}
 .cc-beginbtn:hover{filter:brightness(1.25);transform:translateY(-1px)}
+.cc-endidle{background:#2a3a2c;border-color:#5a6b3a;color:#e5eef3}
+.cc-endidle:hover{background:#34482f}
+.cc-text-11px{font-size:11px}
+.cc-rosterlink{color:inherit;border-bottom:1px dotted #5f7d8b;cursor:pointer}
+.cc-rosterlink:hover{color:#8fe3d6;border-bottom-color:#8fe3d6}
+.cc-rosterrow{display:flex;align-items:center;gap:10px;text-align:left;width:100%;padding:7px 9px;border:1px solid #22303a;border-radius:6px;background:#111b22;transition:border-color .12s,background .12s}
+.cc-rosterrow:hover{border-color:#3d6470;background:#152229}
+.cc-rosteron{border-color:#4d9aa6;background:#152a30}
+.cc-rosterplate{width:26px;height:28px;border-radius:5px 5px 11px 11px;border:1px solid;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.cc-w-520px{width:520px}
+.cc-seasoncard{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:21;width:440px;max-width:calc(100% - 24px);
+  background:rgba(11,18,25,.96);border:1px solid #31454f;border-radius:8px;padding:10px 12px;box-shadow:0 6px 18px rgba(3,7,10,.55);backdrop-filter:blur(4px)}
+.cc-seasonlist{margin:0;padding-left:16px;font-size:12.5px;line-height:1.35;color:#cfe0e8}
+.cc-seasonlist li{margin:2px 0}
+.cc-goals{position:absolute;left:12px;top:12px;z-index:20;width:300px;max-width:calc(100% - 24px);
+  background:rgba(11,18,25,.94);border:1px solid #31454f;border-radius:8px;padding:9px 11px;backdrop-filter:blur(4px)}
+.cc-goalchip{position:absolute;left:12px;top:12px;z-index:20;font-size:12px;color:#c3d5de;background:rgba(11,18,25,.9);border:1px solid #31454f;border-radius:6px;padding:4px 9px}
+.cc-goalchip:hover{border-color:#4d9aa6;color:#e5eef3}
+.cc-goal{border-radius:5px;padding:3px 5px;color:#aebfc8}
+.cc-goalnow{background:#132229;color:#e5eef3}
+.cc-goaldone{opacity:.55;text-decoration:line-through}
+.cc-goaltick{width:15px;height:15px;border-radius:50%;border:1px solid #4d5f6b;display:inline-flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0}
+.cc-goaltickon{background:#2f5f47;border-color:#9fd6b4;color:#dff5e6}
+@media (max-width:900px){.cc-goals{display:none}.cc-seasoncard{width:calc(100% - 24px)}}
 .cc-notices{position:absolute;left:12px;bottom:12px;z-index:20;display:flex;flex-direction:column;
   gap:6px;max-width:340px;pointer-events:none}
 .cc-notice{pointer-events:auto;display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:6px;
@@ -2292,6 +2330,7 @@ function resolveRound(bt) {
   let aTotal = 0, dTotal = 0;
   const shaken = { a: 0, d: 0 };
   const notes = [];
+  const sectors = [];
 
   SECTORS.forEach((sec) => {
     const aU = b.a.units.filter((u) => u.pos === sec && u.str > 0);
@@ -2317,10 +2356,14 @@ function resolveRound(bt) {
     if (A.beastFrac > 0.5) dOut *= 1 + BEAST_BOW * D.rangedShare;
 
     // Taken in the flank. This is the whole reason the line is worth drawing.
+    // aFlank is how many of the attacker's neighbouring sectors are gone —
+    // the attacker is the one exposed here, so the defender hits harder.
     const aFlank = flanksOn(aBroke, ground, sec);
     const dFlank = flanksOn(dBroke, ground, sec);
-    if (dFlank) { aOut *= 1 + FLANK_DEAL * dFlank; notes.push({ s: "a", sec, n: dFlank }); }
-    if (aFlank) { dOut *= 1 + FLANK_DEAL * aFlank; notes.push({ s: "d", sec, n: aFlank }); }
+    if (dFlank) { aOut *= 1 + FLANK_DEAL * dFlank; notes.push({ flanked: "d", sec, n: dFlank }); }
+    if (aFlank) { dOut *= 1 + FLANK_DEAL * aFlank; notes.push({ flanked: "a", sec, n: aFlank }); }
+    const aHorse = A.cavStr > 0 && D.antiCav < D.strSum * 0.3;
+    const dHorse = D.cavStr > 0 && A.antiCav < A.strSum * 0.3;
 
     // The ground under this sector, and the works on the hex, help whoever is
     // defending the battle — unless the attacker stands off and shoots.
@@ -2350,8 +2393,18 @@ function resolveRound(bt) {
       return gone;
     };
 
-    const aGone = hit(aU, aCas, aS.morale * (aL.morale || 1), dFlank);
-    const dGone = hit(dU, dCas, dS.morale * (dL.morale || 1), aFlank);
+    // The side whose own neighbours are gone is the one that feels it.
+    const aGone = hit(aU, aCas, aS.morale * (aL.morale || 1), aFlank);
+    const dGone = hit(dU, dCas, dS.morale * (dL.morale || 1), dFlank);
+    sectors.push({
+      sec, ground: ground[sec],
+      a: { cas: aCas, post: aPost[sec], volley: aS === POSTURES.volley && A.ranged >= A.melee,
+           horse: aHorse, flank: aFlank, str: A.strSum,
+           gone: aGone.map((x) => ({ name: unitName(x.u), dead: x.dead })) },
+      d: { cas: dCas, post: dPost[sec], volley: dS === POSTURES.volley && D.ranged >= D.melee,
+           horse: dHorse, flank: dFlank, str: D.strSum,
+           gone: dGone.map((x) => ({ name: unitName(x.u), dead: x.dead })) },
+    });
     b.a.routed.push(...aGone.map((x) => x.u));
     b.d.routed.push(...dGone.map((x) => x.u));
     [[aGone, "a"], [dGone, "d"]].forEach(([list, side]) => list.forEach((x) => b.log.push({
@@ -2375,13 +2428,13 @@ function resolveRound(bt) {
   b.d.units = b.d.units.filter((u) => u.morale > 0);
 
   notes.forEach((n) => b.log.push({
-    t: "flank", s: n.s === "a" ? "d" : "a",
-    m: `The ${n.s === "a" ? "attacking" : "defending"} ${n.sec} is taken in the flank${n.n > 1 ? " from both sides" : ""}.`,
+    t: "flank", s: n.flanked,
+    m: `The ${n.flanked === "a" ? "attacking" : "defending"} ${n.sec} is taken in the flank${n.n > 1 ? " from both sides" : ""}.`,
   }));
   if (shaken.a) b.log.push({ t: "give", s: "d", m: `The attacking line gives way on ${shaken.a === 1 ? "a sector" : "two sectors"}.` });
   if (shaken.d) b.log.push({ t: "give", s: "a", m: `The defending line gives way on ${shaken.d === 1 ? "a sector" : "two sectors"}.` });
   b.log.push({ t: "round", m: `Round ${b.round}: attackers lose ${aTotal}, defenders lose ${dTotal}.` });
-  b.lastExchange = { aCas: aTotal, dCas: dTotal };
+  b.lastExchange = { aCas: aTotal, dCas: dTotal, sectors, shaken: { ...shaken } };
 
   b.broken = { a: brokenSectors(b.a.units, b.d.units), d: brokenSectors(b.d.units, b.a.units) };
   b.round += 1;
@@ -2551,6 +2604,7 @@ function initialState() {
     turn: 1, player: null, ...w, war, armies, uid,
     sel: null, battle: null, log: [], recruit: null, over: null,
     showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, notices: [], focus: null, sound: { music: true, sfx: true },
+    goals: { done: {}, hidden: false }, summary: null, roster: false,
   };
 }
 const baseMove = (natId) => (natId === "lyon" || natId === "horde" ? 6 : 5);
@@ -2956,6 +3010,20 @@ export default function ColdCoast() {
         if (toNat === g.player) spoilMsg = ` ${dead.spoilText || spoilsText(dead.spoils)}`;
       });
 
+      /* Things the position cannot show after the fact — a cleared wood is
+         just an empty wood — are tallied on the realm for the goals to read. */
+      const pSideB = b.aNat === g.player ? "a" : b.dNat === g.player ? "d" : null;
+      if (pSideB && b.winner === pSideB && !b.stalemate) {
+        const loserId = pSideB === "a" ? b.dArmy : b.aArmy;
+        const loser = g.armies.find((a) => a.id === loserId);
+        const t = { ...(nations[g.player].tally || {}) };
+        if (loser?.owner === "beasts") t.herds = (t.herds || 0) + 1;
+        if (loser?.mob) t.hosts = (t.hosts || 0) + 1;
+        if (b.storming && pSideB === "a") t.walls = (t.walls || 0) + 1;
+        t.fields = (t.fields || 0) + 1;
+        nations[g.player] = { ...nations[g.player], tally: t };
+      }
+
       armies = armies.map((a) => {
         if (a.id === b.aArmy) return { ...a, units: aUnits, mp: 0 };
         if (a.id === b.dArmy) return { ...a, units: dUnits };
@@ -3037,6 +3105,18 @@ export default function ColdCoast() {
     });
   }
 
+  /* A right-click on the map with a warband in hand. Anything moveInfo would
+     refuse, this refuses the same way, with the same reason in the toast. */
+  function marchTo(c, r) {
+    const a = game.sel?.armyId ? game.armies.find((x) => x.id === game.sel.armyId) : null;
+    const t = game.provinces[key(c, r)];
+    if (!a || !t || a.owner !== P) return;
+    const info = moveInfo(game, a, t, P, atWar);
+    if (!info || info.here) return;
+    if (!info.ok) { push(info.why); return; }
+    Sound.play("march");
+    attemptMove(a, t);
+  }
   function march(armyId, k) {
     const a = game.armies.find((x) => x.id === armyId);
     const t = game.provinces[k];
@@ -3890,6 +3970,10 @@ export default function ColdCoast() {
           && hexDist(a.c, a.r, pv.c, pv.r) === 1);
         if (!still || pv.owner === sg.by) {
           provinces[k2] = { ...pv, siege: null };
+          if (pv.owner === sg.by && sg.by === g.player) {
+            const t = { ...(nations[g.player].tally || {}) };
+            nations[g.player] = { ...nations[g.player], tally: { ...t, walls: (t.walls || 0) + 1 } };
+          }
           if (sg.by === g.player && pv.owner !== sg.by) {
             newLog.push({ turn: g.turn, m: `The siege of ${pv.name} lapses — nobody is standing in front of it.` });
           }
@@ -4150,8 +4234,10 @@ export default function ColdCoast() {
       });
 
       // --- income for everyone ---
+      let playerInc = null;
       NATION_IDS.forEach((id) => {
         const inc = nationIncome({ provinces, armies, nations }, id, g.turn);
+        if (id === g.player) playerInc = inc;
         const res = { ...nations[id].res };
         res.food = res.food + inc.food;
         res.scrap += Math.max(0, inc.scrap);
@@ -4185,6 +4271,7 @@ export default function ColdCoast() {
          nerve back; one on the end of a long line does none of those things.
          Distance does the work, and hard ground and winter make it worse. */
       const cold = seasonOf(g.turn).id === "winter" ? WINTER_WASTE : 1;
+      const starving = [];
       armies = armies.map((a) => {
         const nat = nations[a.owner];
         const sup = supplyOf(provinces, nat, a.owner, a);
@@ -4192,6 +4279,7 @@ export default function ColdCoast() {
         const hard = HARD_GROUND[provinces[key(a.c, a.r)]?.t] || 1;
         const waste = sup.band.waste * hard * cold * ease;
         const shake = Math.round(sup.band.morale * ease);
+        if (a.owner === g.player && sup.d >= 3) starving.push(a.name);
         if (a.owner === g.player && sup.d >= 3 && (a.supply || 0) < 3) {
           notice("raid", `${a.name} is ${sup.band.name.toLowerCase()} — ${sup.raw} hexes from anything you hold. They are losing men every season out there.`, key(a.c, a.r));
         }
@@ -4239,11 +4327,47 @@ export default function ColdCoast() {
         newLog.unshift({ turn: g.turn, m: `${nations[battle.aNat].short} falls on your warband at ${battle.provName}.` });
       }
 
+      /* --- goals ---
+         Checked once a season, paid once a season. Done is done: a herd that
+         comes back does not un-clear the first one. */
+      const goals = { ...(g.goals || { done: {}, hidden: false }), done: { ...(g.goals?.done || {}) } };
+      {
+        const seatK = Object.keys(provinces).find((k) => provinces[k].capital && provinces[k].seat === g.player) || null;
+        const tally = nations[g.player]?.tally || {};
+        GOALS.forEach((goal) => {
+          if (goals.done[goal.id]) return;
+          let ok = false;
+          try { ok = goal.check({ game: { provinces, nations, armies }, P: g.player, seatK, tally }); } catch { ok = false; }
+          if (!ok) return;
+          goals.done[goal.id] = g.turn;
+          const pn = nations[g.player];
+          const res = { ...pn.res };
+          Object.entries(goal.pay || {}).forEach(([k, v]) => { res[k] = (res[k] || 0) + v; });
+          nations[g.player] = { ...pn, res };
+          const paid = Object.entries(goal.pay || {}).map(([k, v]) => `${v} ${RES_WORD[k] || k}`).join(", ");
+          newLog.push({ turn: g.turn, m: `${goal.name} — done. ${paid ? `${paid} for it.` : ""}` });
+          notice("lord", `${goal.name}: done. ${goal.teaches}`, null);
+        });
+      }
+
+      /* --- the season, on a card ---
+         Everything the log would have told you, before you go looking. */
+      const summary = {
+        turn: g.turn + 1,
+        inc: playerInc,
+        res: nations[g.player]?.res,
+        starving,
+        lines: newLog.map((l) => l.m),
+        holdings: heldNow[g.player] || 0,
+        warbands: armies.filter((a) => a.owner === g.player).length,
+      };
+
       return {
         ...g, provinces, nations, armies, war, turn: g.turn + 1,
         log: [...newLog, ...g.log].slice(0, 60), sel: null, over,
         notices: [...notices, ...g.notices].slice(0, 6),
         battle, pending: battle ? live.slice(1) : [],
+        goals, summary,
       };
     });
   }
@@ -4259,6 +4383,8 @@ export default function ColdCoast() {
 
       <TopBar nat={nat} income={income} turn={game.turn} owned={owned.length}
         armies={game.armies.filter((a) => a.owner === P).length} pop={realmPop}
+        idle={game.armies.filter((a) => a.owner === P && a.mp > 0).length}
+        onRoster={() => setGame((g) => ({ ...g, roster: !g.roster }))}
         sound={game.sound} onLords={() => setGame((g) => ({ ...g, lords: true }))}
         onSound={(which) => setGame((g) => {
           const next = { ...g.sound, [which]: !g.sound[which] };
@@ -4271,12 +4397,18 @@ export default function ColdCoast() {
 
       <div className="flex-1 flex flex-col cc-lg-flex-row min-h-0">
         <div className="flex-1 min-w-0 min-h-0 relative overflow-hidden cc-min-h-420px">
+          {game.summary && (
+            <SeasonCard summary={game.summary} onClose={() => setGame((g) => ({ ...g, summary: null }))} />
+          )}
+          <GoalsCard goals={game.goals || { done: {}, hidden: false }}
+            onToggle={() => setGame((g) => ({ ...g, goals: { ...(g.goals || { done: {} }), hidden: !g.goals?.hidden } }))}
+            onPutAway={() => setGame((g) => ({ ...g, goals: { ...(g.goals || { done: {} }), hidden: true, away: true } }))} />
           <Notices list={game.notices}
             onGo={(n) => setGame((g) => ({ ...g, focus: n.k, sel: { armyId: null, k: n.k },
               notices: g.notices.filter((x) => x.id !== n.id) }))}
             onDismiss={(id) => setGame((g) => ({ ...g, notices: g.notices.filter((x) => x.id !== id) }))} />
           <WorldMap game={game} P={P} sight={sight} onSelect={selectHex} atWar={atWar} onDeselect={deselect}
-            onFocused={clearFocus} />
+            onFocused={clearFocus} onMarch={marchTo} />
         </div>
         <aside className="w-full cc-lg-w-352px shrink-0 border-t cc-lg-border-t-0 cc-lg-border-l cc-border-28363f cc-bg-0d141af2 flex flex-col min-h-0 cc-max-h-46vh cc-lg-max-h-none">
           <Sidebar
@@ -4315,6 +4447,14 @@ export default function ColdCoast() {
       )}
       {game.lords && (
         <WarlordScreen game={game} P={P} onClose={() => setGame((g) => ({ ...g, lords: false }))} />
+      )}
+      {game.roster && (
+        <RosterPanel game={game} P={P} sight={sight} atWar={atWar}
+          onClose={() => setGame((g) => ({ ...g, roster: false }))}
+          onPick={(a) => setGame((g) => ({
+            ...g, roster: false, focus: key(a.c, a.r),
+            sel: { armyId: a.owner === P ? a.id : null, k: key(a.c, a.r) },
+          }))} />
       )}
       {game.tree && (
         <TechTree game={game} P={P} onResearch={research}
@@ -4380,7 +4520,7 @@ const RES_META = [
   { k: "men", label: "Recruits", Icon: Users, c: "#9db8c4" },
 ];
 
-function TopBar({ nat, income, turn, owned, armies, pop, onEnd, onCodex, sound, onSound, onLords, onSave, saveFailed, onScreen }) {
+function TopBar({ nat, income, turn, owned, armies, idle, pop, onEnd, onCodex, sound, onSound, onLords, onSave, saveFailed, onScreen, onRoster }) {
   return (
     <header className="shrink-0 border-b cc-border-28363f cc-bg-0a1015a90 backdrop-blur px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
       <div className="flex items-center gap-2.5 pr-5 border-r cc-border-28363f">
@@ -4394,7 +4534,9 @@ function TopBar({ nat, income, turn, owned, armies, pop, onEnd, onCodex, sound, 
           <div className="cc-text-12px cc-text-93a9b5">
             {WARLORDS[nat.id] ? `${WARLORDS[nat.id].name} · ` : ""}
           <span style={{ color: SEASON_TINT[seasonOf(turn).id] }}>{seasonOf(turn).name}</span>
-          {" "}of year <span className="num">{yearOf(turn)}</span> · <span className="num">{owned}</span> holdings · <span className="num">{armies}</span> warbands
+          {" "}of year <span className="num">{yearOf(turn)}</span> · <span className="num">{owned}</span> holdings ·{" "}
+          <button type="button" onClick={onRoster} title="Every warband you have, and where it is"
+            className="cc-rosterlink"><span className="num">{armies}</span> {armies === 1 ? "warband" : "warbands"}</button>
           </div>
         </div>
       </div>
@@ -4476,8 +4618,14 @@ function TopBar({ nat, income, turn, owned, armies, pop, onEnd, onCodex, sound, 
         How this works
       </button>
       <button onClick={onEnd}
-        className="disp cc-text-15px px-5 py-2 rounded cc-bg-1f4a52 cc-hover-bg-2a5f69 border cc-border-356b76 cc-text-d9f0f2 flex items-center gap-2 transition-colors">
-        End {seasonOf(turn).name.toLowerCase()} <ChevronRight size={15} />
+        title={idle > 0 ? `${idle} ${idle === 1 ? "warband has" : "warbands have"} movement left. Open the muster roll to find them.` : undefined}
+        className={`disp cc-text-15px px-5 py-2 rounded border flex items-center gap-2 transition-colors ${idle > 0
+          ? "cc-endidle" : "cc-bg-1f4a52 cc-hover-bg-2a5f69 cc-border-356b76 cc-text-d9f0f2"}`}>
+        <span className="leading-tight text-left">
+          End {seasonOf(turn).name.toLowerCase()}
+          {idle > 0 && <span className="cc-text-11px cc-text-e8b98a" style={{ display: "block", fontWeight: 400, letterSpacing: 0 }}>{idle} {idle === 1 ? "warband has" : "warbands have"} not moved</span>}
+        </span>
+        <ChevronRight size={15} />
       </button>
     </header>
   );
@@ -5109,22 +5257,43 @@ function WarbandGlyph({ kind }) {
   }
 }
 
-function WarbandMark({ col, n, hostile, chosen, kind }) {
+/* A warband on the map is a banner plate now: a shield in the realm's colour
+   on a dark backing, the arms inside it in pale ink, a badge for how many
+   companies are under it and a bar beneath for how much of them is left. The
+   edge says whose it is before the colour does — pale for yours, red for an
+   enemy you are at war with, grey for anyone else. Two on one hex fan into a
+   second plate behind the first. Drawn about 16 wide against a hex of 27, so
+   the ground still shows round it. */
+const PLATE = "M-7.6-8.6h15.2v9.4q0 5.4-7.6 8.4-7.6-3-7.6-8.4z";
+function WarbandMark({ col, n, str, edge, chosen, kind, stack, idle }) {
+  const ink = lum(col) > 0.62 ? "#101a20" : "#eef3f5";
+  const fill = mix(col, "#0b1116", 0.18);
+  const barCol = str > 0.66 ? "#9fd6b4" : str > 0.33 ? "#e8b98a" : "#e0644a";
   return (
     <g>
-      <ellipse cx="0" cy="5" rx="5.4" ry="1.3" fill="#060b0f" opacity="0.5" />
-      <g fill={col} stroke={chosen ? "#ffffff" : "#0a1015"}
-         strokeWidth={chosen ? 1.1 : hostile ? 1 : 0.85}
-         strokeLinejoin="round" strokeLinecap="round">
+      <ellipse cx="0" cy="9.6" rx="7.4" ry="1.6" fill="#060b0f" opacity="0.55" />
+      {stack > 1 && (
+        <g transform="translate(-4,-3.2)" opacity="0.85">
+          <path d={PLATE} fill={mix(col, "#0b1116", 0.5)} stroke="#0a1015" strokeWidth="1" />
+        </g>
+      )}
+      {idle && !chosen && <path d={PLATE} className="cc-idle" fill="none" stroke="#ffffff" strokeWidth="2.6" />}
+      <path d={PLATE} fill="#0b1219" stroke={edge} strokeWidth={chosen ? 1.5 : 1.1} strokeLinejoin="round" />
+      <path d={PLATE} fill={fill} transform="scale(.86)" stroke="none" />
+      <path d="M-6.5-7.4h13v2.6h-13z" fill={col} opacity="0.9" />
+      <g fill={ink} stroke="#0a1015" strokeWidth="0.55" strokeLinejoin="round" strokeLinecap="round"
+         transform="translate(0,1.4) scale(.92)">
         <WarbandGlyph kind={kind} />
       </g>
-      {/* How many companies, on a chip small enough to sit beside the arms
-          rather than on top of them. */}
-      <g transform="translate(5.4,4.4)">
-        <circle r="3.2" fill="#0b1219" stroke={chosen ? "#ffffff" : col} strokeWidth="0.9" />
-        <text y="1.6" textAnchor="middle" className="cc-armycount"
-          style={{ fontSize: "6.6px" }} fill={chosen ? "#ffffff" : col}>{n}</text>
+      {/* How many companies, on the shoulder of the plate. */}
+      <g transform="translate(7.2,-7.6)">
+        <circle r="3.7" fill="#0b1219" stroke={chosen ? "#ffffff" : col} strokeWidth="0.9" />
+        <text y="1.9" textAnchor="middle" className="cc-armycount"
+          style={{ fontSize: "6.4px" }} fill={chosen ? "#ffffff" : "#eef3f5"}>{stack > 1 ? `+${stack - 1}` : n}</text>
       </g>
+      {/* How much of them is still standing. */}
+      <rect x="-6.6" y="10.6" width="13.2" height="1.9" rx="0.9" fill="#0b1219" />
+      <rect x="-6.1" y="11.05" width={12.2 * Math.max(0.04, Math.min(1, str))} height="1" rx="0.5" fill={barCol} />
     </g>
   );
 }
@@ -5483,7 +5652,7 @@ const BaseMap = React.memo(function BaseMap({ w, h, provinces, cells }) {
   );
 });
 
-function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
+function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMarch }) {
   const [zoom, setZoom] = useState(0.8);
   // What scale the maps are actually DRAWN at, as opposed to what scale they
   // are being shown at. See the note on the settle below.
@@ -5558,6 +5727,8 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
 
   const selRef = useRef(onSelect);
   const deselRef = useRef(onDeselect);
+  const marchRef = useRef(onMarch);
+  marchRef.current = onMarch;
   const provRef = useRef(game.provinces);
   // The debug hooks below are installed once, so they must not close over the
   // turn they were installed on.
@@ -5648,6 +5819,19 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
     const hit = hexAt((e.clientX - box.left) / z, (e.clientY - box.top) / z);
     if (hit && provRef.current[key(hit[0], hit[1])]) selRef.current(hit[0], hit[1]);
     else if (deselRef.current) deselRef.current();
+  }, []);
+
+  /* Right-click marches the warband in hand — the chevrons stay for anyone
+     who prefers them, but a right-click on the hex you mean is one action
+     instead of two. Nothing in hand and it is just a click. */
+  const marchAt = useCallback((e) => {
+    e.preventDefault();
+    const base = e.currentTarget.querySelector(".cc-basemap");
+    if (!base) return;
+    const box = base.getBoundingClientRect();
+    const z = box.width / MAPW;
+    const hit = hexAt((e.clientX - box.left) / z, (e.clientY - box.top) / z);
+    if (hit && provRef.current[key(hit[0], hit[1])] && marchRef.current) marchRef.current(hit[0], hit[1]);
   }, []);
 
   const centreOn = useCallback((c, r, z) => {
@@ -5768,6 +5952,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
     const z0 = zoomRef.current;
     const z = clamp(+(z0 + d).toFixed(2), 0.3, 2.4);
     if (z === z0) return;
+    zoomRef.current = z;
     const cx = (el.scrollLeft + el.clientWidth / 2) / z0;
     const cy = (el.scrollTop + el.clientHeight / 2) / z0;
     setZoom(z);
@@ -5855,8 +6040,10 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
   // dropped if every slot is taken — it never prints under a marker.
   const shownLabels = useMemo(() => {
     const out = [];
+    // The plate is taller than the glyph it replaced, and its strength bar
+    // sits below it, so a name needs more room to clear one.
     const onArmy = (x, y, w) => armySpots.some(([ax, ay]) =>
-      Math.abs(ax - x) < w / 2 + 10 && Math.abs(ay - y) < 13);
+      Math.abs(ax - x) < w / 2 + 12 && Math.abs(ay - y) < 18);
     // Realm banners are placed already, so every other name works around them.
     const onLabel = (x, y, w) => [...labels, ...out].some((q) =>
       Math.abs(q.y - y) < 12 && Math.abs(q.x - x) < (q.w + w) / 2 + 6);
@@ -5900,7 +6087,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
   return (
     <div className="absolute inset-0">
       <div ref={scroll} className="absolute inset-0 overflow-auto thin cc-mapscroll"
-        onClick={pickAt}
+        onClick={pickAt} onContextMenu={marchAt}
         onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}>
         <div className="cc-mapstack" style={{ width: MAPW * zoom, height: MAPH * zoom }}>
         {/* Mid-gesture the zoom is a transform on this box rather than a new
@@ -6005,46 +6192,45 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused }) {
 
           <g style={{ pointerEvents: "none" }}>
             {game.armies.filter((a) => a.owner === P || sight.has(key(a.c, a.r))).map((a) => {
-              const [cx, cy] = centreOf(a.c, a.r);
               const col = FACTION[a.owner].color;
-              const hostile = a.owner !== P && atWar(P, a.owner);
+              const own = a.owner === P;
+              const hostile = !own && atWar(P, a.owner);
               const chosen = game.sel?.armyId === a.id;
+              const strNow = a.units.reduce((n, u) => n + u.str, 0);
+              const strMax = a.units.reduce((n, u) => n + (u.max || u.str), 0) || 1;
+              const edge = own ? "#e9f1f4" : hostile ? "#ff7a5c" : "#7b8a94";
+              const stack = stackAt[key(a.c, a.r)] || 1;
               return (
                 <g key={a.id} className="cc-banner"
+                  style={{ pointerEvents: "visiblePainted", cursor: "pointer" }}
                   ref={(el) => { if (el) nodes.current[a.id] = el; else delete nodes.current[a.id]; }}>
+                  <title>{`${a.name} — ${a.units.length} ${a.units.length === 1 ? "company" : "companies"}, ${strNow} strong${own ? `, ${a.mp} of ${a.maxMp} movement` : ""}`}</title>
                   <g className={chosen ? "cc-picked" : "cc-unpicked"}>
-                {stackAt[key(a.c, a.r)] > 1 && (
-                  <g>
-                    <circle cx="-3.2" cy="-3.2" r="8.6" fill="#0b1219" stroke={col}
-                      strokeWidth="1" opacity="0.75" />
-                    <circle cx="-6.4" cy="-6.4" r="8.6" fill="#0b1219" stroke={col}
-                      strokeWidth="0.8" opacity="0.45" />
-                  </g>
-                )}
-                    {/* Sized to the mark it is around. It used to be drawn for
-                        a warband glyph half again as wide as the one there now. */}
-                    {chosen && <circle className="cc-halo" r="8.6" fill="none" stroke={col} strokeWidth="1.8" />}
-                    {chosen && <circle className="cc-ants" r="8.9" fill="none" stroke="#ffffff"
-                      strokeWidth="1.1" strokeDasharray="3.6 3" opacity="0.95" />}
-                    <WarbandMark col={col} n={a.units.length} hostile={hostile} chosen={chosen} kind={warbandKind(a)} />
+                    {chosen && <rect className="cc-halo" x="-10.5" y="-11.5" width="21" height="25" rx="5"
+                      fill="none" stroke={col} strokeWidth="1.8" />}
+                    {chosen && <rect className="cc-ants" x="-10.2" y="-11.2" width="20.4" height="24.4" rx="5"
+                      fill="none" stroke="#ffffff" strokeWidth="1.1" strokeDasharray="3.6 3" opacity="0.95" />}
+                    <WarbandMark col={col} n={a.units.length} str={strNow / strMax} edge={edge}
+                      chosen={chosen} kind={warbandKind(a)} stack={stack}
+                      idle={own && a.mp > 0} />
                     {a.lord && (
-                      <path d="M-4.4 -12.6l1.8 3 2.6 -3.6 2.6 3.6 1.8 -3 0.7 4.4h-10.2z"
+                      <path d="M-4.4 -14.2l1.8 3 2.6 -3.6 2.6 3.6 1.8 -3 0.7 4.4h-10.2z"
                         fill="#f0e2b8" stroke="#0a1015" strokeWidth="0.6" />
                     )}
                     {outOfSupply[a.id] && (() => {
                       const warn = outOfSupply[a.id] >= 4 ? "#e08a6a" : "#e8b98a";
                       return (
-                        <g transform="translate(9,-8.6)">
-                          <circle r="4.4" fill="#170d09" stroke={warn} strokeWidth="1.1" />
-                          <path d="M0 -2.3v2.4" stroke={warn} strokeWidth="1.3" strokeLinecap="round" />
-                          <circle cy="1.9" r="0.75" fill={warn} />
+                        <g transform="translate(-7.2,-7.6)">
+                          <circle r="3.7" fill="#170d09" stroke={warn} strokeWidth="1.1" />
+                          <path d="M0 -2v2.2" stroke={warn} strokeWidth="1.3" strokeLinecap="round" />
+                          <circle cy="1.7" r="0.7" fill={warn} />
                         </g>
                       );
                     })()}
-                    {a.owner === P && chosen && (
+                    {own && chosen && (
                       <g>
                         {Array.from({ length: a.maxMp }, (_, i) => (
-                          <circle key={i} cx={(i - (a.maxMp - 1) / 2) * 5} cy="12.6" r="1.6"
+                          <circle key={i} cx={(i - (a.maxMp - 1) / 2) * 4.6} cy="15.4" r="1.5"
                             fill={i < a.mp ? "#8fe3d6" : "#2c3d47"} />
                         ))}
                       </g>
@@ -7849,6 +8035,259 @@ function CompanyChip({ u, col, small, held, onPick, draggable, onDragStart }) {
   );
 }
 
+
+/* ------------------------------ THE FIELD ---------------------------------
+   The battle drawn, rather than tabulated. Three sectors of ground across the
+   strip in the map's own idiom — open, broken, a wall, water on a flank — the
+   enemy's companies along the top edge and yours along the bottom, each a
+   block as wide as it has men and as solid as its nerve. The front runs
+   between them and bows towards whoever is losing. A sector that has gone is
+   tinted and the companies opposite it step forward into the gap, which is
+   what a flank looks like before the arrow says so. */
+const FIELD_W = 1080, FIELD_H = 196, FIELD_MEN = 0.56;
+const FIELD_GROUND = {
+  open:     { base: "#25332a", note: "#3b5238" },
+  rough:    { base: "#2d2a21", note: "#5a5030" },
+  anchored: { base: "#25332a", note: "#3b5238" },
+  walls:    { base: "#2a2d31", note: "#5b6067" },
+};
+// A deterministic scatter, so the same field is the same field every round.
+const fieldNoise = (i, n) => { const v = Math.sin(i * 91.7 + n * 47.3) * 43758.5453; return v - Math.floor(v); };
+
+/* Lay a sector's companies out in rows, widest first, so the ones that matter
+   are the ones you can read. */
+function fieldRows(units, width) {
+  const rows = [[]];
+  let used = 0;
+  const gap = 6;
+  units.slice().sort((x, y) => y.str - x.str).forEach((u) => {
+    const w = Math.max(20, u.str * FIELD_MEN);
+    if (used + w > width && rows[rows.length - 1].length) { rows.push([]); used = 0; }
+    rows[rows.length - 1].push({ u, w });
+    used += w + gap;
+  });
+  return rows.map((row) => {
+    const total = row.reduce((n, x) => n + x.w, 0) + gap * (row.length - 1);
+    let x = -total / 2;
+    return row.map((x2) => { const at = x + x2.w / 2; x += x2.w + gap; return { ...x2, x: at }; });
+  });
+}
+
+function FieldStrip({ b, pSide, foe, myN, theirN, seen, deploying, held, onPlace, myBroke, theirBroke, ground }) {
+  const colW = FIELD_W / 3;
+  const mine = b[pSide].units, theirs = b[foe].units;
+  const inSec = (list, sec) => list.filter((u) => u.pos === sec && u.str > 0);
+  const strOf = (list) => list.reduce((n, u) => n + u.str, 0);
+  const midY = FIELD_H / 2;
+
+  const Block = ({ u, x, y, col, top, dark }) => {
+    const w = Math.max(20, u.str * FIELD_MEN);
+    const mor = Math.max(0, Math.min(1, u.morale / (u.maxMorale || 1)));
+    const ic = unitIcon(u.type);
+    const ink = lum(col) > 0.55 ? "#0b1219" : "#eef3f5";
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <title>{`${unitName(u)} — ${u.str} men, nerve ${Math.round(mor * 100)}%`}</title>
+        <rect x={-w / 2} y={-11} width={w} height={22} rx={3} fill={col}
+          opacity={dark ? 0.35 : 0.28 + 0.72 * mor} stroke="#0a1015" strokeWidth="1" />
+        {/* the facing edge: the rank that is actually fighting */}
+        <rect x={-w / 2} y={top ? 8 : -11} width={w} height={3} rx={1} fill={col} opacity={dark ? 0.5 : 1} />
+        {ic && w >= 48 && (
+          <g transform={`translate(${-w / 2 + 4},-7) scale(${14 / 512})`}>
+            <path d={ic.d} fill={ink} opacity="0.85" />
+          </g>
+        )}
+        <text x={w / 2 - 4} y={4} textAnchor="end" className="cc-fieldnum" fill={ink}>{u.str}</text>
+        {!deploying && u.lastLoss > 0 && (
+          <text key={`${b.round}-${u.id}`} className="cc-fieldhit" x={0} y={top ? 26 : -18}
+            textAnchor="middle" fill="#ff7a5c">−{u.lastLoss}</text>
+        )}
+      </g>
+    );
+  };
+
+  const Ground = ({ sec, i }) => {
+    const g = ground[sec] || "open";
+    const look = FIELD_GROUND[g] || FIELD_GROUND.open;
+    const x0 = i * colW;
+    const marks = [];
+    if (g === "open" || g === "anchored") {
+      for (let n = 0; n < 26; n++) {
+        const x = x0 + 10 + fieldNoise(i, n) * (colW - 20), y = 8 + fieldNoise(i + 7, n) * (FIELD_H - 16);
+        marks.push(<path key={n} d={`M${x} ${y}l1.5-3.5M${x + 3} ${y}l1.5-3.5`} stroke={look.note} strokeWidth="1" fill="none" opacity="0.7" />);
+      }
+    } else if (g === "rough") {
+      for (let n = 0; n < 16; n++) {
+        const x = x0 + 12 + fieldNoise(i, n) * (colW - 24), y = 10 + fieldNoise(i + 3, n) * (FIELD_H - 20);
+        const sz = 3 + fieldNoise(i + 11, n) * 4;
+        marks.push(<path key={n} d={`M${x - sz} ${y + sz * 0.6}l${sz} ${-sz * 1.3}l${sz} ${sz * 1.3}z`}
+          fill={look.note} stroke="#0a1015" strokeWidth="0.6" opacity="0.8" />);
+      }
+    }
+    return (
+      <g onClick={deploying && held ? () => onPlace(held, sec) : undefined}
+         style={{ cursor: deploying && held ? "pointer" : "default" }}>
+        <rect x={x0} y={0} width={colW} height={FIELD_H} fill={look.base} />
+        {marks}
+        {g === "anchored" && (() => {
+          const wx = sec === "left" ? x0 : x0 + colW - 46;
+          return (
+            <g>
+              <rect x={wx} y={0} width={46} height={FIELD_H} fill="#16303c" />
+              {Array.from({ length: 9 }, (_, n) => (
+                <path key={n} d={`M${wx + 8} ${16 + n * 24}q6-4 12 0t12 0`} stroke="#3f6b7c" strokeWidth="1" fill="none" opacity="0.7" />
+              ))}
+            </g>
+          );
+        })()}
+        {g === "walls" && (
+          <g>
+            <rect x={x0} y={midY - 9} width={colW} height={18} fill="#5b6067" stroke="#0a1015" strokeWidth="1" />
+            {Array.from({ length: Math.floor(colW / 18) }, (_, n) => (
+              <rect key={n} x={x0 + 4 + n * 18} y={midY - 14} width={9} height={6} fill="#5b6067" stroke="#0a1015" strokeWidth="0.8" />
+            ))}
+            <path d={`M${x0} ${midY + 9}h${colW}`} stroke="#23272b" strokeWidth="2" />
+          </g>
+        )}
+        <path d={`M${x0} 0v${FIELD_H}`} stroke="#0a1015" strokeWidth={i ? 1.2 : 0} opacity="0.7" />
+      </g>
+    );
+  };
+
+  // Where the front runs: it bows towards whoever is losing the sector.
+  const front = SECTORS.map((sec, i) => {
+    const us = strOf(inSec(mine, sec)), them = strOf(inSec(theirs, sec));
+    const tot = Math.max(1, us + them);
+    const bow = deploying || seen < 2 ? 0 : ((them - us) / tot) * 26;
+    return [i * colW + colW / 2, midY + bow];
+  });
+  const frontPath = `M0 ${front[0][1]} ` + front.map(([x, y], i) =>
+    (i === 0 ? `L${x} ${y}` : `Q${x - colW / 2} ${(front[i - 1][1] + y) / 2} ${x} ${y}`)).join(" ") + ` L${FIELD_W} ${front[2][1]}`;
+
+  const arrow = (fromX, fromY, toX, toY, col) => {
+    const mx = (fromX + toX) / 2, my = (fromY + toY) / 2;
+    return (
+      <g key={`${fromX}-${toX}-${col}`}>
+        <path d={`M${fromX} ${fromY}Q${mx} ${fromY} ${mx} ${my}T${toX} ${toY}`} fill="none" stroke={col} strokeWidth="2.4" strokeDasharray="5 3" opacity="0.85" />
+        <circle cx={toX} cy={toY} r="4" fill={col} stroke="#0a1015" strokeWidth="1" />
+      </g>
+    );
+  };
+
+  return (
+    <div className="cc-field">
+      <svg viewBox={`0 0 ${FIELD_W} ${FIELD_H}`} className="cc-fieldsvg" role="img"
+        aria-label="The line of battle, drawn">
+        {SECTORS.map((sec, i) => <Ground key={sec} sec={sec} i={i} />)}
+        {/* a sector that has gone, on either side */}
+        {SECTORS.map((sec, i) => (
+          <g key={sec}>
+            {myBroke[sec] && <rect x={i * colW} y={midY} width={colW} height={midY} fill="#e0644a" opacity="0.13" />}
+            {theirBroke[sec] && <rect x={i * colW} y={0} width={colW} height={midY} fill={myN.color} opacity="0.11" />}
+          </g>
+        ))}
+        {!deploying && <path d={frontPath} fill="none" stroke="#e9f1f4" strokeWidth="1.2" strokeDasharray="7 5" opacity="0.5" />}
+
+        {/* their line, along the top */}
+        {SECTORS.map((sec, i) => {
+          const them = inSec(theirs, sec);
+          const cx = i * colW + colW / 2;
+          const push = myBroke[sec] && !deploying ? 30 : 0;   // they step into the gap
+          if (seen === 2) {
+            return fieldRows(them, colW - 24).map((row, r) => row.map(({ u, x }) => (
+              <Block key={u.id} u={u} x={cx + x} y={26 + r * 28 + push} col={theirN.color} top />
+            )));
+          }
+          if (seen === 1) {
+            return them.map((u, n) => (
+              <g key={u.id} transform={`translate(${cx + (n - (them.length - 1) / 2) * 40},${34})`}>
+                <rect x="-16" y="-11" width="32" height="22" rx="3" fill="none" stroke={theirN.color} strokeWidth="1.2" strokeDasharray="3 2" />
+                <text y="4" textAnchor="middle" className="cc-fieldnum" fill={theirN.color}>?</text>
+              </g>
+            ));
+          }
+          return Array.from({ length: 5 }, (_, n) => (
+            <circle key={n} cx={cx + (n - 2) * 22 + fieldNoise(i, n) * 10} cy={30 + fieldNoise(i + 5, n) * 18}
+              r={5 + fieldNoise(i + 9, n) * 5} fill="#6f7d86" opacity="0.18" />
+          ));
+        })}
+
+        {/* your line, along the bottom */}
+        {SECTORS.map((sec, i) => {
+          const us = inSec(mine, sec);
+          const cx = i * colW + colW / 2;
+          const push = theirBroke[sec] && !deploying ? -30 : 0;
+          return fieldRows(us, colW - 24).map((row, r) => row.map(({ u, x }) => (
+            <Block key={u.id} u={u} x={cx + x} y={FIELD_H - 28 - r * 28 + push} col={myN.color}
+              dark={deploying && held && held !== u.id} />
+          )));
+        })}
+
+        {/* flanks: an arrow from the sector that has gone into the one beside it */}
+        {!deploying && SECTORS.map((sec, i) => {
+          const gr = GROUND[ground[sec]] || GROUND.open;
+          if (gr.safe) return null;
+          const cx = i * colW + colW / 2;
+          const out = [];
+          ADJACENT[sec].forEach((t) => {
+            const j = SECTORS.indexOf(t);
+            const tx = j * colW + colW / 2;
+            if (myBroke[t] && inSec(mine, sec).length) out.push(arrow(tx, midY + 30, cx + (j < i ? -colW * 0.28 : colW * 0.28), FIELD_H - 44, theirN.color));
+            if (theirBroke[t] && inSec(theirs, sec).length) out.push(arrow(tx, midY - 30, cx + (j < i ? -colW * 0.28 : colW * 0.28), 44, myN.color));
+          });
+          return out;
+        })}
+
+        {/* sector names and whose side is whose, small, at the edges */}
+        {SECTORS.map((sec, i) => (
+          <text key={sec} x={i * colW + 10} y={FIELD_H - 8} className="cc-fieldlabel" fill="#c3d5de" opacity="0.7">
+            {SECTOR_NAME[sec]}{myBroke[sec] ? " · gone" : ""}
+          </text>
+        ))}
+        <text x={FIELD_W - 10} y={16} textAnchor="end" className="cc-fieldlabel" fill={theirN.color} opacity="0.9">{seen === 0 ? "?" : theirN.short}</text>
+        <text x={FIELD_W - 10} y={FIELD_H - 8} textAnchor="end" className="cc-fieldlabel" fill={myN.color} opacity="0.9">{myN.short}</text>
+      </svg>
+    </div>
+  );
+}
+
+/* What the round was, in a few sentences, so the numbers under the field are
+   a story and not a ledger. Written from your side of the line. */
+function narrateRound(ex, b, pSide, myN, theirN) {
+  if (!ex || !ex.sectors) return [];
+  const foe = pSide === "a" ? "d" : "a";
+  const out = [];
+  const where = (rec) => rec.ground === "walls" ? "at the wall" : rec.ground === "rough" ? "on the broken ground"
+    : rec.ground === "anchored" ? "with the water on the flank" : "";
+  const secs = ex.sectors.map((rec) => ({ rec, me: rec[pSide], them: rec[foe], heat: rec[pSide].cas + rec[foe].cas }))
+    .sort((x, y) => y.heat - x.heat);
+  const top = secs[0];
+  if (top && top.heat > 0) {
+    const { rec, me, them } = top;
+    const w = where(rec);
+    const tail = w ? `, ${w}` : "";
+    if (me.volley && them.cas > me.cas) out.push(`Your volley told on the ${rec.sec}${tail}: ${them.cas} of them went down for ${me.cas} of yours.`);
+    else if (them.horse && me.cas > them.cas) out.push(`Their horse got in among your line on the ${rec.sec}${tail} — ${me.cas} down for ${them.cas}.`);
+    else if (me.horse && them.cas > me.cas) out.push(`Your horse went in on the ${rec.sec}${tail} and ${them.cas} of theirs did not get up, for ${me.cas} of yours.`);
+    else if (me.cas > them.cas * 1.5) out.push(`The ${rec.sec} went badly${tail}: ${me.cas} of yours for ${them.cas} of theirs.`);
+    else if (them.cas > me.cas * 1.5) out.push(`You had the better of the ${rec.sec}${tail}: ${them.cas} of theirs for ${me.cas}.`);
+    else out.push(`Hard fighting on the ${rec.sec}${tail} — ${me.cas} for ${them.cas}, and neither side gave.`);
+  }
+  ex.sectors.forEach((rec) => {
+    if (rec[pSide].flank) out.push(`With the ground beside it gone, your ${rec.sec} was taken in the flank.`);
+    if (rec[foe].flank) out.push(`Your men came round onto their ${rec.sec}.`);
+  });
+  const gone = [];
+  ex.sectors.forEach((rec) => {
+    rec[pSide].gone.forEach((g) => gone.push(`Your ${g.name.toLowerCase()} ${g.dead ? "were wiped out" : "broke"} on the ${rec.sec}.`));
+    rec[foe].gone.forEach((g) => gone.push(`Their ${g.name.toLowerCase()} ${g.dead ? "were wiped out" : "broke and ran"} on the ${rec.sec}.`));
+  });
+  out.push(...gone.slice(0, 2));
+  if (gone.length > 2) out.push(`${gone.length - 2} more ${gone.length - 2 === 1 ? "company" : "companies"} went with them.`);
+  if (!out.length) out.push("A quiet round. Both lines stood and looked at each other.");
+  return out.slice(0, 4);
+}
+
 function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost, onCommit, onBegin }) {
   const pSide = b.aNat === P ? "a" : b.dNat === P ? "d" : null;
   const foe = pSide === "a" ? "d" : "a";
@@ -8036,7 +8475,12 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost
         )}
 
         <div className="flex-1 overflow-y-auto thin p-4">
-          <div className="cc-line">
+          {pSide && (
+            <FieldStrip b={b} pSide={pSide} foe={foe} myN={myN} theirN={theirN} seen={seen}
+              deploying={deploying} held={held} onPlace={place}
+              myBroke={myBroke} theirBroke={theirBroke} ground={ground} />
+          )}
+          <div className="cc-line mt-3">
             {SECTORS.map((sec) => <Sector key={sec} sec={sec} />)}
           </div>
 
@@ -8085,9 +8529,10 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost
                   <div className="num cc-text-20px" style={{ color: dN.color }}>−{ex.dCas}</div>
                   <div className="cc-text-11d5px cc-text-95aab6">{dN.short} fell</div>
                 </div>
-                <div className="cc-text-12d5px cc-text-a7bac6 flex-1 min-w-0">
-                  {b.log.filter((l) => ["rout", "dead", "flank", "give", "end"].includes(l.t)).slice(-3)
-                    .map((l, i) => <div key={i} className="truncate">{l.m}</div>)}
+                <div className="cc-text-13px cc-text-c3d5de flex-1 min-w-0 leading-snug cc-narration" key={b.round}>
+                  {(pSide ? narrateRound(ex, b, pSide, myN, theirN)
+                    : b.log.filter((l) => ["rout", "dead", "flank", "give", "end"].includes(l.t)).slice(-3).map((l) => l.m))
+                    .map((line, i) => <div key={i}>{line}</div>)}
                 </div>
               </div>
             </div>
@@ -9021,6 +9466,174 @@ const NOTICE_LOOK = {
   lord:    { icon: Crown,    tone: "cc-border-8a6f36", text: "cc-text-f2c97a" },
   war:     { icon: Swords,   tone: "cc-border-8a4a38", text: "cc-text-f3b0a0" },
 };
+
+const RES_WORD = { food: "rations", scrap: "scrap", men: "recruits", fuel: "fuel", powder: "powder", metal: "metal" };
+
+/* What the season did, on one card, so you do not have to read the log to
+   find out. Income first, because it is the number that decides everything;
+   then whoever is starving; then what happened, in the order it happened. */
+function SeasonCard({ summary, onClose }) {
+  const sea = seasonOf(summary.turn);
+  const inc = summary.inc || {};
+  const sign = (n) => (n > 0 ? `+${n}` : `${n}`);
+  const tone = (n) => (n < 0 ? "cc-text-e08a6a" : n > 0 ? "cc-text-9fd6b4" : "cc-text-93a9b5");
+  return (
+    <div className="cc-seasoncard">
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="disp cc-text-15px" style={{ color: SEASON_TINT[sea.id] }}>{sea.name}</span>
+        <span className="cc-text-12px cc-text-93a9b5">of year {yearOf(summary.turn)}</span>
+        <span className="cc-text-11d5px cc-text-6f8794 ml-auto">{summary.holdings} holdings · {summary.warbands} warbands</span>
+        <button type="button" onClick={onClose} className="cc-text-93a9b5 cc-hover-text-e5eef3 ml-1" aria-label="Dismiss"><X size={14} /></button>
+      </div>
+      <div className="flex flex-wrap cc-text-12px mb-1.5" style={{ columnGap: 12, rowGap: 2 }}>
+        {[["food", "rations"], ["scrap", "scrap"], ["men", "recruits"], ["fuel", "fuel"], ["powder", "powder"]].map(([k, w]) => (
+          inc[k] !== undefined && (k === "food" || k === "scrap" || k === "men" || inc[k] !== 0) && (
+            <span key={k}><span className={`num ${tone(inc[k])}`}>{sign(inc[k])}</span> <span className="cc-text-93a9b5">{w}</span></span>
+          )
+        ))}
+        {summary.res && summary.res.food <= 0 && <span className="cc-text-e08a6a">rations are gone</span>}
+      </div>
+      {summary.starving.length > 0 && (
+        <div className="cc-text-12px cc-text-e08a6a mb-1">
+          Out of supply: {summary.starving.join(", ")}.
+        </div>
+      )}
+      {summary.lines.length > 0 ? (
+        <ul className="cc-seasonlist">
+          {summary.lines.slice(0, 7).map((m, i) => <li key={i}>{m}</li>)}
+          {summary.lines.length > 7 && <li className="cc-text-6f8794">and {summary.lines.length - 7} more in the log.</li>}
+        </ul>
+      ) : (
+        <div className="cc-text-12px cc-text-6f8794">A quiet season.</div>
+      )}
+    </div>
+  );
+}
+
+/* The first few things worth doing, and which of them are done. It folds to
+   a chip, and once everything on it is done it can be put away for good. */
+function GoalsCard({ goals, onToggle, onPutAway }) {
+  const done = goals.done || {};
+  const left = GOALS.filter((g) => !done[g.id]);
+  const n = GOALS.length - left.length;
+  if (goals.away) return null;
+  if (goals.hidden) {
+    return (
+      <button type="button" onClick={onToggle} className="cc-goalchip" title="What is worth doing next">
+        What now · <span className="num">{n}</span>/<span className="num">{GOALS.length}</span>
+      </button>
+    );
+  }
+  const current = left[0];
+  return (
+    <div className="cc-goals">
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="disp cc-text-14px cc-text-e5eef3">What now</span>
+        <span className="cc-text-11d5px cc-text-6f8794">{n} of {GOALS.length}</span>
+        <button type="button" onClick={onToggle} className="cc-text-11d5px cc-text-93a9b5 cc-hover-text-e5eef3 ml-auto">fold</button>
+      </div>
+      <div className="grid gap-1">
+        {GOALS.map((g) => {
+          const ok = !!done[g.id];
+          const now = current && current.id === g.id;
+          return (
+            <div key={g.id} className={`cc-goal ${ok ? "cc-goaldone" : ""} ${now ? "cc-goalnow" : ""}`}>
+              <div className="flex items-center gap-2">
+                <span className={`cc-goaltick ${ok ? "cc-goaltickon" : ""}`}>{ok ? "✓" : ""}</span>
+                <span className="cc-text-12d5px flex-1 min-w-0">{g.name}</span>
+              </div>
+              {now && (
+                <div className="cc-text-11d5px cc-text-a7bac6 mt-1 leading-snug" style={{ paddingLeft: 23 }}>
+                  {g.hint}
+                  {g.pay && (
+                    <span className="cc-text-9fd6b4"> {Object.entries(g.pay).map(([k, v]) => `${v} ${RES_WORD[k] || k}`).join(" and ")} when it is done.</span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {!left.length && (
+        <div className="mt-2 flex items-center gap-2">
+          <span className="cc-text-12px cc-text-9fd6b4 flex-1">You know the shape of it now.</span>
+          <button type="button" onClick={onPutAway} className="cc-formbtn">Put it away</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Every warband you have, on one sheet, so a column you have forgotten about
+   is one click from the map rather than a search of it. Enemy warbands you
+   can see are listed under yours, for the same reason. */
+function RosterPanel({ game, P, sight, atWar, onClose, onPick }) {
+  const mine = game.armies.filter((a) => a.owner === P);
+  const seen = game.armies.filter((a) => a.owner !== P && sight.has(key(a.c, a.r)));
+  const nat = game.nations[P];
+  const Row = ({ a, own }) => {
+    const str = a.units.reduce((n, u) => n + u.str, 0);
+    const at = game.provinces[key(a.c, a.r)];
+    const sup = own ? supplyOf(game.provinces, nat, P, a) : null;
+    const tone = !sup ? "" : sup.band.tone === "good" ? "cc-text-9fd6b4"
+      : sup.band.tone === "warn" ? "cc-text-e8b98a" : "cc-text-e08a6a";
+    const col = FACTION[a.owner].color;
+    const hostile = !own && atWar(P, a.owner);
+    return (
+      <button type="button" onClick={() => onPick(a)}
+        className={`cc-rosterrow ${game.sel?.armyId === a.id ? "cc-rosteron" : ""}`}>
+        <span className="cc-rosterplate" style={{ background: mix(col, "#0b1116", 0.18),
+          borderColor: own ? "#e9f1f4" : hostile ? "#ff7a5c" : "#7b8a94" }}>
+          <svg viewBox="-8 -8 16 16" width="18" height="18">
+            <g fill={lum(col) > 0.62 ? "#101a20" : "#eef3f5"} stroke="#0a1015" strokeWidth="0.5"
+               transform="scale(.95)"><WarbandGlyph kind={warbandKind(a)} /></g>
+          </svg>
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="flex items-baseline gap-2">
+            <span className="cc-text-13px truncate" style={{ color: col }}>{a.name}</span>
+            {a.lord && <Crown size={11} className="cc-text-f0e2b8 shrink-0" />}
+            <span className="num cc-text-11d5px cc-text-93a9b5 ml-auto shrink-0">{str}</span>
+          </span>
+          <span className="flex items-baseline gap-2 cc-text-11d5px cc-text-93a9b5">
+            <span className="truncate">{a.units.length} {a.units.length === 1 ? "company" : "companies"} · {at?.name || "—"}</span>
+            {own && (
+              <span className="ml-auto shrink-0 flex items-center gap-2">
+                <span className={tone}>{sup.band.name.toLowerCase()}</span>
+                <span className={`num ${a.mp > 0 ? "cc-text-8fe3d6" : "cc-text-6f8794"}`}>{a.mp}/{a.maxMp} mv</span>
+              </span>
+            )}
+            {!own && <span className="ml-auto shrink-0">{hostile ? "at war" : game.nations[a.owner]?.short || FACTION[a.owner]?.short || ""}</span>}
+          </span>
+        </span>
+      </button>
+    );
+  };
+  return (
+    <Overlay onClose={onClose}>
+      <div className="cc-w-520px cc-max-w-94vw cc-max-h-88vh rounded-lg border cc-border-31454f cc-bg-0d141a flex flex-col overflow-hidden">
+        <div className="px-5 py-3 border-b cc-border-28363f flex items-center gap-3">
+          <Swords size={17} className="cc-text-8fe3d6" />
+          <div className="disp cc-text-19px flex-1">The muster roll</div>
+          <span className="cc-text-12px cc-text-93a9b5">
+            {mine.filter((a) => a.mp > 0).length} of {mine.length} with movement left
+          </span>
+          <button onClick={onClose} className="cc-text-93a9b5 cc-hover-text-e5eef3"><X size={18} /></button>
+        </div>
+        <div className="overflow-y-auto thin p-3 grid gap-1.5">
+          {mine.map((a) => <Row key={a.id} a={a} own />)}
+          {!mine.length && <div className="cc-text-13px cc-text-93a9b5 px-2 py-3">You have no warbands in the field.</div>}
+          {seen.length > 0 && (
+            <>
+              <div className="cc-text-11d5px cc-text-8399a6 mt-3 mb-0.5 px-1 uppercase tracking-wider">In sight</div>
+              {seen.map((a) => <Row key={a.id} a={a} own={false} />)}
+            </>
+          )}
+        </div>
+      </div>
+    </Overlay>
+  );
+}
 
 function Notices({ list, onGo, onDismiss }) {
   if (!list.length) return null;
