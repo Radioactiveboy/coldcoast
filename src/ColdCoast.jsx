@@ -24,6 +24,7 @@ import { UNIT_TIERS, UNITS, UNIT_IDS } from "./data/units.js";
 import { GOALS } from "./data/goals.js";
 import { CAPTAIN_NAMES, TRAITS, BORN_TRAITS, TRAIT_CLASH, LOYALTY, HONOUR_AT, HONOUR_WORDS } from "./data/captains.js";
 import { ORIGINS, ORIGIN_IDS } from "./data/origins.js";
+import { PETITIONS, PETITION_WAIT, PETITION_CHANCE } from "./data/petitions.js";
 import { SUPPLY_MAX, SUPPLY_BANDS, bandAt, HARD_GROUND, WINTER_WASTE,
          CART_RELIEF_CAP, QUARTER_RELIEF, QUARTER_EASE } from "./data/supply.js";
 import { SETTLEMENT, WORKS, WORK_IDS } from "./data/settlement.js";
@@ -344,6 +345,9 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
   border:1px solid #4d9aa6;color:#dff3f6;background:linear-gradient(180deg,#1c4048,#132c33);
   box-shadow:0 4px 18px rgba(4,12,16,.7);transition:filter .15s,transform .15s}
 .cc-beginbtn:hover{filter:brightness(1.25);transform:translateY(-1px)}
+.cc-hallrow{position:absolute;left:12px;top:12px;z-index:22;text-align:left;width:300px;max-width:calc(100% - 24px);padding:7px 11px;border:1px solid #8a6f36;border-radius:7px;background:rgba(20,16,10,.95);transition:border-color .12s}
+.cc-hallrow:hover{border-color:#f2c97a}
+.cc-hallrow ~ .cc-goals, .cc-hallrow ~ .cc-goalchip{top:86px}
 .cc-origin{text-align:left;padding:10px 12px;border:1px solid #31454f;border-radius:7px;background:#111b22;transition:border-color .12s,background .12s}
 .cc-origin:hover{border-color:#8fe3d6;background:#152229}
 @media (min-width:700px){.cc-origins{grid-template-columns:repeat(3,1fr)}}
@@ -1102,6 +1106,114 @@ function realmCommand(nat) {
   });
   return out;
 }
+/* ------------------------------- PETITIONS --------------------------------
+   Who is at the door, what they want, and what the position lets them ask. */
+/* Applies one effect block to a draft {provinces, nations, armies, promises}.
+   Returns the armies and promises (the other two are mutated in place) and
+   any line of text the effect wrote for itself. */
+function applyPetition(d, g, eff, pt) {
+  const P = g.player;
+  const c = pt.ctx || {};
+  let armies = d.armies;
+  let promises = d.promises;
+  let result = "";
+  const pn = () => d.nations[P];
+  const bump = (res) => { d.nations[P] = { ...pn(), res: { ...pn().res, ...Object.fromEntries(Object.entries(res).map(([k, v]) => [k, Math.max(0, (pn().res[k] || 0) + v)])) } }; };
+  if (eff.res) bump(eff.res);
+  if (eff.pop && c.placeK && d.provinces[c.placeK]) {
+    const pv = d.provinces[c.placeK];
+    d.provinces[c.placeK] = { ...pv, pop: Math.max(0, (pv.pop || 0) + eff.pop) };
+  }
+  if (eff.loyalty) armies = armies.map((a) => (a.owner === P && a.captain ? { ...a, captain: loyaltyShift(a.captain, eff.loyalty) } : a));
+  if (eff.captain && c.captainId) {
+    armies = armies.map((a) => (a.owner === P && a.captain?.id === c.captainId ? { ...a, captain: loyaltyShift(a.captain, eff.captain) } : a));
+    d.nations[P] = { ...pn(), hall: (pn().hall || []).map((x) => (x.id === c.captainId ? loyaltyShift(x, eff.captain) : x)) };
+  }
+  if (eff.toHall && c.captainId) {
+    const a0 = armies.find((a) => a.owner === P && a.captain?.id === c.captainId);
+    if (a0) {
+      const led = takeCaptain({ hall: (pn().hall || []).filter((x) => x.id !== c.captainId) }, P, g.uid + 7);
+      d.nations[P] = { ...pn(), hall: [...led.hall, a0.captain] };
+      armies = armies.map((a) => (a.id === a0.id ? { ...a, captain: led.captain } : a));
+    }
+  }
+  if (eff.peace && c.rival && d.nations[c.rival]) {
+    d.nations[c.rival] = { ...d.nations[c.rival], mercy: { ...(d.nations[c.rival].mercy || {}), [P]: g.turn + (eff.peace - 8) } };
+  }
+  if (eff.grudge && c.rival && d.nations[c.rival]) {
+    d.nations[c.rival] = { ...d.nations[c.rival], grudge: { ...(d.nations[c.rival].grudge || {}), [P]: g.turn } };
+  }
+  if (eff.ransom) {
+    const held = (pn().captives || []).find((x) => x.captain.id === c.captainId) || (pn().captives || [])[0];
+    if (held) {
+      const price = ransomFor(held);
+      const rest = (pn().captives || []).filter((x) => x !== held);
+      let home = false;
+      if (eff.ransom === "full" && pn().res.scrap >= price) { bump({ scrap: -price }); home = true; }
+      else if (eff.ransom === "half" && pn().res.scrap >= Math.ceil(price / 2)) {
+        bump({ scrap: -Math.ceil(price / 2) });
+        home = Math.random() < 0.5;
+        result = home ? `They take half. ${held.captain.name} walks in a fortnight later, thinner and yours.`
+                      : `They keep the half and the captain. ${held.captain.name} is not coming home.`;
+      } else if (eff.ransom === "full") { result = `You do not have ${price} scrap. The rider leaves without an answer worth carrying.`; }
+      if (home) d.nations[P] = { ...pn(), captives: rest, hall: [...(pn().hall || []), loyaltyShift(held.captain, 10)] };
+      else if (eff.ransom !== "full" || pn().res.scrap >= price) d.nations[P] = { ...pn(), captives: rest, fallen: [...(pn().fallen || []), { captain: held.captain, turn: g.turn, at: "captivity" }] };
+    }
+  }
+  if (eff.boost && pn().research) d.nations[P] = { ...pn(), research: { ...pn().research, left: Math.max(1, pn().research.left - eff.boost) } };
+  if (eff.boostChance && pn().research) {
+    const ok = Math.random() < eff.boostChance;
+    if (ok) d.nations[P] = { ...pn(), research: { ...pn().research, left: Math.max(1, pn().research.left - 1) } };
+    result = ok ? "Twenty was enough. The book turns up under a floor." : "Twenty was not enough. The scholar does not say so, but it was not.";
+  }
+  if (eff.promise) {
+    promises = [...promises, { kind: eff.promise.kind, until: g.turn + eff.promise.turns, pay: eff.promise.pay,
+      placeK: c.placeK, herdsAt: pn().tally?.herds || 0 }];
+  }
+  return { armies, promises, result };
+}
+function petitionContext(g, P) {
+  const nat = g.nations[P];
+  const mine = Object.values(g.provinces).filter((p) => p.owner === P);
+  const seat = mine.find((p) => p.capital && p.seat === P) || mine[0];
+  const herdNear = (() => {
+    for (const h of mine) {
+      for (const p of Object.values(g.provinces)) {
+        if (p.lair === "herd" && hexDist(p.c, p.r, h.c, h.r) <= 2) return { place: h, wood: p };
+      }
+    }
+    return null;
+  })();
+  const captains = g.armies.filter((a) => a.owner === P && a.captain).map((a) => ({ c: a.captain, a }));
+  const hungryCaptain = captains.find((x) => x.c.traits.includes("hungry")) || null;
+  const sourCaptain = captains.find((x) => x.c.loyalty < 40 && x.c.fields >= 1) || null;
+  const besieging = Object.values(g.provinces).some((p) => p.siege?.by === P);
+  const rival = NATION_IDS.find((id) => id !== P && !isMinor(id) && !g.war[warKey(P, id)]
+    && !(g.nations[id]?.mercy?.[P] && g.turn - g.nations[id].mercy[P] < 8)
+    && mine.some((h) => neighbours(h.c, h.r).some(([x, y]) => g.provinces[key(x, y)]?.owner === id))) || null;
+  const captive = (nat.captives || [])[0] || null;
+  const warPair = NATION_IDS.flatMap((a) => NATION_IDS.map((b) => [a, b]))
+    .find(([a, b]) => a < b && a !== P && b !== P && g.war[warKey(a, b)]) || null;
+  const busiest = mine.filter((p) => !p.capital).sort((x, y) => (y.pop || 0) - (x.pop || 0))[0] || seat;
+  return {
+    nat, seat, herdNear, hungryCaptain, sourCaptain, besieging, rival, captive,
+    food: nat.res.food, scrap: nat.res.scrap, research: nat.research,
+    warElsewhere: warPair, place: busiest,
+  };
+}
+const ransomFor = (captive) => 40 + (captive?.captain?.fields || 0) * 10;
+function fillPetition(text, pt, g) {
+  const c = pt.ctx || {};
+  return text
+    .replace(/\{place\}/g, c.place || "")
+    .replace(/\{captain\}/g, c.captainName || "")
+    .replace(/\{rivalName\}/g, c.rivalName || "")
+    .replace(/\{rival\}/g, c.rivalShort || "")
+    .replace(/\{ransom\}/g, c.ransom ?? "")
+    .replace(/\{seat\}/g, c.seat || "")
+    .replace(/\{warNames\}/g, c.warNames || "");
+}
+
 const goalsFor = (origin) => {
   const extra = ORIGINS[origin]?.goal;
   const list = extra ? [GOALS[0], extra, ...GOALS.slice(1)] : GOALS;
@@ -2716,6 +2828,7 @@ function initialState() {
     sel: null, battle: null, log: [], recruit: null, over: null,
     showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, notices: [], focus: null, sound: { music: true, sfx: true },
     goals: { done: {}, hidden: false }, summary: null, roster: false,
+    petitions: [], promises: [], hearing: null,
   };
 }
 const baseMove = (natId) => (natId === "lyon" || natId === "horde" ? 6 : 5);
@@ -3526,6 +3639,27 @@ export default function ColdCoast() {
     armies: g.armies.map((a) => (a.owner === P ? { ...a, lord: false } : a)),
   }));
 
+  /* Answering a petition. The effect is data; this is the one place it is
+     read. Works on a draft of the state so the end of the turn can use it
+     for whatever nobody answered. */
+  function answerPetition(pid, idx) {
+    setGame((g) => {
+      const pt = (g.petitions || []).find((x) => x.id === pid);
+      const def = pt && PETITIONS.find((d) => d.id === pt.kind);
+      const opt = def?.options?.[idx];
+      if (!pt || !opt) return { ...g, hearing: null };
+      const draft = { provinces: { ...g.provinces }, nations: { ...g.nations }, armies: g.armies, promises: (g.promises || []).slice() };
+      const out = applyPetition(draft, g, opt.effect || {}, pt);
+      Sound.play("tick");
+      const line = out.result || (opt.result ? fillPetition(opt.result, pt, g) : "");
+      return {
+        ...g, provinces: draft.provinces, nations: draft.nations, armies: out.armies, promises: out.promises,
+        petitions: g.petitions.filter((x) => x.id !== pid), hearing: null,
+        log: line ? [{ turn: g.turn, m: line }, ...g.log].slice(0, 60) : g.log,
+      };
+    });
+  }
+
   /* Where you came from, chosen in the opening scene. Sets a habit on the
      realm and puts something different in the first winter. */
   function chooseOrigin(id) {
@@ -4101,6 +4235,7 @@ export default function ColdCoast() {
               if (other) {
                 if (!isMinor(other.owner) && !war[warKey(id, other.owner)]) s -= 100;
                 else if (nations[id].mercy?.[other.owner] && g.turn - nations[id].mercy[other.owner] < 8) s -= 30;
+                else if (nations[id].grudge?.[other.owner] && g.turn - nations[id].grudge[other.owner] < 8) s += 10;
                 else {
                   const mineStr = a.units.reduce((n, u) => n + u.str, 0);
                   const theirStr = other.units.reduce((n, u) => n + u.str, 0);
@@ -4679,6 +4814,59 @@ export default function ColdCoast() {
         });
       }
 
+      /* --- the hall ---
+         Whoever was waiting and never got an answer gets the answer nobody
+         gave. Then, some seasons, somebody new comes to the door. */
+      let petitions = (g.petitions || []).slice();
+      let promises = (g.promises || []).slice();
+      {
+        const expired = petitions.filter((pt) => pt.until <= g.turn);
+        petitions = petitions.filter((pt) => pt.until > g.turn);
+        expired.forEach((pt) => {
+          const def = PETITIONS.find((d) => d.id === pt.kind);
+          if (!def) return;
+          const out = applyPetition({ provinces, nations, armies, promises }, g, def.ignore || {}, pt);
+          armies = out.armies; promises = out.promises;
+          if (def.ignore?.result) newLog.push({ turn: g.turn, m: fillPetition(def.ignore.result, pt, g) });
+        });
+        // Promises kept, or not.
+        const tallyNow = nations[g.player]?.tally || {};
+        promises = promises.filter((pr) => {
+          if (pr.kind === "herd" && (tallyNow.herds || 0) > pr.herdsAt) {
+            const pv = provinces[pr.placeK];
+            if (pv) provinces[pr.placeK] = { ...pv, pop: (pv.pop || 0) + (pr.pay.pop || 0) };
+            const pn = nations[g.player];
+            nations[g.player] = { ...pn, res: { ...pn.res, food: pn.res.food + (pr.pay.food || 0) } };
+            newLog.push({ turn: g.turn, m: `The wood by ${pv?.name || "the village"} is clear, as you said it would be. ${pr.pay.pop} people come back to it, and they send ${pr.pay.food} rations to the seat.` });
+            return false;
+          }
+          if (pr.until <= g.turn) { newLog.push({ turn: g.turn, m: `${provinces[pr.placeK]?.name || "The village"} stopped waiting for you to keep your word.` }); return false; }
+          return true;
+        });
+        if (!petitions.length && !g.over) {
+          const ctx = petitionContext({ ...g, provinces, nations, armies, turn: g.turn }, g.player);
+          const open = PETITIONS.filter((d) => { try { return !!d.need(ctx); } catch { return false; } });
+          const pick = open.find((d) => d.id === "ransom") || (Math.random() < PETITION_CHANCE ? pickOne(open) : null);
+          if (pick) {
+            const c = {
+              place: ctx.herdNear?.place?.name || ctx.place?.name || ctx.seat?.name, placeK: ctx.herdNear?.place ? key(ctx.herdNear.place.c, ctx.herdNear.place.r) : ctx.place ? key(ctx.place.c, ctx.place.r) : null,
+              seat: ctx.seat?.name,
+              captainId: (pick.id === "captain_wall" ? ctx.hungryCaptain : pick.id === "captain_heard" ? ctx.sourCaptain : null)?.c.id
+                || (pick.id === "ransom" ? ctx.captive?.captain?.id : null),
+              captainName: (pick.id === "captain_wall" ? ctx.hungryCaptain?.c.name : pick.id === "captain_heard" ? ctx.sourCaptain?.c.name : pick.id === "ransom" ? ctx.captive?.captain?.name : null),
+              rival: pick.id === "ransom" ? ctx.captive?.by : ctx.rival,
+              rivalName: nations[pick.id === "ransom" ? ctx.captive?.by : ctx.rival]?.name,
+              rivalShort: nations[pick.id === "ransom" ? ctx.captive?.by : ctx.rival]?.short,
+              ransom: pick.id === "ransom" ? ransomFor(ctx.captive) : null,
+              warNames: ctx.warElsewhere ? `${nations[ctx.warElsewhere[0]]?.short}–${nations[ctx.warElsewhere[1]]?.short}` : "",
+            };
+            const pt = { id: `p${g.turn}${petitions.length}`, kind: pick.id, since: g.turn, until: g.turn + PETITION_WAIT, ctx: c };
+            petitions.push(pt);
+            notice("lord", `${fillPetition(pick.who, pt, g)} is waiting in the hall.`, null);
+          }
+        }
+      }
+
       /* --- the season, on a card ---
          Everything the log would have told you, before you go looking. */
       const summary = {
@@ -4696,7 +4884,7 @@ export default function ColdCoast() {
         log: [...newLog, ...g.log].slice(0, 60), sel: null, over,
         notices: [...notices, ...g.notices].slice(0, 6),
         battle, pending: battle ? live.slice(1) : [],
-        goals, summary,
+        goals, summary, petitions, promises,
       };
     });
   }
@@ -4729,6 +4917,7 @@ export default function ColdCoast() {
           {game.summary && (
             <SeasonCard summary={game.summary} onClose={() => setGame((g) => ({ ...g, summary: null }))} />
           )}
+          <HallRow petitions={game.petitions || []} game={game} onHear={(pid) => setGame((g) => ({ ...g, hearing: pid }))} />
           <GoalsCard goals={game.goals || { done: {}, hidden: false }} origin={game.nations[P]?.origin}
             onToggle={() => setGame((g) => ({ ...g, goals: { ...(g.goals || { done: {} }), hidden: !g.goals?.hidden } }))}
             onPutAway={() => setGame((g) => ({ ...g, goals: { ...(g.goals || { done: {} }), hidden: true, away: true } }))} />
@@ -4777,6 +4966,11 @@ export default function ColdCoast() {
       {game.lords && (
         <WarlordScreen game={game} P={P} onClose={() => setGame((g) => ({ ...g, lords: false }))}
           onSuccession={() => setGame((g) => ({ ...g, lords: false, nations: { ...g.nations, [P]: { ...g.nations[P], succession: true } } }))} />
+      )}
+      {game.hearing && (game.petitions || []).some((x) => x.id === game.hearing) && (
+        <PetitionScene pt={game.petitions.find((x) => x.id === game.hearing)} game={game}
+          onAnswer={(i) => answerPetition(game.hearing, i)}
+          onClose={() => setGame((g) => ({ ...g, hearing: null }))} />
       )}
       {game.nations[P]?.succession && game.nations[P]?.lordDead && !game.battle && (
         <SuccessionScene game={game} P={P} onChoose={succeed}
@@ -10015,6 +10209,55 @@ function GoalsCard({ goals, origin, onToggle, onPutAway }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* Somebody is waiting in the hall. One line above the goals, with how long
+   they will wait, and a button. */
+function HallRow({ petitions, game, onHear }) {
+  if (!petitions.length) return null;
+  const pt = petitions[0];
+  const def = PETITIONS.find((d) => d.id === pt.kind);
+  if (!def) return null;
+  const left = pt.until - game.turn;
+  return (
+    <button type="button" onClick={() => onHear(pt.id)} className="cc-hallrow" title="Hear them">
+      <span className="cc-text-11d5px cc-text-f2c97a cc-block">Waiting in the hall</span>
+      <span className="cc-text-12d5px cc-text-e5eef3 cc-block">{fillPetition(def.who, pt, game)}</span>
+      <span className="cc-text-11px cc-text-93a9b5 cc-block">{left <= 1 ? "will not wait past this season" : `will wait ${left} more seasons`} · hear them</span>
+    </button>
+  );
+}
+
+function PetitionScene({ pt, game, onAnswer, onClose }) {
+  const def = PETITIONS.find((d) => d.id === pt.kind);
+  if (!def) return null;
+  return (
+    <Overlay onClose={onClose}>
+      <div className="cc-w-620px cc-max-w-94vw rounded-lg border cc-border-8a6f36 cc-bg-0d141a overflow-hidden">
+        <div className="px-5 py-3.5 border-b cc-border-28363f flex items-center gap-3"
+          style={{ background: "linear-gradient(90deg,#1c1710,#0d141a)" }}>
+          <Users size={18} className="cc-text-f0e2b8" />
+          <div className="flex-1 min-w-0">
+            <div className="cc-text-11d5px cc-text-a7bac6">In the hall</div>
+            <div className="disp cc-text-19px">{fillPetition(def.who, pt, game)}</div>
+          </div>
+          <button onClick={onClose} className="cc-text-93a9b5 cc-hover-text-e5eef3"><X size={18} /></button>
+        </div>
+        <div className="p-5 grid gap-3">
+          <p className="cc-text-14px cc-text-dfeaf0 leading-relaxed">{fillPetition(def.text, pt, game)}</p>
+          <div className="grid gap-2">
+            {def.options.map((o, i) => (
+              <button key={i} type="button" onClick={() => onAnswer(i)} className="cc-origin">
+                <span className="cc-text-13d5px cc-text-e5eef3 cc-block">{fillPetition(o.label, pt, game)}</span>
+                <span className="cc-text-11d5px cc-text-93a9b5 cc-block mt-0.5">{fillPetition(o.hint, pt, game)}</span>
+              </button>
+            ))}
+          </div>
+          <div className="cc-text-11d5px cc-text-6f8794">Answer when you like. They will not wait forever.</div>
+        </div>
+      </div>
+    </Overlay>
   );
 }
 
