@@ -25,6 +25,7 @@ import { GOALS } from "./data/goals.js";
 import { CAPTAIN_NAMES, TRAITS, BORN_TRAITS, TRAIT_CLASH, LOYALTY, HONOUR_AT, HONOUR_WORDS } from "./data/captains.js";
 import { ORIGINS, ORIGIN_IDS } from "./data/origins.js";
 import { PETITIONS, PETITION_WAIT, PETITION_CHANCE } from "./data/petitions.js";
+import { STORIES } from "./data/stories.js";
 import { SUPPLY_MAX, SUPPLY_BANDS, bandAt, HARD_GROUND, WINTER_WASTE,
          CART_RELIEF_CAP, QUARTER_RELIEF, QUARTER_EASE } from "./data/supply.js";
 import { SETTLEMENT, WORKS, WORK_IDS } from "./data/settlement.js";
@@ -345,6 +346,7 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
   border:1px solid #4d9aa6;color:#dff3f6;background:linear-gradient(180deg,#1c4048,#132c33);
   box-shadow:0 4px 18px rgba(4,12,16,.7);transition:filter .15s,transform .15s}
 .cc-beginbtn:hover{filter:brightness(1.25);transform:translateY(-1px)}
+.cc-bg-4a2a26{background-color:#4a2a26}.cc-hover-bg-5a3530:hover{background-color:#5a3530}.cc-text-f3d6cc{color:#f3d6cc}
 .cc-hallrow{position:absolute;left:12px;top:12px;z-index:22;text-align:left;width:300px;max-width:calc(100% - 24px);padding:7px 11px;border:1px solid #8a6f36;border-radius:7px;background:rgba(20,16,10,.95);transition:border-color .12s}
 .cc-hallrow:hover{border-color:#f2c97a}
 .cc-hallrow ~ .cc-goals, .cc-hallrow ~ .cc-goalchip{top:86px}
@@ -1106,6 +1108,59 @@ function realmCommand(nat) {
   });
   return out;
 }
+/* -------------------------------- CHAPTERS --------------------------------
+   Every twenty-five seasons, the state of the world in a few paragraphs, in
+   the game's own voice. It gives the long game a shape, and it says what the
+   ending will have been about before it arrives. */
+function chapterOf(g, P) {
+  const n = Math.floor((g.turn - 1) / 25);
+  const counts = {};
+  NATION_IDS.forEach((id) => { counts[id] = Object.values(g.provinces).filter((p) => p.owner === id).length; });
+  const order = NATION_IDS.slice().sort((a, b) => counts[b] - counts[a]);
+  const rank = order.indexOf(P) + 1;
+  const nat = g.nations[P];
+  const short = (id) => g.nations[id]?.short || id;
+  const lines = [];
+  lines.push(`Year ${yearOf(g.turn)}. Six years and a season since the riders came in before dawn.`.replace("Six years and a season", `${n * 6} years and a season`));
+  lines.push(`${short(order[0])} holds the most ground on the coast, ${counts[order[0]]} places; ${short(order[1])} is next with ${counts[order[1]]}. You hold ${counts[P]}, which is ${rank === 1 ? "more than anyone" : rank === 2 ? "second" : `${rank}th of ${NATION_IDS.length}`}.`);
+  const atWar = NATION_IDS.filter((id) => id !== P && g.war[warKey(P, id)]).map(short);
+  lines.push(atWar.length ? `You are at war with ${atWar.join(" and ")}.` : "You are at war with nobody, which is either wisdom or luck.");
+  const dead = NATION_IDS.filter((id) => g.nations[id]?.lordDead).map((id) => WARLORDS[id]?.name || short(id));
+  const succ = NATION_IDS.filter((id) => g.nations[id]?.lord?.succeeded).map((id) => `${g.nations[id].lord.name} holds ${short(id)}`);
+  if (dead.length) lines.push(`${dead.join(" and ")} ${dead.length === 1 ? "is" : "are"} dead and unreplaced.`);
+  if (succ.length) lines.push(succ.join("; ") + ".");
+  const t = nat?.tally || {};
+  const named = g.armies.filter((a) => a.owner === P).flatMap((a) => a.units.filter((u) => u.honour)).map((u) => u.honour.name);
+  const fallen = (nat?.fallen || []).map((f) => f.captain.name);
+  lines.push(`${t.fields || 0} fields won, ${t.walls || 0} ${t.walls === 1 ? "wall" : "walls"} taken, ${t.herds || 0} ${t.herds === 1 ? "wood" : "woods"} cleared.${named.length ? ` ${named.join(" and ")} carry names.` : ""}${fallen.length ? ` ${fallen.join(", ")} ${fallen.length === 1 ? "did" : "did"} not come home.` : ""}`);
+  const stories = Object.keys(STORIES).filter((k) => g.provinces[k]?.story?.done).map((k) => STORIES[k].title);
+  if (stories.length) lines.push(`${stories.join(", ")}: ${stories.length === 1 ? "a place with a story, and yours" : "places with stories, and yours"}.`);
+  lines.push(rank === 1 ? "Nobody on the coast can say they do not know your name." : rank <= 3 ? "The coast knows your name. It has not decided what it thinks of it." : "The coast has not noticed you yet. That is not the same as safe.");
+  return { n, turn: g.turn, lines };
+}
+
+/* -------------------------------- STORIES ---------------------------------
+   Whether the next step of a place's story can be taken, and what it wants
+   if not. */
+const storyOf = (pv) => pv.story || (pv.explored ? { step: 0, stood: 0, fresh: true } : null);
+function storyNeed(g, P, pr, step) {
+  const n = step.need || {};
+  const here = g.armies.find((a) => a.owner === P && a.c === pr.c && a.r === pr.r);
+  if (n.seasons) {
+    const stood = pr.story?.stood || 0;
+    return { ok: false, auto: true, text: `A warband must stand here: ${stood} of ${n.seasons} ${n.seasons === 1 ? "season" : "seasons"}${here ? "" : " — nobody is here"}.` };
+  }
+  if (n.unit) {
+    const has = here && here.units.some((u) => u.type === n.unit && u.str > 0);
+    return { ok: !!has, text: has ? "" : `Needs ${UNITS[n.unit]?.name || n.unit} standing here.` };
+  }
+  if (n.scrap) return { ok: g.nations[P].res.scrap >= n.scrap, text: `${n.scrap} scrap${g.nations[P].res.scrap >= n.scrap ? "" : " — you have " + g.nations[P].res.scrap}.` };
+  if (n.food) return { ok: g.nations[P].res.food >= n.food, text: `${n.food} rations.` };
+  if (n.tech) return { ok: !!g.nations[P].known?.[n.tech], text: g.nations[P].known?.[n.tech] ? "" : `Needs the advance: ${TECHS[n.tech]?.name || n.tech}.` };
+  if (n.hold) return { ok: pr.owner === P, text: pr.owner === P ? "" : "You must hold this ground. Claim it first." };
+  return { ok: true, text: "" };
+}
+
 /* ------------------------------- PETITIONS --------------------------------
    Who is at the door, what they want, and what the position lets them ask. */
 /* Applies one effect block to a draft {provinces, nations, armies, promises}.
@@ -1249,8 +1304,9 @@ function techState(state, natId, id) {
   if (n.res.scrap < t.scrap) return { s: "poor", why: `Needs ${t.scrap} scrap.` };
   return { s: "open" };
 }
-const researchTurns = (natId, t, nat) => Math.max(1, Math.ceil(
-  t.turns * (natId === "alpine" ? 0.7 : 1) * lordMul(natId, nat).research));
+const researchTurns = (natId, t, nat, provinces) => Math.max(1, Math.ceil(
+  t.turns * (natId === "alpine" ? 0.7 : 1) * lordMul(natId, nat).research
+  * (provinces && Object.values(provinces).some((p) => p.owner === natId && FEATURES[p.feature]?.research) ? 0.85 : 1)));
 
 // Every gate on kit and buildings resolves through this.
 // Buildings still gate on advances; companies use their own `needs` field.
@@ -1350,6 +1406,29 @@ const FEATURES = {
   boneyard: { name: "Boneyard",          yield: { scrap: 1 },            desc: "Machines died here in numbers." },
   quarry:   { name: "The Red-Ruth workings", yield: { scrap: 5, fuel: 3, powder: 1 },
               desc: "Deep shafts, standing smelters and pumps that still turn. The best industry left on the island." },
+  /* What a place's story leaves behind. These do more than yield: `sight`
+     carries your sight further, `def` is a wall, `move` makes the hex a
+     road, `supply` and `carry` pull the supply line in for whoever stands
+     here, `research` is a library. */
+  weirworks:  { name: "The worked weir",     yield: { food: 3, scrap: 1 },  desc: "Traps below the gate, a mudflat full of the past above it." },
+  breakers:   { name: "Breaking yard",       yield: { scrap: 3, metal: 1 }, desc: "Hulls come apart here, from above, where nobody dies." },
+  lighthouse: { name: "The light",           yield: {}, sight: 2,           desc: "A lamp on a clockwork, set to your pattern. This coast is seen." },
+  crag:       { name: "The Crag",            yield: { powder: 1 }, def: 20, sight: 1, desc: "A fortress on black rock. The north can see your banner on it." },
+  foundry:    { name: "Foundry",             yield: { scrap: 2, metal: 2 }, desc: "The furnace is lined and lit." },
+  magazine:   { name: "Magazine",            yield: { powder: 2 },          desc: "Dry adits under the slag. Nothing in them burns." },
+  library:    { name: "The Minster library", yield: {}, research: 0.85,     desc: "Books carried down when the water came. Every advance comes a season sooner." },
+  pumps:      { name: "The Pit pumps",       yield: { fuel: 3 },            desc: "Six hundred feet down, and still turning." },
+  works:      { name: "The Heap works",      yield: { scrap: 5 },           desc: "A drop hammer under a roof, and thirty feet of city to feed it." },
+  granary:    { name: "The Fen granary",     yield: { food: 5 },            desc: "The best farmland on the coast, drained and under the plough." },
+  causeway:   { name: "Canal roads",         yield: { scrap: 1 }, move: 1, supply: 1, desc: "Forty-foot roads in every direction, and a gate across the main one." },
+  armoury:    { name: "The Vault armoury",   yield: { powder: 2, metal: 1 }, desc: "What they did not take, six levels down." },
+  hall:       { name: "The hull-hall",       yield: { men: 3, scrap: 1 },   desc: "Ninety metres of dry hall with the ribs showing." },
+  bridge:     { name: "The Sill",            yield: {}, move: 1, supply: 1, desc: "Sixteen kilometres of bridge over a valley that was a strait. The line runs across it." },
+  bastion:    { name: "The Cleft bastion",   yield: { men: 1 }, def: 20,    desc: "A wall at the bottom, a town at the top, and the funicular between." },
+  bowyers:    { name: "The Reef bowyers",    yield: { men: 2 },             desc: "The best bowyers left. Hunters raised here shoot better." },
+  dock:       { name: "The Ram dock",        yield: { scrap: 2, food: 2 }, def: 10, desc: "A dry dock with its gates hung: a fortress with a floor." },
+  market:     { name: "The Bar market",      yield: { scrap: 2, food: 2 }, sight: 1, desc: "Everyone comes. Everyone leaves owing you, and telling you things." },
+  wainwrights:{ name: "The Keel wainwrights", yield: { scrap: 1 }, carry: 2, desc: "Shipwrights with no sea, building the best carts on the coast." },
 };
 
 // on: terrains this encounter suits. null means anywhere.
@@ -1651,8 +1730,16 @@ function seenSet(provinces, armies, natId) {
   };
   Object.values(provinces).forEach((p) => { if (p.owner === natId) add(p.c, p.r); });
   armies.forEach((a) => { if (a.owner === natId) add(a.c, a.r); });
+  // A light, a crag, a market: places that see further than a step.
+  const far = Object.values(provinces).filter((p) => p.owner === natId && FEATURES[p.feature]?.sight);
+  if (far.length) Object.values(provinces).forEach((q) => {
+    if (far.some((p) => hexDist(p.c, p.r, q.c, q.r) <= 1 + FEATURES[p.feature].sight)) seen.add(key(q.c, q.r));
+  });
   return seen;
 }
+
+// What a hex costs to enter: the ground, unless something built on it is a road.
+const moveCost = (p) => Math.min(TERRAIN[p.t].move, FEATURES[p.feature]?.move ?? 99);
 
 const SEASON_TINT = { spring: "#9fd6a8", summer: "#e8d089", autumn: "#d09a6a", winter: "#9fc8dd" };
 
@@ -2124,12 +2211,15 @@ function supplyRelief(army, nat) {
     n + (u.str > 0 ? (UNITS[u.type]?.carry || 0) : 0), 0));
   const road = nat?.known?.quartering ? QUARTER_RELIEF : 0;
   const captain = captainMods(army).relief + realmCommand(nat).relief;
-  return { carts, road, captain, total: carts + road + captain };
+  const here = supplyRelief.provinces?.[key(army.c, army.r)];
+  const place = here && here.owner === army.owner ? (FEATURES[here.feature]?.supply || 0) + (FEATURES[here.feature]?.carry || 0) : 0;
+  return { carts, road, captain, place, total: carts + road + captain + place };
 }
 
 /* Where a warband actually stands: how far the line really is, how far it
    feels after the carts, and what that band costs. */
 function supplyOf(provinces, nat, natId, army) {
+  supplyRelief.provinces = provinces;
   const raw = supplyDist(provinces, natId, army.c, army.r);
   const relief = supplyRelief(army, nat);
   const d = Math.max(0, raw - relief.total);
@@ -2298,7 +2388,7 @@ function moveInfo(game, army, prov, P, atWar) {
   if (army.c === prov.c && army.r === prov.r) return { here: true };
   const adj = neighbours(army.c, army.r).some(([x, y]) => x === prov.c && y === prov.r);
   if (!adj) return { ok: false, why: "Not next to your warband." };
-  const cost = TERRAIN[prov.t].move;
+  const cost = moveCost(prov);
   const other = game.armies.find((a) => a.c === prov.c && a.r === prov.r && a.owner !== P);
   if (other && !atWar(P, other.owner))
     return { ok: false, cost, why: `${game.nations[other.owner].short} stands there. Declare war first.` };
@@ -2676,6 +2766,12 @@ function spoilsText(bag) {
   return `Taken from them: ${parts.length ? `${parts.join(", ")} and ${last}` : last}.`;
 }
 
+/* A battle that is a garrison coming out through its own breach. */
+const withSally = (b, k, provinces) => ({
+  ...b, sally: k, ground: { left: "rough", centre: "rough", right: "rough" },
+  provName: `the breach at ${provinces[k]?.name || "the wall"}`,
+});
+
 /* The warlord, if they ride with the warband, and the captain, always. */
 function fieldCommand(army, storming, nat) {
   const lord = army.lord ? commandMul(army.owner) : { dealt: 1, taken: 1, morale: 1 };
@@ -2694,7 +2790,8 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
   const defender = armies.find((a) => a.id === dId);
   const prov = provinces[k];
   if (!attacker || !defender || !prov) return null;
-  const works = doneBuilds(prov).reduce((n, b) => n + (buildStep(b)?.def || 0), 0);
+  const works = doneBuilds(prov).reduce((n, b) => n + (buildStep(b)?.def || 0), 0)
+    + (FEATURES[prov.feature]?.def || 0);
   // A place under siege by this attacker is stormed, not met in the open.
   const storming = prov.siege && prov.siege.by === attacker.owner && isWalled(prov);
   const ground = storming ? stormGround(prov)
@@ -2828,7 +2925,7 @@ function initialState() {
     sel: null, battle: null, log: [], recruit: null, over: null,
     showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, notices: [], focus: null, sound: { music: true, sfx: true },
     goals: { done: {}, hidden: false }, summary: null, roster: false,
-    petitions: [], promises: [], hearing: null,
+    petitions: [], promises: [], hearing: null, chapter: null,
   };
 }
 const baseMove = (natId) => (natId === "lyon" || natId === "horde" ? 6 : 5);
@@ -3065,7 +3162,7 @@ export default function ColdCoast() {
   }
 
   function attemptMove(army, target) {
-    const cost = TERRAIN[target.t].move;
+    const cost = moveCost(target);
     if (army.mp < cost) { push("That warband is out of movement for this turn."); return; }
     const enemyArmy = game.armies.find(
       (a) => a.c === target.c && a.r === target.r && a.owner !== P && atWar(P, a.owner)
@@ -3122,11 +3219,29 @@ export default function ColdCoast() {
     });
   }
 
-  function startBattle(attacker, defender, prov) {
+  function startBattle(attacker, defender, prov, extra) {
     setGame((g) => ({
       ...g,
-      battle: makeBattle(g.provinces, g.nations, g.armies, attacker.id, defender.id, key(prov.c, prov.r)),
+      battle: { ...makeBattle(g.provinces, g.nations, g.armies, attacker.id, defender.id, key(prov.c, prov.r)), ...(extra || {}) },
     }));
+  }
+
+  /* Out through the breach. A garrison with a hole in its own wall can go at
+     the besiegers on the broken ground in front of it; win and the siege is
+     broken, lose and they come back in through the same hole. */
+  function sally(k) {
+    setGame((g) => {
+      const pr = g.provinces[k];
+      if (!pr || pr.owner !== P || !pr.siege || breachCount(pr) < 1) return g;
+      const garrison = g.armies.find((a) => a.owner === P && a.c === pr.c && a.r === pr.r && a.units.length);
+      const foe = g.armies.find((a) => a.owner === pr.siege.by && a.units.length && hexDist(a.c, a.r, pr.c, pr.r) === 1);
+      if (!garrison || !foe) return g;
+      Sound.play("charge");
+      return { ...g, battle: {
+        ...makeBattle(g.provinces, g.nations, g.armies, garrison.id, foe.id, key(foe.c, foe.r)),
+        sally: k, ground: { left: "rough", centre: "rough", right: "rough" }, provName: `the breach at ${pr.name}`,
+      } };
+    });
   }
 
   function stepBattle(playerStance) {
@@ -3367,7 +3482,15 @@ export default function ColdCoast() {
         });
 
       let msg = "";
-      if (b.winner === "a" && !b.stalemate) {
+      if (b.sally) {
+        const tp = provinces[b.sally];
+        if (b.winner === "a" && !b.stalemate && tp) {
+          provinces[b.sally] = { ...tp, siege: null };
+          msg = `The garrison of ${tp.name} comes out through the breach and breaks the siege.`;
+        } else {
+          msg = `The sally from ${tp?.name || "the wall"} is thrown back into the breach.`;
+        }
+      } else if (b.winner === "a" && !b.stalemate) {
         const loser = armies.find((a) => a.id === b.dArmy);
         const attacker = armies.find((a) => a.id === b.aArmy);
         if (!loser && attacker) {
@@ -3410,7 +3533,7 @@ export default function ColdCoast() {
       for (let i = 0; i < queue.length; i++) {
         const q = queue[i];
         const built = makeBattle(provinces, nations, armies, q.aId, q.dId, q.k);
-        if (built) { next = built; rest = queue.slice(i + 1); break; }
+        if (built) { next = q.sally ? withSally(built, q.sally, provinces) : built; rest = queue.slice(i + 1); break; }
       }
 
       const chased = rode
@@ -3453,7 +3576,7 @@ export default function ColdCoast() {
       return {
         ...g,
         nations: { ...g.nations, [P]: { ...n, res: { ...n.res, scrap: n.res.scrap - t.scrap },
-          research: { id, left: researchTurns(P, t, n) } } },
+          research: { id, left: researchTurns(P, t, n, g.provinces) } } },
         log: [{ turn: g.turn, m: `The scholars turn to ${t.name.toLowerCase()}.` }, ...g.log].slice(0, 60),
       };
     });
@@ -3777,6 +3900,7 @@ export default function ColdCoast() {
           log: [{ turn: g.turn, m: `${pr.name} is occupied — ${kind.title.toLowerCase()}.` }, ...g.log].slice(0, 60),
         };
       }
+      if (STORIES[k]) return { ...g, survey: { k, story: true, armyId: army.id, result: null } };
       return { ...g, survey: { k, encId: pickEncounter(pr.t).id, armyId: army.id, result: null } };
     });
   }
@@ -3785,6 +3909,18 @@ export default function ColdCoast() {
     setGame((g) => {
       const sv = g.survey;
       if (!sv || sv.result) return g;
+      if (sv.story) {
+        const st = STORIES[sv.k];
+        const pr = g.provinces[sv.k];
+        Sound.play("found");
+        return {
+          ...g,
+          provinces: { ...g.provinces, [sv.k]: { ...pr, explored: true, story: { step: 0, stood: 0 } } },
+          armies: g.armies.map((a) => (a.id === sv.armyId ? { ...a, mp: Math.max(0, a.mp - 1) } : a)),
+          survey: { ...sv, result: { text: st.steps[0].text, story: true } },
+          log: [{ turn: g.turn, m: `${pr.name}: ${st.intro.split(". ")[0]}.` }, ...g.log].slice(0, 60),
+        };
+      }
       const enc = ENCOUNTERS.find((e) => e.id === sv.encId);
       const out = rollOutcome(enc.choices[idx]);
       Sound.play(out.hurt ? "hurt" : out.feature ? "found" : "tick");
@@ -3807,6 +3943,45 @@ export default function ColdCoast() {
         log: [{ turn: g.turn, m: `${pr.name} surveyed: ${enc.title.toLowerCase()}.` }, ...g.log].slice(0, 60),
       };
     });
+  }
+
+  /* A step in a place's story, taken from the panel once the need is met.
+     Seasons standing there are counted at the turn of the season instead. */
+  function advanceStory(k) {
+    setGame((g) => {
+      const pr0 = g.provinces[k];
+      const st = STORIES[k];
+      const so = pr0 && storyOf(pr0);
+      if (!pr0 || !st || !so || so.done) return g;
+      const pr = { ...pr0, story: { step: so.step, stood: so.stood } };
+      const step = st.steps[so.step];
+      const met = storyNeed(g, P, pr, step);
+      if (!met.ok) return g;
+      const nations = { ...g.nations };
+      const res = { ...nations[P].res };
+      if (step.need.scrap) res.scrap -= step.need.scrap;
+      if (step.need.food) res.food -= step.need.food;
+      nations[P] = { ...nations[P], res };
+      Sound.play(step.need.unit ? "clash" : "found");
+      return storyStepDone({ ...g, nations, provinces: { ...g.provinces, [k]: pr } }, k, step);
+    });
+  }
+  function storyStepDone(g, k, step) {
+    const pr = g.provinces[k];
+    const st = STORIES[k];
+    const next = pr.story.step + 1;
+    const finished = next >= st.steps.length;
+    const provinces = { ...g.provinces, [k]: {
+      ...pr, story: { step: finished ? pr.story.step : next, stood: 0, done: finished },
+      feature: finished ? st.reward.feature : pr.feature,
+    } };
+    const log = [{ turn: g.turn, m: `${pr.name}: ${step.done}` }];
+    if (finished) log.unshift({ turn: g.turn, m: `${st.title} — ${st.reward.text}` });
+    return {
+      ...g, provinces,
+      log: [...log, ...g.log].slice(0, 60),
+      notices: finished ? [{ id: `n${g.turn}st`, kind: "built", text: `${st.title}: ${st.reward.text}`, k }, ...g.notices].slice(0, 6) : g.notices,
+    };
   }
 
   /* Sitting down in front of a walled place. Nothing about it is fast: it pays
@@ -4216,7 +4391,7 @@ export default function ColdCoast() {
             const opts = neighbours(a.c, a.r)
               .map(([x, y]) => provinces[key(x, y)])
               .filter(Boolean)
-              .filter((p) => TERRAIN[p.t].move <= mp);
+              .filter((p) => moveCost(p) <= mp);
             if (!opts.length) break;
             const score = (p) => {
               let s = 0;
@@ -4240,6 +4415,9 @@ export default function ColdCoast() {
                   const mineStr = a.units.reduce((n, u) => n + u.str, 0);
                   const theirStr = other.units.reduce((n, u) => n + u.str, 0);
                   s += mineStr > theirStr * 1.25 ? 12 : -40;
+                  // Relief: they are sitting in front of one of ours.
+                  if (Object.values(provinces).some((q) => q.owner === id && q.siege?.by === other.owner
+                      && hexDist(q.c, q.r, other.c, other.r) === 1)) s += 45;
                 }
               }
               s += TERRAIN[p.t].food + TERRAIN[p.t].scrap;
@@ -4271,7 +4449,7 @@ export default function ColdCoast() {
               mp = 0;
               break;
             }
-            mp -= TERRAIN[best.t].move;
+            mp -= moveCost(best);
             a.c = best.c; a.r = best.r;
             a.route.push([best.c, best.r]);
             if (best.owner === null) {
@@ -4332,7 +4510,7 @@ export default function ColdCoast() {
         let mp = a.maxMp || 3, guard = 0;
         while (mp > 0 && guard++ < 4 && hexDist(a.c, a.r, tgt.c, tgt.r) > 0) {
           const step = neighbours(a.c, a.r).map(([x, y]) => provinces[key(x, y)]).filter(Boolean)
-            .filter((q) => TERRAIN[q.t].move <= mp)
+            .filter((q) => moveCost(q) <= mp)
             .sort((x, y) => hexDist(x.c, x.r, tgt.c, tgt.r) - hexDist(y.c, y.r, tgt.c, tgt.r))[0];
           if (!step || hexDist(step.c, step.r, tgt.c, tgt.r) >= hexDist(a.c, a.r, tgt.c, tgt.r)) break;
           const held = armies.find((z) => z.c === step.c && z.r === step.r && z.owner !== a.owner && z.units.length);
@@ -4342,7 +4520,7 @@ export default function ColdCoast() {
             mp = 0;
             break;
           }
-          mp -= TERRAIN[step.t].move;
+          mp -= moveCost(step);
           a.c = step.c; a.r = step.r;
           a.route.push([step.c, step.r]);
         }
@@ -4431,6 +4609,17 @@ export default function ColdCoast() {
         // Sitting still in the mud costs the besieger rations.
         const bn = nations[sg.by];
         if (bn) nations[sg.by] = { ...bn, res: { ...bn.res, food: Math.max(0, bn.res.food - SIEGE.upkeep) } };
+        // A garrison with a breach in its wall and the numbers to use it does
+        // not wait to be stormed.
+        if (pv.owner !== g.player && sg.by === g.player && now >= 1 && Math.random() < 0.5) {
+          const garrison = armies.find((a) => a.owner === pv.owner && a.c === pv.c && a.r === pv.r && a.units.length);
+          const besieger = armies.find((a) => a.owner === g.player && a.units.length && hexDist(a.c, a.r, pv.c, pv.r) === 1);
+          const strOfA = (a) => a.units.reduce((n, u) => n + u.str, 0);
+          if (garrison && besieger && strOfA(garrison) >= strOfA(besieger) * 1.3) {
+            pending.push({ aId: garrison.id, dId: besieger.id, k: key(besieger.c, besieger.r), sally: k2 });
+            notice("raid", `The garrison of ${pv.name} is coming out through the breach at you.`, k2);
+          }
+        }
         if (now > was) {
           const where = BREACH_ORDER[now - 1];
           if (sg.by === g.player) {
@@ -4475,7 +4664,7 @@ export default function ColdCoast() {
           a.route = [[a.c, a.r]];
           while (mp > 0 && guard++ < 5) {
             const opts = neighbours(a.c, a.r).map(([x, y]) => provinces[key(x, y)]).filter(Boolean)
-              .filter((q) => TERRAIN[q.t].move <= mp);
+              .filter((q) => moveCost(q) <= mp);
             if (!opts.length) break;
             const score = (q) => {
               const k = key(q.c, q.r);
@@ -4491,7 +4680,7 @@ export default function ColdCoast() {
             opts.sort((x, y) => score(y) - score(x));
             const best = opts[0];
             if (armies.some((z) => z.c === best.c && z.r === best.r && z.owner !== "wasters")) break;
-            mp -= TERRAIN[best.t].move;
+            mp -= moveCost(best);
             a.c = best.c; a.r = best.r;
             a.recent.push(key(best.c, best.r));
             a.route.push([best.c, best.r]);
@@ -4700,7 +4889,26 @@ export default function ColdCoast() {
           });
         }
         res.men = Math.min(res.men, 900 + seatCap(provinces, id));
-        nations[id] = { ...nations[id], res };
+        /* Three seasons with nothing in the stores and the holding furthest
+           from the seat stops waiting to be fed and goes its own way. It is
+           the post-Collapse: they will walk. */
+        const hungry = res.food <= 0 ? (nations[id].hungry || 0) + 1 : 0;
+        nations[id] = { ...nations[id], res, hungry };
+        if (hungry >= 3) {
+          const seat = Object.values(provinces).find((p) => p.capital && p.seat === id);
+          const held = Object.values(provinces).filter((p) => p.owner === id && !p.capital);
+          const far = (seat ? held.sort((x, y) => hexDist(y.c, y.r, seat.c, seat.r) - hexDist(x.c, x.r, seat.c, seat.r)) : held)[0];
+          if (far) {
+            const fk = key(far.c, far.r);
+            changeOwner(fk, null);
+            provinces[fk] = { ...far, owner: null, feature: far.feature || "holdfast", siege: null };
+            nations[id] = { ...nations[id], hungry: 0 };
+            if (id === g.player) {
+              newLog.push({ turn: g.turn, m: `${far.name} has gone its own way. Three seasons with nothing in the stores, and they stopped waiting.` });
+              notice("loss", `${far.name} is no longer yours. Nobody fed them, so they fed themselves.`, fk);
+            }
+          }
+        }
       });
 
       /* --- supply ---
@@ -4785,8 +4993,9 @@ export default function ColdCoast() {
       // below refers to both bindings.)
       const live = pending.filter((q) =>
         armies.some((a) => a.id === q.aId) && armies.some((a) => a.id === q.dId));
-      const battle = live.length
+      const built0 = live.length
         ? makeBattle(provinces, nations, armies, live[0].aId, live[0].dId, live[0].k) : null;
+      const battle = built0 && live[0].sally ? withSally(built0, live[0].sally, provinces) : built0;
       if (battle) {
         newLog.unshift({ turn: g.turn, m: `${nations[battle.aNat].short} falls on your warband at ${battle.provName}.` });
       }
@@ -4813,6 +5022,47 @@ export default function ColdCoast() {
           notice("lord", `${goal.name}: done. ${goal.teaches}`, null);
         });
       }
+
+      /* --- refugees ---
+         A war between two rivals sends people out of it, and they go to
+         whoever is nearest. Free hands with mouths on them. */
+      {
+        const pairs = NATION_IDS.flatMap((a) => NATION_IDS.map((b2) => [a, b2]))
+          .filter(([a, b2]) => a < b2 && a !== g.player && b2 !== g.player && war[warKey(a, b2)]);
+        if (pairs.length && Math.random() < 0.25) {
+          const [a, b2] = pickOne(pairs);
+          const fronts = Object.values(provinces).filter((p) => p.owner === a || p.owner === b2);
+          const mine = Object.values(provinces).filter((p) => p.owner === g.player);
+          let best = null, bd = 99;
+          mine.forEach((p) => fronts.forEach((q) => { const d = hexDist(p.c, p.r, q.c, q.r); if (d < bd) { bd = d; best = p; } }));
+          if (best && bd <= 6) {
+            const bk = key(best.c, best.r);
+            provinces[bk] = { ...best, pop: (best.pop || 0) + 25 };
+            newLog.push({ turn: g.turn, m: `Families out of the ${nations[a].short}–${nations[b2].short} war have come to ${best.name}. Twenty-five more mouths, and hands.` });
+          }
+        }
+      }
+
+      /* --- the places with stories ---
+         A step that wants seasons is counted here, for every place a warband
+         of yours has stood on since the last count. */
+      Object.values(provinces).forEach((pv0) => {
+        const st = STORIES[key(pv0.c, pv0.r)];
+        const so = st && storyOf(pv0);
+        if (!st || !so || so.done) return;
+        const pv = { ...pv0, story: { step: so.step, stood: so.stood } };
+        const step = st.steps[so.step];
+        if (!step?.need?.seasons) return;
+        if (!armies.some((a) => a.owner === g.player && a.c === pv.c && a.r === pv.r)) return;
+        const stood = (so.stood || 0) + 1;
+        if (stood < step.need.seasons) { provinces[key(pv.c, pv.r)] = { ...pv, story: { ...pv.story, stood } }; return; }
+        const k2 = key(pv.c, pv.r);
+        provinces[k2] = pv;
+        const out = storyStepDone({ ...g, provinces, log: [], notices: [] }, k2, step);
+        provinces[k2] = out.provinces[k2];
+        out.log.forEach((l) => newLog.push(l));
+        out.notices.forEach((n) => notices.push(n));
+      });
 
       /* --- the hall ---
          Whoever was waiting and never got an answer gets the answer nobody
@@ -4885,6 +5135,7 @@ export default function ColdCoast() {
         notices: [...notices, ...g.notices].slice(0, 6),
         battle, pending: battle ? live.slice(1) : [],
         goals, summary, petitions, promises,
+        chapter: (g.turn + 1) % 25 === 1 && g.turn + 1 > 1 ? chapterOf({ ...g, provinces, nations, armies, war, turn: g.turn + 1 }, g.player) : g.chapter,
       };
     });
   }
@@ -4934,7 +5185,7 @@ export default function ColdCoast() {
             onBuild={build} onRecruitOpen={(k) => setGame((g) => ({ ...g, recruit: k }))}
             onWar={toggleWar} onDeselect={deselect}
             onInvestigate={investigate} onClaim={claim} onMarch={march}
-            onInvest={invest} onLift={liftSiege}
+            onInvest={invest} onLift={liftSiege} onStory={advanceStory} onSally={sally}
             onSeat={(k) => setGame((g) => ({ ...g, seat: k }))} onResearch={research}
             onOpenTree={() => setGame((g) => ({ ...g, tree: true }))} onRepair={repair}
             onDistrict={(k) => setGame((g) => ({ ...g, district: k }))}
@@ -4966,6 +5217,9 @@ export default function ColdCoast() {
       {game.lords && (
         <WarlordScreen game={game} P={P} onClose={() => setGame((g) => ({ ...g, lords: false }))}
           onSuccession={() => setGame((g) => ({ ...g, lords: false, nations: { ...g.nations, [P]: { ...g.nations[P], succession: true } } }))} />
+      )}
+      {game.chapter && !game.battle && (
+        <ChapterScene chapter={game.chapter} onClose={() => setGame((g) => ({ ...g, chapter: null }))} />
       )}
       {game.hearing && (game.petitions || []).some((x) => x.id === game.hearing) && (
         <PetitionScene pt={game.petitions.find((x) => x.id === game.hearing)} game={game}
@@ -6314,6 +6568,8 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
         woods: woods.length,
         herds: woods.filter((p) => p.lair === "herd").length,
         mobs: game.armies.filter((a) => a.mob).length,
+        storyLairs: Object.keys(STORIES).filter((k) => game.provinces[k]?.lair),
+        stories: Object.keys(STORIES).map((k) => `${k}:${game.provinces[k]?.story ? game.provinces[k].story.step : "-"}${game.provinces[k]?.feature || ""}`),
       };
     };
   }, []);
@@ -6612,7 +6868,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
   if (selArmy && selArmy.owner === P && selArmy.mp > 0) {
     neighbours(selArmy.c, selArmy.r).forEach(([c, r]) => {
       const p = game.provinces[key(c, r)];
-      if (p && TERRAIN[p.t].move <= selArmy.mp) targets.add(key(c, r));
+      if (p && moveCost(p) <= selArmy.mp) targets.add(key(c, r));
     });
   }
   const seat = Object.values(game.provinces).find((p) => p.capital && p.seat === P);
@@ -6806,7 +7062,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
 }
 
 /* -------------------------------- SIDEBAR --------------------------------- */
-function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift }) {
+function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift, onStory, onSally }) {
   const [tab, setTab] = useState("here");
   // Only the two that are about what is in front of you. The realm-wide
   // screens moved to the top bar; six tabs did not fit this column.
@@ -6830,7 +7086,7 @@ function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecr
             onBuild={onBuild} onRecruitOpen={onRecruitOpen} onDisband={onDisband}
             onDeselect={onDeselect} onInvestigate={onInvestigate} onClaim={onClaim}
             onMarch={onMarch} atWar={atWar} onSeat={onSeat} onRepair={onRepair} onDistrict={onDistrict}
-            onInvest={onInvest} onLift={onLift}
+            onInvest={onInvest} onLift={onLift} onStory={onStory} onSally={onSally}
             onTake={onTake} onMerge={onMerge} onReinforce={onReinforce} onCommand={onCommand}
             onInvestPop={onInvestPop} onRename={onRename} onSplit={onSplit} />
         )}
@@ -7039,7 +7295,7 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair })
   );
 }
 
-function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift }) {
+function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift, onStory, onSally }) {
   if (!selProv) return (
     <div className="cc-text-13d5px cc-text-93a9b5 leading-relaxed">
       <p className="mb-3">Pick a hex to see what it grows and what it hides.</p>
@@ -7198,6 +7454,54 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
         <Row label="Costs to enter" value={`${terr.move} move`} />
       </Section>
 
+      {selProv.explored && STORIES[key(selProv.c, selProv.r)] && storyOf(selProv) && !storyOf(selProv).done
+        && (!selProv.owner || selProv.owner === P) && (() => {
+        const st = STORIES[key(selProv.c, selProv.r)];
+        const so = storyOf(selProv);
+        const step = st.steps[so.step];
+        const met = storyNeed(game, P, { ...selProv, story: so }, step);
+        return (
+          <Section title={`${st.title} · ${so.step + 1} of ${st.steps.length}`}>
+            {so.fresh && <div className="cc-text-12d5px cc-text-a7bac6 leading-relaxed mb-2">{st.intro}</div>}
+            <div className="cc-text-13px cc-text-dfeaf0 leading-relaxed">{step.text}</div>
+            {met.auto ? (
+              <div className="cc-text-12px cc-text-e8b98a mt-2">{met.text}</div>
+            ) : (
+              <>
+                {!met.ok && <div className="cc-text-12px cc-text-e8b98a mt-2">{met.text}</div>}
+                <button type="button" disabled={!met.ok} onClick={() => onStory(key(selProv.c, selProv.r))}
+                  className={`w-full mt-2 py-2 rounded disp cc-text-14px border transition-colors ${met.ok
+                    ? "cc-bg-2a3a4a cc-hover-bg-35495c cc-border-4d7488 cc-text-dfeaf0" : "cc-border-25313a cc-text-78909e"}`}>
+                  {step.action}
+                </button>
+              </>
+            )}
+            <div className="cc-text-11d5px cc-text-6f8794 mt-2">When it is done: {st.reward.text}</div>
+          </Section>
+        );
+      })()}
+
+      {selProv.owner === P && selProv.siege && (() => {
+        const k = key(selProv.c, selProv.r);
+        const br = breachCount(selProv);
+        const garrison = game.armies.find((a) => a.owner === P && a.c === selProv.c && a.r === selProv.r && a.units.length);
+        const foe = game.armies.find((a) => a.owner === selProv.siege.by && a.units.length && hexDist(a.c, a.r, selProv.c, selProv.r) === 1);
+        const can = br >= 1 && garrison && foe;
+        return (
+          <Section title={`Under siege — ${FACTION[selProv.siege.by]?.short || "somebody"}, ${selProv.siege.seasons} ${selProv.siege.seasons === 1 ? "season" : "seasons"}`}>
+            <div className="cc-text-13px cc-text-c6d6de leading-relaxed mb-2">
+              It pays you nothing while they sit there, its people are going hungry and the garrison is thinning.
+              {br === 0 ? " The wall is whole; there is no way out but over it." : ` ${br} ${br === 1 ? "breach is" : "breaches are"} open — which is a way in for them, and a way out for you.`}
+            </div>
+            <button type="button" disabled={!can} onClick={() => onSally(k)}
+              className={`w-full py-2.5 rounded disp cc-text-14d5px border transition-colors ${can
+                ? "cc-bg-4a2a26 cc-hover-bg-5a3530 cc-border-8a4a38 cc-text-f3d6cc" : "cc-border-25313a cc-text-78909e"}`}>
+              {can ? "Sally out through the breach" : !garrison ? "No garrison to sally with" : br === 0 ? "No breach to sally through" : "Nobody outside to sally at"}
+            </button>
+          </Section>
+        );
+      })()}
+
       {selProv.owner && selProv.feature && (
         <Section title="On the ground">
           <div className="cc-text-13d5px cc-text-f2c97a">{FEATURES[selProv.feature].name}</div>
@@ -7208,6 +7512,9 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
                 +{v} {RES_META.find((r) => r.k === k)?.label.toLowerCase() || k}
               </span>
             ))}
+            {(() => { const f = FEATURES[selProv.feature]; const chip = (t) => <span key={t} className="cc-text-11d5px rounded px-1.5 py-0.5 border cc-border-8a6f36 cc-text-f2c97a">{t}</span>;
+              return [f.sight && chip(`sees ${f.sight} further`), f.def && chip(`defenders +${f.def}%`), f.move && chip("a road: costs 1 to enter"),
+                f.supply && chip("carries the line a hex"), f.carry && chip(`carries the line ${f.carry} hexes`), f.research && chip("advances a season sooner")].filter(Boolean); })()}
           </div>
         </Section>
       )}
@@ -10040,7 +10347,9 @@ function LairModal({ lair, prov, onClose }) {
 }
 
 function SurveyModal({ sv, prov, onChoose, onClose }) {
-  const enc = ENCOUNTERS.find((e) => e.id === sv.encId);
+  const st = sv.story ? STORIES[sv.k] : null;
+  const enc = st ? { title: st.title, text: st.intro, choices: [{ label: st.steps[0].action || "Go in", hint: "This place has a story. It starts here." }] }
+    : ENCOUNTERS.find((e) => e.id === sv.encId);
   const res = sv.result;
   const gains = res ? Object.entries(res.res || {}).filter(([, v]) => v !== 0) : [];
   return (
@@ -10209,6 +10518,32 @@ function GoalsCard({ goals, origin, onToggle, onPutAway }) {
         </div>
       )}
     </div>
+  );
+}
+
+function ChapterScene({ chapter, onClose }) {
+  return (
+    <Overlay onClose={onClose}>
+      <div className="cc-w-620px cc-max-w-94vw rounded-lg border cc-border-31454f cc-bg-0d141a overflow-hidden">
+        <div className="px-5 py-3.5 border-b cc-border-28363f flex items-center gap-3"
+          style={{ background: "linear-gradient(90deg,#14202a,#0d141a)" }}>
+          <Flag size={18} className="cc-text-8fe3d6" />
+          <div className="flex-1">
+            <div className="cc-text-11d5px cc-text-a7bac6">Chapter {chapter.n}</div>
+            <div className="disp cc-text-20px">The state of the coast</div>
+          </div>
+        </div>
+        <div className="p-5 cc-text-14px leading-relaxed cc-text-dfeaf0 grid gap-2.5">
+          {chapter.lines.map((l, i) => <p key={i} className={i === chapter.lines.length - 1 ? "cc-text-f2c97a" : ""}>{l}</p>)}
+        </div>
+        <div className="px-5 pb-5">
+          <button type="button" onClick={onClose}
+            className="w-full py-2.5 rounded cc-bg-2a3a4a cc-hover-bg-35495c border cc-border-4d7488 cc-text-dfeaf0 disp cc-text-15px transition-colors">
+            Read on
+          </button>
+        </div>
+      </div>
+    </Overlay>
   );
 }
 
