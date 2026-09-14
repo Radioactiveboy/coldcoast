@@ -22,6 +22,7 @@ import { SECTORS, SECTOR_NAME, ADJACENT, POSTURES, POSTURE_IDS, GROUND, groundFo
   from "./data/battle.js";
 import { UNIT_TIERS, UNITS, UNIT_IDS } from "./data/units.js";
 import { GOALS } from "./data/goals.js";
+import { CAPTAIN_NAMES, TRAITS, BORN_TRAITS, TRAIT_CLASH, LOYALTY, HONOUR_AT, HONOUR_WORDS } from "./data/captains.js";
 import { SUPPLY_MAX, SUPPLY_BANDS, bandAt, HARD_GROUND, WINTER_WASTE,
          CART_RELIEF_CAP, QUARTER_RELIEF, QUARTER_EASE } from "./data/supply.js";
 import { SETTLEMENT, WORKS, WORK_IDS } from "./data/settlement.js";
@@ -342,6 +343,10 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
   border:1px solid #4d9aa6;color:#dff3f6;background:linear-gradient(180deg,#1c4048,#132c33);
   box-shadow:0 4px 18px rgba(4,12,16,.7);transition:filter .15s,transform .15s}
 .cc-beginbtn:hover{filter:brightness(1.25);transform:translateY(-1px)}
+.cc-loyal{height:4px;border-radius:2px;background:#26333c;overflow:hidden}
+.cc-loyal>span{display:block;height:100%}
+.cc-loyalgood{background:#9fd6b4}.cc-loyalwarn{background:#e8b98a}.cc-loyalbad{background:#e08a6a}
+.cc-honour{color:#f0e2b8}
 .cc-endidle{background:#2a3a2c;border-color:#5a6b3a;color:#e5eef3}
 .cc-endidle:hover{background:#34482f}
 .cc-text-11px{font-size:11px}
@@ -1013,11 +1018,66 @@ function makeUnit(typeId, owner, idSeed, wg, ag) {
     id: `u${idSeed}`, type: typeId, owner, wg: wg || "bone", ag: ag || "hide",
     str: d.size, max: d.size,
     morale: d.moraleBase, maxMorale: d.moraleBase,
-    xp: 0,
+    xp: 0, fields: 0,
   };
 }
 const unitName = (u) => (UNITS[u.type] || UNITS.spearmen).name;
+// What a company is called: its honour if it has earned one, its type if not.
+const unitLabel = (u) => (u.honour ? u.honour.name : unitName(u));
 const unitKit = (u) => `${wGrade(u.wg).name} · ${aGrade(u.ag).name}`;
+
+/* ------------------------------- CAPTAINS ---------------------------------
+   Somebody leads every warband. See data/captains.js for what the habits do;
+   this is how one is made, how their habits reach the warband, and how the
+   number that says whether they are still yours moves. */
+const pickOne = (list) => list[Math.floor(Math.random() * list.length)];
+function makeCaptain(natId, seed) {
+  const pool = CAPTAIN_NAMES[natId] || CAPTAIN_NAMES.any;
+  const name = `${pickOne(pool.first)} ${pickOne(pool.by)}`;
+  const traits = [];
+  let guard = 0;
+  while (traits.length < 2 && guard++ < 20) {
+    const t = pickOne(BORN_TRAITS);
+    if (traits.includes(t)) continue;
+    if (TRAIT_CLASH.some(([a, b]) => (a === t && traits.includes(b)) || (b === t && traits.includes(a)))) continue;
+    traits.push(t);
+  }
+  const [lo, hi] = LOYALTY.start;
+  return { id: `c${seed}`, name, traits, loyalty: lo + Math.floor(Math.random() * (hi - lo + 1)),
+           fields: 0, wins: 0, storms: 0 };
+}
+/* A new warband takes a captain who is waiting in the hall before a stranger
+   is found for it. Returns the captain and the hall without them. */
+function takeCaptain(nat, natId, seed) {
+  const hall = nat?.hall || [];
+  if (hall.length) return { captain: hall[0], hall: hall.slice(1) };
+  return { captain: makeCaptain(natId, seed), hall };
+}
+const NO_CAPTAIN = { dealt: 1, taken: 1, morale: 1, storm: 1, ranged: 1, flank: 1, waste: 1, draw: 1,
+                     scout: 0, relief: 0, loyalGain: 1, slight: 1 };
+function captainMods(army) {
+  const c = army?.captain;
+  if (!c) return NO_CAPTAIN;
+  const out = { ...NO_CAPTAIN };
+  c.traits.forEach((id) => {
+    const t = TRAITS[id];
+    if (!t) return;
+    ["dealt", "taken", "morale", "storm", "ranged", "flank", "waste", "draw", "loyalGain", "slight"]
+      .forEach((k) => { if (t[k]) out[k] *= t[k]; });
+    if (t.scout) out.scout += t.scout;
+    if (t.relief) out.relief += t.relief;
+  });
+  return out;
+}
+const withTrait = (c, id) => (c.traits.includes(id) ? c : { ...c, traits: [...c.traits, id] });
+const withoutTrait = (c, id) => ({ ...c, traits: c.traits.filter((t) => t !== id) });
+function loyaltyShift(c, delta) {
+  const m = captainMods({ captain: c });
+  const d = delta > 0 ? delta * m.loyalGain : delta;
+  return { ...c, loyalty: Math.max(0, Math.min(100, Math.round(c.loyalty + d))) };
+}
+const loyaltyWord = (n) => (n >= 75 ? "devoted" : n >= 50 ? "loyal" : n >= LOYALTY.mutter ? "uneasy" : "muttering");
+const captainSurname = (c) => c.name.split(" ").slice(1).join(" ") || c.name;
 
 
 function hasSite(state, natId, t) {
@@ -1920,7 +1980,8 @@ function supplyRelief(army, nat) {
   const carts = Math.min(CART_RELIEF_CAP, army.units.reduce((n, u) =>
     n + (u.str > 0 ? (UNITS[u.type]?.carry || 0) : 0), 0));
   const road = nat?.known?.quartering ? QUARTER_RELIEF : 0;
-  return { carts, road, total: carts + road };
+  const captain = captainMods(army).relief;
+  return { carts, road, captain, total: carts + road + captain };
 }
 
 /* Where a warband actually stands: how far the line really is, how far it
@@ -1929,7 +1990,7 @@ function supplyOf(provinces, nat, natId, army) {
   const raw = supplyDist(provinces, natId, army.c, army.r);
   const relief = supplyRelief(army, nat);
   const d = Math.max(0, raw - relief.total);
-  return { raw, relief, d, band: bandAt(d) };
+  return { raw, relief, d, band: bandAt(d), cap: captainMods(army) };
 }
 
 /* Distance in hexes, through the cube coordinates an odd-r grid is really
@@ -2177,7 +2238,8 @@ function nationIncome(state, natId, turn) {
      because everything it eats has to be dragged there. */
   const keep = (ed.upkeep || 1) * lord.upkeep;
   state.armies.filter((a) => a.owner === natId).forEach((a) => {
-    const draw = supplyOf(state.provinces, state.nations?.[natId], natId, a).band.draw;
+    const sup = supplyOf(state.provinces, state.nations?.[natId], natId, a);
+    const draw = sup.band.draw * (sup.band.d > 0 ? sup.cap.draw : 1);
     a.units.forEach((u) => {
       const st = unitStats(u);
       let f = st.food;
@@ -2204,8 +2266,8 @@ function nationIncome(state, natId, turn) {
 
    0 — nothing at all      1 — how many stand in each sector
    2 — what they are, and how many                                        */
-const scoutLevel = (units) => {
-  const eyes = units.reduce((n, u) => n + (u.str > 0 ? unitStats(u).scout : 0), 0);
+const scoutLevel = (units, extra = 0) => {
+  const eyes = units.reduce((n, u) => n + (u.str > 0 ? unitStats(u).scout : 0), 0) + extra;
   return eyes >= 3 ? 2 : eyes >= 1 ? 1 : 0;
 };
 
@@ -2343,8 +2405,8 @@ function resolveRound(bt) {
     const D = sidePower(dU, dS, dHas);
     const gr = GROUND[ground[sec]] || GROUND.open;
 
-    let aOut = (A.ranged * (aS.ranged || 1) + A.melee * (aS.melee || 1)) * aS.deal * aL.dealt;
-    let dOut = (D.ranged * (dS.ranged || 1) + D.melee * (dS.melee || 1)) * dS.deal * dL.dealt;
+    let aOut = (A.ranged * (aS.ranged || 1) * (aL.ranged || 1) + A.melee * (aS.melee || 1)) * aS.deal * aL.dealt;
+    let dOut = (D.ranged * (dS.ranged || 1) * (dL.ranged || 1) + D.melee * (dS.melee || 1)) * dS.deal * dL.dealt;
 
     // Horse is worth what the ground lets it be worth.
     if (A.cavStr > 0 && D.antiCav < D.strSum * 0.3) aOut *= 1 + 0.25 * gr.horse;
@@ -2360,8 +2422,8 @@ function resolveRound(bt) {
     // the attacker is the one exposed here, so the defender hits harder.
     const aFlank = flanksOn(aBroke, ground, sec);
     const dFlank = flanksOn(dBroke, ground, sec);
-    if (dFlank) { aOut *= 1 + FLANK_DEAL * dFlank; notes.push({ flanked: "d", sec, n: dFlank }); }
-    if (aFlank) { dOut *= 1 + FLANK_DEAL * aFlank; notes.push({ flanked: "a", sec, n: aFlank }); }
+    if (dFlank) { aOut *= 1 + FLANK_DEAL * dFlank * (aL.flank || 1); notes.push({ flanked: "d", sec, n: dFlank }); }
+    if (aFlank) { dOut *= 1 + FLANK_DEAL * aFlank * (dL.flank || 1); notes.push({ flanked: "a", sec, n: aFlank }); }
     const aHorse = A.cavStr > 0 && D.antiCav < D.strSum * 0.3;
     const dHorse = D.cavStr > 0 && A.antiCav < A.strSum * 0.3;
 
@@ -2470,6 +2532,18 @@ function spoilsText(bag) {
   return `Taken from them: ${parts.length ? `${parts.join(", ")} and ${last}` : last}.`;
 }
 
+/* The warlord, if they ride with the warband, and the captain, always. */
+function fieldCommand(army, storming) {
+  const lord = army.lord ? commandMul(army.owner) : { dealt: 1, taken: 1, morale: 1 };
+  const cap = captainMods(army);
+  return {
+    dealt: lord.dealt * cap.dealt * (storming ? cap.storm : 1),
+    taken: lord.taken * cap.taken,
+    morale: lord.morale * cap.morale,
+    flank: cap.flank, ranged: cap.ranged,
+  };
+}
+
 function makeBattle(provinces, nations, armies, aId, dId, k) {
   const attacker = armies.find((a) => a.id === aId);
   const defender = armies.find((a) => a.id === dId);
@@ -2505,9 +2579,10 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
     dPowder: nations[defender.owner].res.powder,
     aStance: "press", dStance: "hold",
     terrainDef, defenderBonus,
-    aLord: attacker.lord ? commandMul(attacker.owner) : { dealt: 1, taken: 1, morale: 1 },
-    dLord: defender.lord ? commandMul(defender.owner) : { dealt: 1, taken: 1, morale: 1 },
+    aLord: fieldCommand(attacker, !!storming),
+    dLord: fieldCommand(defender, false),
     aCommander: !!attacker.lord, dCommander: !!defender.lord,
+    aScout: captainMods(attacker).scout, dScout: captainMods(defender).scout,
     log: [{
       t: "open",
       m: storming
@@ -2541,12 +2616,14 @@ function initialState() {
       id: `a${id}`, owner: id, c: cap[0], r: cap[1],
       name: `${NATIONS[id].short} Field Host`,
       units, mp: baseMove(id), maxMp: baseMove(id),
+      captain: makeCaptain(id, uid++),
     });
     armies.push({
       id: `b${id}`, owner: id, c: cap[0], r: cap[1],
       name: `${NATIONS[id].short} Outrider Column`,
       units: [makeUnit("hunters", id, uid++)],
       mp: baseMove(id), maxMp: baseMove(id),
+      captain: makeCaptain(id, uid++),
     });
   });
   /* Every realm opens with a Waster host three days' march away and every
@@ -2954,39 +3031,71 @@ export default function ColdCoast() {
     });
   }
 
-  function closeBattle() {
+  function closeBattle(choice) {
     setGame((g) => {
       const b = g.battle;
       if (!b) return { ...g, battle: null };
       let armies = [...g.armies];
       const nations = { ...g.nations };
       const provinces = { ...g.provinces };
+      const pSideB = b.aNat === g.player ? "a" : b.dNat === g.player ? "d" : null;
+      const foeSide = pSideB === "a" ? "d" : "a";
 
       /* Pursuit. A broken company is running, not fighting, and horse is what
          catches it — this is what turns a win into a settled question instead
          of the same enemy standing in front of you next season. Without a
          single rider you catch almost nobody. */
+      /* What you chose to do with the field once it was yours. Ride them down
+         and the horse catches more, and is spent for a season. Take captives
+         and the caught are yours to muster, at a price in rations. Let them
+         go and nobody is caught — and the rival remembers it. */
       const chase = (side) => {
         if (!b.winner || b.winner === side || b.stalemate) return 0;
         const win = b[b.winner].units;
         const str = win.reduce((n, u) => n + u.str, 0) || 1;
         const horse = win.filter((u) => unitStats(u).cav).reduce((n, u) => n + u.str, 0);
-        return Math.min(0.8, 0.1 + (horse / str) * 1.5);
+        let c = Math.min(0.8, 0.1 + (horse / str) * 1.5);
+        if (pSideB && side === foeSide) {
+          if (choice === "ride") c = Math.min(0.95, c * 1.6 + 0.1);
+          if (choice === "spare") c = 0;
+        }
+        return c;
       };
       const caught = { a: chase("a"), d: chase("d") };
       const ridDown = { a: 0, d: 0 };
+      const caughtStr = { a: 0, d: 0 };
       const survivors = (side) => {
         const ran = b[side].routed.filter((u) => u.str > 0).filter((u) => {
-          if (Math.random() < caught[side]) { ridDown[side] += 1; return false; }
+          if (Math.random() < caught[side]) { ridDown[side] += 1; caughtStr[side] += u.str; return false; }
           return true;
         });
         return [...b[side].units, ...ran]
-          .map((u) => ({ ...u, morale: Math.max(20, u.maxMorale * 0.7), xp: Math.min(3, u.xp + (b.winner === side ? 1 : 0)) }));
+          .map((u) => ({ ...u, morale: Math.max(20, u.maxMorale * 0.7),
+                         xp: Math.min(3, u.xp + (b.winner === side ? 1 : 0)),
+                         fields: (u.fields || 0) + 1 }));
       };
 
       const aUnits = survivors("a");
       const dUnits = survivors("d");
       const rode = ridDown.a + ridDown.d;
+      let afterMsg = "";
+      if (pSideB && b.winner === pSideB && !b.stalemate) {
+        const loserNat = pSideB === "a" ? b.dNat : b.aNat;
+        if (choice === "captives" && caughtStr[foeSide] > 0) {
+          const men = Math.round(caughtStr[foeSide] * 0.3);
+          const res = { ...nations[g.player].res };
+          res.men += men; res.food = Math.max(0, res.food - Math.round(men / 4));
+          nations[g.player] = { ...nations[g.player], res };
+          afterMsg = ` ${men} of the caught are put on your muster roll, and eat while they are.`;
+        } else if (choice === "spare" && !isMinor(loserNat)) {
+          nations[loserNat] = { ...nations[loserNat], mercy: { ...(nations[loserNat].mercy || {}), [g.player]: g.turn } };
+          afterMsg = ` You let them go. ${nations[loserNat].short} will remember it.`;
+        } else if (choice === "ride") {
+          const mine = pSideB === "a" ? b.aArmy : b.dArmy;
+          armies = armies.map((a) => (a.id === mine ? { ...a, tired: true } : a));
+          afterMsg = " The horse is spent for a season.";
+        }
+      }
 
       // powder spent
       nations[b.aNat] = { ...nations[b.aNat], res: { ...nations[b.aNat].res, powder: Math.max(0, b.aPowder) } };
@@ -3012,7 +3121,6 @@ export default function ColdCoast() {
 
       /* Things the position cannot show after the fact — a cleared wood is
          just an empty wood — are tallied on the realm for the goals to read. */
-      const pSideB = b.aNat === g.player ? "a" : b.dNat === g.player ? "d" : null;
       if (pSideB && b.winner === pSideB && !b.stalemate) {
         const loserId = pSideB === "a" ? b.dArmy : b.aArmy;
         const loser = g.armies.find((a) => a.id === loserId);
@@ -3029,6 +3137,71 @@ export default function ColdCoast() {
         if (a.id === b.dArmy) return { ...a, units: dUnits };
         return a;
       }).filter((a) => a.units.length > 0);
+
+      /* The captain, and the companies, remember the field. */
+      const people = [];
+      if (pSideB) {
+        const myId = pSideB === "a" ? b.aArmy : b.dArmy;
+        const before = g.armies.find((a) => a.id === myId);
+        const after = armies.find((a) => a.id === myId);
+        const won = b.winner === pSideB && !b.stalemate;
+        const foeNat = pSideB === "a" ? b.dNat : b.aNat;
+        if (before?.captain) {
+          let c = { ...before.captain, fields: before.captain.fields + 1 };
+          if (won) {
+            c = loyaltyShift({ ...c, wins: c.wins + 1 }, LOYALTY.win);
+            c = withoutTrait(c, "shaken");
+            if (b.storming && pSideB === "a" && !c.traits.includes("wallbreaker")) {
+              c = withTrait({ ...c, storms: c.storms + 1 }, "wallbreaker");
+              people.push(`${c.name} went up the breach first. Wallbreaker, they call them now.`);
+            }
+            if (b.log.some((l) => l.t === "flank" && l.s === foeSide) && !c.traits.includes("cunning") && Math.random() < 0.6) {
+              c = withTrait(c, "cunning");
+              people.push(`${c.name} saw their line come apart and has been looking for the seam ever since.`);
+            }
+          } else {
+            c = loyaltyShift(c, LOYALTY.loss);
+            if (!c.traits.includes("cautious") && !c.traits.includes("shaken") && Math.random() < 0.5) {
+              c = withTrait(c, "shaken");
+              people.push(`${c.name} is shaken. A win will take it away.`);
+            }
+          }
+          if (c.fields >= 5 && !c.traits.includes("veteran")) {
+            c = withTrait(c, "veteran");
+            people.push(`${c.name} has stood in five lines now. A veteran.`);
+          }
+          if (after) {
+            /* Honours: a company that has survived five fields takes a name
+               from the last of them, and its captain is prouder for it. */
+            const named = [];
+            const units = after.units.map((u) => {
+              if (u.honour || (u.fields || 0) < HONOUR_AT) return u;
+              const word = HONOUR_WORDS[u.type] || "Company";
+              const name = `the ${b.provName} ${word}`;
+              named.push(name);
+              return { ...u, honour: { name, turn: g.turn, at: b.provName } };
+            });
+            named.forEach((n) => { c = loyaltyShift(c, LOYALTY.honour); });
+            if (named.length) people.push(`${named.join(" and ")} — five fields, and a name for it.`);
+            // A named company lost is felt.
+            const lost = (before.units || []).filter((u) => u.honour && !units.some((v) => v.id === u.id));
+            lost.forEach((u) => { c = loyaltyShift(c, LOYALTY.lostHonour); people.push(`${u.honour.name} are gone.`); });
+            armies = armies.map((a) => (a.id === myId ? { ...a, units, captain: c } : a));
+          } else {
+            /* Annihilated under them. A rival takes them for ransom; anyone
+               else does not take prisoners. */
+            const pn = nations[g.player];
+            if (!isMinor(foeNat) && foeNat !== "beasts" && foeNat !== "wasters") {
+              c = loyaltyShift(c, LOYALTY.broken);
+              nations[g.player] = { ...pn, captives: [...(pn.captives || []), { captain: c, by: foeNat, turn: g.turn }] };
+              people.push(`${c.name} is taken by ${nations[foeNat].short}. They will want something for them.`);
+            } else {
+              nations[g.player] = { ...pn, fallen: [...(pn.fallen || []), { captain: c, turn: g.turn, at: b.provName }] };
+              people.push(`${c.name} falls at ${b.provName} with the last of ${before.name}.`);
+            }
+          }
+        }
+      }
 
       let msgLord = "";
       // If the warband carrying a warlord is broken, the warlord may fall with it.
@@ -3096,7 +3269,8 @@ export default function ColdCoast() {
       const chased = rode
         ? ` ${rode} broken ${rode === 1 ? "company is" : "companies are"} ridden down in the pursuit.`
         : "";
-      const entries = [{ turn: g.turn, m: msg + chased + spoilMsg }];
+      const entries = [{ turn: g.turn, m: msg + chased + afterMsg + spoilMsg }];
+      people.forEach((m) => entries.push({ turn: g.turn, m }));
       if (msgLord) { entries.unshift({ turn: g.turn, m: msgLord }); if (b.aNat === g.player || b.dNat === g.player) Sound.play("lose"); }
       return {
         ...g, armies, nations, provinces, battle: next, sel: null, pending: rest,
@@ -3286,14 +3460,21 @@ export default function ColdCoast() {
       if (from.c !== to.c || from.r !== to.r) return g;
       if (from.units.length + to.units.length > bandCap(g.nations[P])) return g;
       Sound.play("march");
+      // Whoever has stood in more lines keeps the command; the other waits in
+      // the hall for the next warband raised.
+      const rank = (c) => (c ? c.fields * 3 + c.loyalty / 10 : -1);
+      const senior = rank(to.captain) >= rank(from.captain) ? to.captain : from.captain;
+      const junior = senior === to.captain ? from.captain : to.captain;
+      const hall = junior ? [...(g.nations[P].hall || []), junior] : (g.nations[P].hall || []);
       return {
         ...g,
+        nations: { ...g.nations, [P]: { ...g.nations[P], hall } },
         armies: g.armies
           .map((a) => (a.id === toId
-            ? { ...a, units: [...a.units, ...from.units], mp: Math.min(a.mp, from.mp) } : a))
+            ? { ...a, units: [...a.units, ...from.units], mp: Math.min(a.mp, from.mp), captain: senior } : a))
           .filter((a) => a.id !== fromId),
         sel: { armyId: toId, k: key(to.c, to.r) },
-        log: [{ turn: g.turn, m: `${from.name} folds into ${to.name}.` }, ...g.log].slice(0, 60),
+        log: [{ turn: g.turn, m: `${from.name} folds into ${to.name}${junior && senior ? `; ${captainSurname(senior)} keeps the command` : ""}.` }, ...g.log].slice(0, 60),
       };
     });
   }
@@ -3455,15 +3636,17 @@ export default function ColdCoast() {
       if (!unit) return g;
       const n = g.armies.filter((a) => a.owner === P).length + 1;
       Sound.play("tick");
+      const led = takeCaptain(g.nations[P], P, g.uid + 1);
       return {
         ...g,
-        uid: g.uid + 1,
+        uid: g.uid + 2,
+        nations: { ...g.nations, [P]: { ...g.nations[P], hall: led.hall } },
         armies: [
           ...g.armies.map((a) => (a.id === armyId
             ? { ...a, units: a.units.filter((u) => u.id !== unitId) } : a)),
           { id: `s${g.uid}x`, owner: P, c: src.c, r: src.r,
             name: `${NATIONS[P].short} Warband ${n}`,
-            units: [unit], mp: src.mp, maxMp: src.maxMp ?? baseMove(P) },
+            units: [unit], mp: src.mp, maxMp: src.maxMp ?? baseMove(P), captain: led.captain },
         ],
         sel: { armyId: `s${g.uid}x`, k: key(src.c, src.r) },
         log: [{ turn: g.turn, m: `${unitName(unit)} march out of ${src.name} on their own.` }, ...g.log].slice(0, 60),
@@ -3559,10 +3742,12 @@ export default function ColdCoast() {
       if (here && here.units.length < bandCap(n0)) {
         armies = armies.map((a) => (a.id === here.id ? { ...a, units: [...a.units, u] } : a));
       } else {
+        const led = takeCaptain(nations[P], P, uid++);
+        nations[P] = { ...nations[P], hall: led.hall };
         armies.push({
           id: `a${uid}x`, owner: P, c: p.c, r: p.r,
           name: `${NATIONS[P].short} Warband ${armies.filter((a) => a.owner === P).length + 1}`,
-          units: [u], mp: 0, maxMp: baseMove(P),
+          units: [u], mp: 0, maxMp: baseMove(P), captain: led.captain,
         });
       }
       return { ...g, nations, armies, provinces, uid, recruit: null, log: [{ turn: g.turn, m: `${UNITS[type].name} mustered at ${p.name} — ${popCost} of its people go with them.` }, ...g.log].slice(0, 60) };
@@ -3799,6 +3984,7 @@ export default function ColdCoast() {
               else s += 1;
               if (other) {
                 if (!isMinor(other.owner) && !war[warKey(id, other.owner)]) s -= 100;
+                else if (nations[id].mercy?.[other.owner] && g.turn - nations[id].mercy[other.owner] < 8) s -= 30;
                 else {
                   const mineStr = a.units.reduce((n, u) => n + u.str, 0);
                   const theirStr = other.units.reduce((n, u) => n + u.str, 0);
@@ -4277,15 +4463,31 @@ export default function ColdCoast() {
         const sup = supplyOf(provinces, nat, a.owner, a);
         const ease = nat?.known?.quartering ? QUARTER_EASE : 1;
         const hard = HARD_GROUND[provinces[key(a.c, a.r)]?.t] || 1;
-        const waste = sup.band.waste * hard * cold * ease;
+        const waste = sup.band.waste * hard * cold * ease * sup.cap.waste;
         const shake = Math.round(sup.band.morale * ease);
         if (a.owner === g.player && sup.d >= 3) starving.push(a.name);
+        /* The captain remembers the season. Fed, they think a little better of
+           you; hungry, a good deal worse — and one who loses men to it counts
+           every sack from then on. */
+        let captain = a.captain;
+        if (captain && a.owner === g.player) {
+          const was = captain.loyalty;
+          captain = loyaltyShift(captain, sup.d >= 3 ? LOYALTY.starve : LOYALTY.fed);
+          if (waste > 0 && !captain.traits.includes("careful") && Math.random() < 0.5) {
+            captain = withTrait(captain, "careful");
+            newLog.push({ turn: g.turn, m: `${captain.name} has buried enough of the column to start counting sacks. Careful with rations, from now on.` });
+          }
+          if (was >= LOYALTY.mutter && captain.loyalty < LOYALTY.mutter) {
+            notice("lord", `${captain.name} is muttering. ${a.name} will not stay yours on an empty stomach.`, key(a.c, a.r));
+          }
+        }
         if (a.owner === g.player && sup.d >= 3 && (a.supply || 0) < 3) {
           notice("raid", `${a.name} is ${sup.band.name.toLowerCase()} — ${sup.raw} hexes from anything you hold. They are losing men every season out there.`, key(a.c, a.r));
         }
         return {
           ...a,
-          supply: sup.d,
+          supply: sup.d, captain,
+          tired: false,
           units: a.units.filter((u) => u.str > 0).map((u) => ({
             ...u,
             str: waste ? Math.max(0, u.str - Math.ceil(u.max * waste)) : u.str,
@@ -4294,10 +4496,21 @@ export default function ColdCoast() {
             morale: Math.max(0, shake ? u.morale - shake : Math.min(u.maxMorale, u.morale + 12)),
           })),
           mp: Math.max(1, a.maxMp + ((EDICTS[nations[a.owner]?.edict || "none"] || EDICTS.none).move || 0)
-            + lordMul(a.owner, nations[a.owner]).move + seasonOf(g.turn + 1).move - cartDrag(a)),
+            + lordMul(a.owner, nations[a.owner]).move + seasonOf(g.turn + 1).move - cartDrag(a)
+            - (a.tired ? 1 : 0)),
         };
       }).map((a) => ({ ...a, units: a.units.filter((u) => u.str > 0) }))
         .filter((a) => a.units.length > 0);
+
+      /* A captain at nothing walks, and takes the warband with them. It goes
+         to the Wasters: nobody's people, now, holding whatever it is standing
+         on. There is no getting it back except the usual way. */
+      armies = armies.map((a) => {
+        if (a.owner !== g.player || !a.captain || a.captain.loyalty > 0) return a;
+        notice("loss", `${a.captain.name} has walked, and taken ${a.name} with them. They are Wasters now.`, key(a.c, a.r));
+        newLog.push({ turn: g.turn, m: `${a.name} goes over. ${a.captain.name} was done waiting to be fed.` });
+        return { ...a, owner: "wasters", name: `${captainSurname(a.captain)}'s Band`, captain: null, lord: false };
+      });
 
       // --- victory / defeat ---
       const counts = {};
@@ -6966,6 +7179,29 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
   );
 }
 
+/* Who leads them, what they are like, and whether they still mean to. */
+function CaptainLine({ c, compact }) {
+  const tone = c.loyalty >= 50 ? "cc-text-9fd6b4" : c.loyalty >= LOYALTY.mutter ? "cc-text-e8b98a" : "cc-text-e08a6a";
+  return (
+    <div className={`rounded border cc-border-31454f cc-bg-131f27 px-2.5 py-2 ${compact ? "" : "mb-2"}`}>
+      <div className="flex items-baseline gap-2">
+        <span className="cc-text-13px cc-text-f0e2b8">Captain {c.name}</span>
+        <span className={`cc-text-11d5px ml-auto ${tone}`}>{loyaltyWord(c.loyalty)}</span>
+      </div>
+      <div className="cc-loyal mt-1"><span style={{ width: `${c.loyalty}%` }} className={c.loyalty >= 50 ? "cc-loyalgood" : c.loyalty >= LOYALTY.mutter ? "cc-loyalwarn" : "cc-loyalbad"} /></div>
+      <div className="flex flex-wrap gap-1 mt-1.5">
+        {c.traits.map((id) => TRAITS[id] && (
+          <span key={id} title={TRAITS[id].desc}
+            className={`cc-text-11px rounded px-1.5 py-0.5 border ${id === "shaken" ? "cc-border-5a3230 cc-text-e09a8a" : TRAITS[id].earned ? "cc-border-8a6f36 cc-text-f2c97a" : "cc-border-3d5a4a cc-text-9fd6b4"}`}>
+            {TRAITS[id].name}
+          </span>
+        ))}
+        <span className="cc-text-11px cc-text-6f8794 ml-auto">{c.fields} {c.fields === 1 ? "field" : "fields"}</span>
+      </div>
+    </div>
+  );
+}
+
 /* Where the warband stands in relation to anything you hold, said plainly,
    because it is the number that decides whether a campaign is a campaign or a
    slow way of losing an army. */
@@ -7063,6 +7299,7 @@ function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, o
           );
         })()}
       </div>
+      {own && army.captain && <CaptainLine c={army.captain} />}
       {own && <SupplyLine sup={sup} />}
       <div className="grid gap-1.5">
         {army.units.map((u) => {
@@ -7072,7 +7309,7 @@ function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, o
               <UnitArt type={u.type} size={46} />
               <div className="flex-1 min-w-0">
               <div className="flex justify-between items-baseline">
-                <span className="cc-text-13px">{unitName(u)}{u.xp > 0 && <span className="cc-text-c9a37a num"> ·{u.xp}</span>}</span>
+                <span className="cc-text-13px">{u.honour && <span className="cc-honour" title={`Named at ${u.honour.at}`}>✦ </span>}{unitLabel(u)}{u.xp > 0 && <span className="cc-text-c9a37a num"> ·{u.xp}</span>}</span>
                 <span className="num cc-text-12d5px cc-text-aac5d1">{u.str}/{u.max}</span>
               </div>
               <div className="cc-text-12px cc-text-93a9b5 mt-0.5">
@@ -8023,7 +8260,7 @@ function CompanyChip({ u, col, small, held, onPick, draggable, onDragStart }) {
       style={{ borderColor: held ? "#8fe3d6" : undefined }}>
       <div className="flex items-center gap-1.5">
         <UnitMark type={u.type} size={small ? 14 : 17} />
-        <span className="cc-text-11d5px flex-1 min-w-0 truncate" style={{ color: col }}>{unitName(u)}</span>
+        <span className="cc-text-11d5px flex-1 min-w-0 truncate" style={{ color: col }}>{u.honour && <span className="cc-honour" title={`Named at ${u.honour.at}`}>✦ </span>}{unitLabel(u)}</span>
         <span className="num cc-text-11d5px cc-text-a0b6c1">{u.str}</span>
       </div>
       <div className="cc-chipbar mt-1"><span style={{ width: `${frac * 100}%`, background: col }} /></div>
@@ -8087,7 +8324,7 @@ function FieldStrip({ b, pSide, foe, myN, theirN, seen, deploying, held, onPlace
     const ink = lum(col) > 0.55 ? "#0b1219" : "#eef3f5";
     return (
       <g transform={`translate(${x},${y})`}>
-        <title>{`${unitName(u)} — ${u.str} men, nerve ${Math.round(mor * 100)}%`}</title>
+        <title>{`${unitLabel(u)} — ${u.str} men, nerve ${Math.round(mor * 100)}%`}</title>
         <rect x={-w / 2} y={-11} width={w} height={22} rx={3} fill={col}
           opacity={dark ? 0.35 : 0.28 + 0.72 * mor} stroke="#0a1015" strokeWidth="1" />
         {/* the facing edge: the rank that is actually fighting */}
@@ -8097,6 +8334,7 @@ function FieldStrip({ b, pSide, foe, myN, theirN, seen, deploying, held, onPlace
             <path d={ic.d} fill={ink} opacity="0.85" />
           </g>
         )}
+        {u.honour && <path d="M0 -15l2 3.2 3.6.5-2.6 2.5.6 3.6L0 -7l-3.6 1.8.6-3.6-2.6-2.5 3.6-.5z" fill="#f0e2b8" stroke="#0a1015" strokeWidth="0.6" transform={`translate(${w / 2 - 6},${top ? 4 : -2}) scale(.7)`} />}
         <text x={w / 2 - 4} y={4} textAnchor="end" className="cc-fieldnum" fill={ink}>{u.str}</text>
         {!deploying && u.lastLoss > 0 && (
           <text key={`${b.round}-${u.id}`} className="cc-fieldhit" x={0} y={top ? 26 : -18}
@@ -8320,7 +8558,7 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost
   // you have watched them on the wall every morning and know exactly who is up
   // there.
   const besieger = !!b.storming && pSide === "a";
-  const seen = deploying ? (besieger ? 2 : scoutLevel(mine)) : 2;
+  const seen = deploying ? (besieger ? 2 : scoutLevel(mine, b[`${pSide}Scout`] || 0)) : 2;
   const myPost = (pSide === "a" ? b.aPost : b.dPost) || {};
   const inSec = (list, sec) => list.filter((u) => u.pos === sec);
   const strOf = (list) => list.reduce((n, u) => n + u.str, 0);
@@ -8558,7 +8796,31 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost
               <div className="disp cc-text-16px flex-1 min-w-0">
                 {b.log[b.log.length - 1]?.m || "It is over."}
               </div>
-              <button type="button" onClick={onClose} className="cc-bigbtn cc-bigfight">Count the cost</button>
+              {(() => {
+                const won = pSide && b.winner === pSide && !b.stalemate;
+                const foeNat = pSide === "a" ? b.dNat : b.aNat;
+                const ran = won && b[foe].routed.some((u) => u.str > 0);
+                if (!ran || foeNat === "beasts") {
+                  return <button type="button" onClick={() => onClose()} className="cc-bigbtn cc-bigfight">Count the cost</button>;
+                }
+                const horse = mine.some((u) => unitStats(u).cav);
+                return (
+                  <>
+                    <button type="button" onClick={() => onClose("ride")} className="cc-bigbtn cc-bigoff"
+                      title={horse ? "Your horse goes after the broken. More are caught; the horse is spent for a season." : "Without horse you catch almost nobody, and the men are spent for a season anyway."}>
+                      Ride them down
+                    </button>
+                    <button type="button" onClick={() => onClose("captives")} className="cc-bigbtn cc-bigoff"
+                      title="Whoever is caught goes on your muster roll. They eat while they are on it.">
+                      Take captives
+                    </button>
+                    <button type="button" onClick={() => onClose("spare")} className="cc-bigbtn cc-bigfight"
+                      title={isMinor(foeNat) ? "Nobody is caught. The Wasters do not remember kindness." : `Nobody is caught. ${theirN.short} will remember it, and be slower to come at you.`}>
+                      Let them go
+                    </button>
+                  </>
+                );
+              })()}
             </>
           ) : (
             <>
@@ -9266,6 +9528,38 @@ function WarlordScreen({ game, P, onClose }) {
               </>
             )}
 
+            {sel === P && (() => {
+              const led = game.armies.filter((a) => a.owner === P && a.captain);
+              const hall = game.nations[P]?.hall || [];
+              const captives = game.nations[P]?.captives || [];
+              if (!led.length && !hall.length && !captives.length) return null;
+              return (
+                <>
+                  <div className="cc-text-12d5px cc-text-a7bac6 mt-4 mb-2 pb-1 border-b cc-border-243138">
+                    Your captains
+                  </div>
+                  <div className="grid gap-2">
+                    {led.map((a) => (
+                      <div key={a.id}>
+                        <div className="cc-text-11d5px cc-text-93a9b5 mb-1">{a.name}</div>
+                        <CaptainLine c={a.captain} compact />
+                      </div>
+                    ))}
+                    {hall.map((c) => (
+                      <div key={c.id}>
+                        <div className="cc-text-11d5px cc-text-93a9b5 mb-1">Waiting in the hall</div>
+                        <CaptainLine c={c} compact />
+                      </div>
+                    ))}
+                    {captives.map((x) => (
+                      <div key={x.captain.id} className="cc-text-12d5px cc-text-e09a8a">
+                        {x.captain.name} is held by {game.nations[x.by]?.short || x.by}.
+                      </div>
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
             <div className="cc-text-12d5px cc-text-a7bac6 mt-4 mb-2 pb-1 border-b cc-border-243138">
               {sel === P ? "Your habits, and what your realm gets while you live"
                 : "Their habits, and what the realm gets while they live"}
@@ -9596,7 +9890,7 @@ function RosterPanel({ game, P, sight, atWar, onClose, onPick }) {
             <span className="num cc-text-11d5px cc-text-93a9b5 ml-auto shrink-0">{str}</span>
           </span>
           <span className="flex items-baseline gap-2 cc-text-11d5px cc-text-93a9b5">
-            <span className="truncate">{a.units.length} {a.units.length === 1 ? "company" : "companies"} · {at?.name || "—"}</span>
+            <span className="truncate">{a.captain ? `${captainSurname(a.captain)} · ` : ""}{a.units.length} {a.units.length === 1 ? "company" : "companies"} · {at?.name || "—"}</span>
             {own && (
               <span className="ml-auto shrink-0 flex items-center gap-2">
                 <span className={tone}>{sup.band.name.toLowerCase()}</span>
