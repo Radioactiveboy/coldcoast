@@ -23,6 +23,7 @@ import { SECTORS, SECTOR_NAME, ADJACENT, POSTURES, POSTURE_IDS, GROUND, groundFo
 import { UNIT_TIERS, UNITS, UNIT_IDS } from "./data/units.js";
 import { GOALS } from "./data/goals.js";
 import { CAPTAIN_NAMES, TRAITS, BORN_TRAITS, TRAIT_CLASH, LOYALTY, HONOUR_AT, HONOUR_WORDS } from "./data/captains.js";
+import { ORIGINS, ORIGIN_IDS } from "./data/origins.js";
 import { SUPPLY_MAX, SUPPLY_BANDS, bandAt, HARD_GROUND, WINTER_WASTE,
          CART_RELIEF_CAP, QUARTER_RELIEF, QUARTER_EASE } from "./data/supply.js";
 import { SETTLEMENT, WORKS, WORK_IDS } from "./data/settlement.js";
@@ -343,6 +344,9 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
   border:1px solid #4d9aa6;color:#dff3f6;background:linear-gradient(180deg,#1c4048,#132c33);
   box-shadow:0 4px 18px rgba(4,12,16,.7);transition:filter .15s,transform .15s}
 .cc-beginbtn:hover{filter:brightness(1.25);transform:translateY(-1px)}
+.cc-origin{text-align:left;padding:10px 12px;border:1px solid #31454f;border-radius:7px;background:#111b22;transition:border-color .12s,background .12s}
+.cc-origin:hover{border-color:#8fe3d6;background:#152229}
+@media (min-width:700px){.cc-origins{grid-template-columns:repeat(3,1fr)}}
 .cc-loyal{height:4px;border-radius:2px;background:#26333c;overflow:hidden}
 .cc-loyal>span{display:block;height:100%}
 .cc-loyalgood{background:#9fd6b4}.cc-loyalwarn{background:#e8b98a}.cc-loyalbad{background:#e08a6a}
@@ -1077,6 +1081,33 @@ function loyaltyShift(c, delta) {
   return { ...c, loyalty: Math.max(0, Math.min(100, Math.round(c.loyalty + d))) };
 }
 const loyaltyWord = (n) => (n >= 75 ? "devoted" : n >= 50 ? "loyal" : n >= LOYALTY.mutter ? "uneasy" : "muttering");
+
+/* The warlord is whoever holds the seat now — the founder from the table, or
+   the captain who took it when the founder fell. */
+const lordName = (nat) => nat?.lord?.name || WARLORDS[nat?.id]?.name || "";
+const lordTitle = (nat) => nat?.lord?.title || WARLORDS[nat?.id]?.title || "";
+/* What reaches every warband from the seat: the habits of a captain who rose
+   to it, and the one the warlord was born with. */
+function realmCommand(nat) {
+  const out = { ...NO_CAPTAIN };
+  const ids = [...(nat?.lord?.traits || []), ORIGINS[nat?.origin]?.trait].filter(Boolean);
+  if (nat?.lordDead) return out;
+  ids.forEach((id) => {
+    const t = TRAITS[id];
+    if (!t) return;
+    ["dealt", "taken", "morale", "storm", "ranged", "flank", "waste", "draw"]
+      .forEach((k) => { if (t[k]) out[k] *= t[k]; });
+    if (t.scout) out.scout += t.scout;
+    if (t.relief) out.relief += t.relief;
+  });
+  return out;
+}
+const goalsFor = (origin) => {
+  const extra = ORIGINS[origin]?.goal;
+  const list = extra ? [GOALS[0], extra, ...GOALS.slice(1)] : GOALS;
+  const seen = new Set();
+  return list.filter((g) => (seen.has(g.id) ? false : (seen.add(g.id), true)));
+};
 const captainSurname = (c) => c.name.split(" ").slice(1).join(" ") || c.name;
 
 
@@ -1980,7 +2011,7 @@ function supplyRelief(army, nat) {
   const carts = Math.min(CART_RELIEF_CAP, army.units.reduce((n, u) =>
     n + (u.str > 0 ? (UNITS[u.type]?.carry || 0) : 0), 0));
   const road = nat?.known?.quartering ? QUARTER_RELIEF : 0;
-  const captain = captainMods(army).relief;
+  const captain = captainMods(army).relief + realmCommand(nat).relief;
   return { carts, road, captain, total: carts + road + captain };
 }
 
@@ -1990,7 +2021,8 @@ function supplyOf(provinces, nat, natId, army) {
   const raw = supplyDist(provinces, natId, army.c, army.r);
   const relief = supplyRelief(army, nat);
   const d = Math.max(0, raw - relief.total);
-  return { raw, relief, d, band: bandAt(d), cap: captainMods(army) };
+  const cm = captainMods(army), rm = realmCommand(nat);
+  return { raw, relief, d, band: bandAt(d), cap: { ...cm, waste: cm.waste * rm.waste, draw: cm.draw * rm.draw } };
 }
 
 /* Distance in hexes, through the cube coordinates an odd-r grid is really
@@ -2533,14 +2565,15 @@ function spoilsText(bag) {
 }
 
 /* The warlord, if they ride with the warband, and the captain, always. */
-function fieldCommand(army, storming) {
+function fieldCommand(army, storming, nat) {
   const lord = army.lord ? commandMul(army.owner) : { dealt: 1, taken: 1, morale: 1 };
   const cap = captainMods(army);
+  const realm = realmCommand(nat);
   return {
-    dealt: lord.dealt * cap.dealt * (storming ? cap.storm : 1),
-    taken: lord.taken * cap.taken,
-    morale: lord.morale * cap.morale,
-    flank: cap.flank, ranged: cap.ranged,
+    dealt: lord.dealt * cap.dealt * realm.dealt * (storming ? cap.storm * realm.storm : 1),
+    taken: lord.taken * cap.taken * realm.taken,
+    morale: lord.morale * cap.morale * realm.morale,
+    flank: cap.flank * realm.flank, ranged: cap.ranged * realm.ranged,
   };
 }
 
@@ -2579,10 +2612,11 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
     dPowder: nations[defender.owner].res.powder,
     aStance: "press", dStance: "hold",
     terrainDef, defenderBonus,
-    aLord: fieldCommand(attacker, !!storming),
-    dLord: fieldCommand(defender, false),
+    aLord: fieldCommand(attacker, !!storming, nations[attacker.owner]),
+    dLord: fieldCommand(defender, false, nations[defender.owner]),
     aCommander: !!attacker.lord, dCommander: !!defender.lord,
-    aScout: captainMods(attacker).scout, dScout: captainMods(defender).scout,
+    aScout: captainMods(attacker).scout + realmCommand(nations[attacker.owner]).scout,
+    dScout: captainMods(defender).scout + realmCommand(nations[defender.owner]).scout,
     log: [{
       t: "open",
       m: storming
@@ -3211,7 +3245,7 @@ export default function ColdCoast() {
           const survived = armies.find((a) => a.id === armyId);
           const risk = survived ? 0.18 : 1;
           if (Math.random() >= risk) return;
-          nations[nat] = { ...nations[nat], lordDead: true };
+          nations[nat] = { ...nations[nat], lordDead: true, lordTransit: null, succession: nat === g.player };
           armies = armies.map((a) => (a.owner === nat ? { ...a, lord: false } : a));
           const who = WARLORDS[nat];
           if (who) msgLord = nat === g.player
@@ -3487,6 +3521,88 @@ export default function ColdCoast() {
   }
 
   function deselect() { setGame((g) => ({ ...g, sel: null })); }
+  if (typeof window !== "undefined") window.__ccFall = () => setGame((g) => ({
+    ...g, nations: { ...g.nations, [P]: { ...g.nations[P], lordDead: true, lordTransit: null, succession: true } },
+    armies: g.armies.map((a) => (a.owner === P ? { ...a, lord: false } : a)),
+  }));
+
+  /* Where you came from, chosen in the opening scene. Sets a habit on the
+     realm and puts something different in the first winter. */
+  function chooseOrigin(id) {
+    setGame((g) => {
+      const o = ORIGINS[id];
+      if (!o) return { ...g, intro: false };
+      const n = g.nations[P];
+      let armies = g.armies;
+      let uid = g.uid;
+      const nations = { ...g.nations, [P]: { ...n, origin: id } };
+      if (o.gives.unit) {
+        const col = armies.find((a) => a.id === `b${P}`) || armies.find((a) => a.owner === P);
+        if (col) armies = armies.map((a) => (a.id === col.id ? { ...a, units: [...a.units, makeUnit(o.gives.unit, P, uid++)] } : a));
+      }
+      if (o.gives.scrap) nations[P] = { ...nations[P], res: { ...nations[P].res, scrap: nations[P].res.scrap + o.gives.scrap } };
+      if (o.gives.loyalty) armies = armies.map((a) => (a.owner === P && a.captain
+        ? { ...a, captain: { ...a.captain, loyalty: Math.min(100, a.captain.loyalty + o.gives.loyalty) } } : a));
+      return { ...g, nations, armies, uid, intro: false,
+        log: [{ turn: g.turn, m: `${o.name}. ${o.start}` }, ...g.log].slice(0, 60) };
+    });
+  }
+
+  /* The seat passes to a captain. They bring their habits to the whole
+     realm and leave their warband to whoever is next. Every other captain
+     feels passed over; the one with the best claim feels it most, and may
+     not stay to see how it goes. */
+  function succeed(cid) {
+    setGame((g) => {
+      const n = g.nations[P];
+      if (!n.lordDead) return g;
+      const fromArmy = g.armies.find((a) => a.owner === P && a.captain?.id === cid);
+      const fromHall = (n.hall || []).find((c) => c.id === cid);
+      const chosen = fromArmy?.captain || fromHall;
+      if (!chosen) return g;
+      const seat = Object.values(g.provinces).find((p) => p.capital && p.seat === P);
+      let hall = (n.hall || []).filter((c) => c.id !== cid);
+      let uid = g.uid;
+      let armies = g.armies;
+      const entries = [];
+      if (fromArmy) {
+        const led = takeCaptain({ hall }, P, uid++);
+        hall = led.hall;
+        armies = armies.map((a) => (a.id === fromArmy.id ? { ...a, captain: led.captain } : a));
+        entries.push(`${led.captain.name} takes ${fromArmy.name} in ${captainSurname(chosen)}'s place.`);
+      }
+      // The best other claim: the most fields, if more than the chosen.
+      const others = [...armies.filter((a) => a.owner === P && a.captain).map((a) => a.captain), ...hall]
+        .filter((c) => c.id !== cid);
+      const rival = others.filter((c) => c.fields > chosen.fields).sort((x, y) => y.fields - x.fields)[0] || null;
+      const slighted = (c) => {
+        const extra = rival && c.id === rival.id ? -15 : 0;
+        return loyaltyShift(c, LOYALTY.slight * captainMods({ captain: c }).slight + extra);
+      };
+      let left = null;
+      armies = armies.map((a) => {
+        if (a.owner !== P || !a.captain || a.captain.id === cid) return a;
+        const c = slighted(a.captain);
+        if (rival && c.id === rival.id && c.loyalty < 15) {
+          left = c;
+          const led = takeCaptain({ hall }, P, uid++);
+          hall = led.hall;
+          return { ...a, captain: { ...led.captain, loyalty: 35 } };
+        }
+        return { ...a, captain: c };
+      });
+      hall = hall.map((c) => slighted(c)).filter((c) => !(rival && c.id === rival.id && c.loyalty < 15) || (left = c, false));
+      if (left) entries.push(`${left.name} thought the seat should have been theirs, and has ridden off rather than serve.`);
+      Sound.play("claim");
+      const lord = { name: chosen.name, title: `of ${seat ? seat.name : "the seat"}`, traits: chosen.traits,
+                     succeeded: g.turn, was: chosen.id };
+      const nations = { ...g.nations, [P]: { ...n, lord, lordDead: false, lordTransit: null, succession: false, hall } };
+      return { ...g, nations, armies, uid,
+        log: [{ turn: g.turn, m: `${chosen.name} takes the seat. ${others.length ? "The other captains are not all pleased." : ""}` },
+              ...entries.map((m) => ({ turn: g.turn, m })), ...g.log].slice(0, 60),
+        notices: [{ id: `n${g.turn}s`, kind: "lord", text: `${chosen.name} holds the seat now. Their habits are the realm's.`, k: null }, ...g.notices].slice(0, 6) };
+    });
+  }
 
   function investigate(k) {
     setGame((g) => {
@@ -4547,7 +4663,7 @@ export default function ColdCoast() {
       {
         const seatK = Object.keys(provinces).find((k) => provinces[k].capital && provinces[k].seat === g.player) || null;
         const tally = nations[g.player]?.tally || {};
-        GOALS.forEach((goal) => {
+        goalsFor(nations[g.player]?.origin).forEach((goal) => {
           if (goals.done[goal.id]) return;
           let ok = false;
           try { ok = goal.check({ game: { provinces, nations, armies }, P: g.player, seatK, tally }); } catch { ok = false; }
@@ -4613,7 +4729,7 @@ export default function ColdCoast() {
           {game.summary && (
             <SeasonCard summary={game.summary} onClose={() => setGame((g) => ({ ...g, summary: null }))} />
           )}
-          <GoalsCard goals={game.goals || { done: {}, hidden: false }}
+          <GoalsCard goals={game.goals || { done: {}, hidden: false }} origin={game.nations[P]?.origin}
             onToggle={() => setGame((g) => ({ ...g, goals: { ...(g.goals || { done: {} }), hidden: !g.goals?.hidden } }))}
             onPutAway={() => setGame((g) => ({ ...g, goals: { ...(g.goals || { done: {} }), hidden: true, away: true } }))} />
           <Notices list={game.notices}
@@ -4659,7 +4775,12 @@ export default function ColdCoast() {
           onBegin={beginBattle} />
       )}
       {game.lords && (
-        <WarlordScreen game={game} P={P} onClose={() => setGame((g) => ({ ...g, lords: false }))} />
+        <WarlordScreen game={game} P={P} onClose={() => setGame((g) => ({ ...g, lords: false }))}
+          onSuccession={() => setGame((g) => ({ ...g, lords: false, nations: { ...g.nations, [P]: { ...g.nations[P], succession: true } } }))} />
+      )}
+      {game.nations[P]?.succession && game.nations[P]?.lordDead && !game.battle && (
+        <SuccessionScene game={game} P={P} onChoose={succeed}
+          onLater={() => setGame((g) => ({ ...g, nations: { ...g.nations, [P]: { ...g.nations[P], succession: false } } }))} />
       )}
       {game.roster && (
         <RosterPanel game={game} P={P} sight={sight} atWar={atWar}
@@ -4675,7 +4796,7 @@ export default function ColdCoast() {
       )}
       {game.intro && (
         <OpeningScene game={game} P={P}
-          onClose={() => setGame((g) => ({ ...g, intro: false }))} />
+          onClose={() => setGame((g) => ({ ...g, intro: false }))} onChoose={chooseOrigin} />
       )}
       {game.district && game.provinces[game.district] && (
         <DistrictPanel game={game} P={P} prov={game.provinces[game.district]}
@@ -4745,7 +4866,7 @@ function TopBar({ nat, income, turn, owned, armies, idle, pop, onEnd, onCodex, s
         <div className="leading-tight">
           <div className="disp cc-text-17px">{nat.name}</div>
           <div className="cc-text-12px cc-text-93a9b5">
-            {WARLORDS[nat.id] ? `${WARLORDS[nat.id].name} · ` : ""}
+            {lordName(nat) ? `${lordName(nat)} · ` : ""}
           <span style={{ color: SEASON_TINT[seasonOf(turn).id] }}>{seasonOf(turn).name}</span>
           {" "}of year <span className="num">{yearOf(turn)}</span> · <span className="num">{owned}</span> holdings ·{" "}
           <button type="button" onClick={onRoster} title="Every warband you have, and where it is"
@@ -5985,6 +6106,11 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
         base: a.units.reduce((n, u) => n + unitStats(u).food, 0),
         raw: sup.raw, d: sup.d, draw: sup.band.draw, band: sup.band.name,
       };
+    };
+    /* For the smoke test only: the warlord falls. There is no other way to
+       reach the succession without a long and unlucky campaign. */
+    if (typeof window !== "undefined") window.__ccTest = {
+      fall: () => selRef.current && window.__ccFall && window.__ccFall(),
     };
     if (typeof window !== "undefined") window.__ccWild = () => {
       const game = gameRef.current;
@@ -7549,7 +7675,7 @@ function WorldPanel({ game, P, atWar, onWar }) {
                 <LordPortrait id={id} className="cc-lordthumb" small />
                 <span className="flex-1 min-w-0">
                   <span className="disp cc-text-14d5px cc-block">{n.short}</span>
-                  <span className="cc-text-11d5px cc-text-93a9b5 cc-block">{WARLORDS[id]?.name || "no one speaks for them"}</span>
+                  <span className="cc-text-11d5px cc-text-93a9b5 cc-block">{lordName(game.nations[id]) || "no one speaks for them"}</span>
                 </span>
                 <span className="num cc-text-12d5px cc-text-a0b6c1">{counts[id]} holdings</span>
               </div>
@@ -9298,6 +9424,10 @@ function commandMul(natId) {
 function lordMul(natId, nat) {
   const out = { mul: {}, upkeep: 1, research: 1, move: 0, dealt: 1, taken: 1, recruitCost: 1 };
   if (nat && nat.lordDead) return { ...out, ...LEADERLESS };
+  const born = ORIGINS[nat?.origin]?.trait && TRAITS[ORIGINS[nat.origin].trait];
+  if (born?.mul) Object.entries(born.mul).forEach(([k, v]) => { out.mul[k] = (out.mul[k] || 1) * v; });
+  // A captain who took the seat brings their own habits, not the founder's.
+  if (nat?.lord?.succeeded) return out;
   const w = WARLORDS[natId];
   if (!w) return out;
   w.traits.forEach((t) => {
@@ -9426,7 +9556,7 @@ function LordPortrait({ id, className, small }) {
   );
 }
 
-function WarlordScreen({ game, P, onClose }) {
+function WarlordScreen({ game, P, onClose, onSuccession }) {
   // A mutant horde has no warlord. Only factions with one are listed, and
   // every lookup below tolerates a faction that has none.
   const ids = [P, ...NATION_IDS.filter((i) => i !== P), ...MINOR_IDS]
@@ -9459,7 +9589,7 @@ function WarlordScreen({ game, P, onClose }) {
                     ? "cc-border-4d9aa6 cc-bg-152a30" : "cc-border-31454f cc-hover-border-3d6470"}`}>
                   <LordPortrait id={id} className="cc-lordthumb" small />
                   <span className="min-w-0">
-                    <span className="cc-text-13px cc-block" style={{ color: ff.color }}>{WARLORDS[id]?.name || ff.short}</span>
+                    <span className="cc-text-13px cc-block" style={{ color: ff.color }}>{lordName(game.nations[id]) || ff.short}</span>
                     <span className="cc-text-11d5px cc-text-93a9b5 cc-block">{ff.short}{id === P ? " · you" : ""}</span>
                   </span>
                 </button>
@@ -9471,8 +9601,8 @@ function WarlordScreen({ game, P, onClose }) {
             <div className="flex gap-4 flex-wrap">
               <LordPortrait id={sel} className="cc-lordbig" />
               <div className="flex-1 min-w-0">
-                <div className="disp cc-text-26px leading-tight" style={{ color: f.color }}>{w.name}</div>
-                <div className="cc-text-14px cc-text-c6d6de">{w.title}</div>
+                <div className="disp cc-text-26px leading-tight" style={{ color: f.color }}>{lordName(game.nations[sel]) || w.name}</div>
+                <div className="cc-text-14px cc-text-c6d6de">{lordTitle(game.nations[sel]) || w.title}</div>
                 <div className="flex items-center gap-2 mt-2">
                   <Sigil id={sel} size={17} color={f.color} />
                   <span className="cc-text-13px cc-text-a0b6c1">{f.name}</span>
@@ -9483,8 +9613,11 @@ function WarlordScreen({ game, P, onClose }) {
                   if (nat && nat.lordDead) return (
                     <div className="rounded border cc-border-5a3230 cc-bg-131f27 px-3 py-2 mt-2">
                       <div className="cc-text-13d5px cc-text-e0644a">
-                        {sel === P ? "You are dead, and no one has taken your place." : "Dead, and not replaced."}
+                        {sel === P ? "The seat is empty, and no one has taken it." : "Dead, and not replaced."}
                       </div>
+                      {sel === P && onSuccession && (
+                        <button type="button" onClick={onSuccession} className="cc-formbtn mt-2">Name a successor</button>
+                      )}
                       <div className="cc-text-12d5px cc-text-e09a8a mt-0.5">
                         The realm is leaderless: rations and scrap down a sixth, recruits down a fifth,
                         every advance a third slower, and companies dearer to raise.
@@ -9503,7 +9636,20 @@ function WarlordScreen({ game, P, onClose }) {
                     </div>
                   );
                 })()}
-                <p className="cc-text-13d5px cc-text-dfeaf0 leading-relaxed mt-3">{w.blurb}</p>
+                {game.nations[sel]?.lord?.succeeded ? (
+                  <p className="cc-text-13d5px cc-text-dfeaf0 leading-relaxed mt-3">
+                    Took the seat in season {game.nations[sel].lord.succeeded}, when {w.name} fell.
+                    {" "}Rose from the warbands, and brought the habits of the road with them.
+                  </p>
+                ) : (
+                  <p className="cc-text-13d5px cc-text-dfeaf0 leading-relaxed mt-3">{w.blurb}</p>
+                )}
+                {sel === P && game.nations[P]?.origin && ORIGINS[game.nations[P].origin] && (
+                  <div className="rounded border cc-border-31454f cc-bg-131f27 px-3 py-2 mt-2">
+                    <div className="cc-text-12d5px cc-text-f2c97a">{ORIGINS[game.nations[P].origin].name} · {TRAITS[ORIGINS[game.nations[P].origin].trait]?.name}</div>
+                    <div className="cc-text-12px cc-text-93a9b5 mt-0.5">{TRAITS[ORIGINS[game.nations[P].origin].trait]?.desc}</div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -9565,7 +9711,9 @@ function WarlordScreen({ game, P, onClose }) {
                 : "Their habits, and what the realm gets while they live"}
             </div>
             <div className="grid gap-2">
-              {w.traits.map((t) => (
+              {(game.nations[sel]?.lord?.succeeded
+                ? game.nations[sel].lord.traits.map((id) => TRAITS[id]).filter(Boolean).map((t) => ({ n: t.name, d: t.desc }))
+                : w.traits).map((t) => (
                 <div key={t.n} className="rounded border cc-border-31454f cc-bg-131f27 px-3 py-2.5">
                   <div className="cc-text-13d5px">{t.n}</div>
                   <div className="cc-text-12d5px cc-text-93a9b5 mt-0.5">{t.d}</div>
@@ -9591,7 +9739,7 @@ function WarlordScreen({ game, P, onClose }) {
    jobs at once: say where they are and what year it is, and put something on
    the map that has to be dealt with. A strategy game that opens on an empty
    continent teaches nothing. */
-function OpeningScene({ game, P, onClose }) {
+function OpeningScene({ game, P, onClose, onChoose }) {
   const nat = game.nations[P];
   const seat = Object.values(game.provinces).find((p) => p.capital && p.seat === P);
   const host = game.armies.find((a) => a.mob && a.target === (seat ? key(seat.c, seat.r) : null));
@@ -9638,10 +9786,21 @@ function OpeningScene({ game, P, onClose }) {
           </p>
         </div>
         <div className="px-5 pb-5">
-          <button type="button" onClick={onClose}
-            className="w-full py-2.5 rounded cc-bg-2a3a4a cc-hover-bg-35495c border cc-border-4d7488 cc-text-dfeaf0 disp cc-text-15px transition-colors">
-            Call the muster
-          </button>
+          <div className="cc-text-12d5px cc-text-a7bac6 mb-2">Before that — who were you, before the seat?</div>
+          <div className="grid gap-2 cc-origins">
+            {ORIGIN_IDS.map((id) => {
+              const o = ORIGINS[id];
+              const t = TRAITS[o.trait];
+              return (
+                <button key={id} type="button" onClick={() => onChoose(id)} className="cc-origin">
+                  <span className="disp cc-text-15px cc-text-e5eef3 cc-block">{o.name}</span>
+                  <span className="cc-text-12px cc-text-c3d5de cc-block mt-1 leading-snug">{o.blurb}</span>
+                  <span className="cc-text-11d5px cc-text-9fd6b4 cc-block mt-1.5">{t?.name}: {t?.desc}</span>
+                  <span className="cc-text-11d5px cc-text-f2c97a cc-block mt-0.5">{o.start}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </Overlay>
@@ -9806,8 +9965,9 @@ function SeasonCard({ summary, onClose }) {
 
 /* The first few things worth doing, and which of them are done. It folds to
    a chip, and once everything on it is done it can be put away for good. */
-function GoalsCard({ goals, onToggle, onPutAway }) {
+function GoalsCard({ goals, origin, onToggle, onPutAway }) {
   const done = goals.done || {};
+  const GOALS = goalsFor(origin);
   const left = GOALS.filter((g) => !done[g.id]);
   const n = GOALS.length - left.length;
   if (goals.away) return null;
@@ -9855,6 +10015,52 @@ function GoalsCard({ goals, onToggle, onPutAway }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* The seat is empty. Somebody has to sit in it, and the only people who can
+   are the ones who have led your warbands. */
+function SuccessionScene({ game, P, onChoose, onLater }) {
+  const n = game.nations[P];
+  const led = game.armies.filter((a) => a.owner === P && a.captain).map((a) => ({ c: a.captain, where: a.name }));
+  const hall = (n.hall || []).map((c) => ({ c, where: "waiting in the hall" }));
+  const all = [...led, ...hall].sort((x, y) => y.c.fields - x.c.fields || y.c.loyalty - x.c.loyalty);
+  const who = WARLORDS[P]?.name || "The warlord";
+  return (
+    <Overlay>
+      <div className="cc-w-720px cc-max-w-94vw cc-max-h-92vh rounded-lg border cc-border-8a6f36 cc-bg-0d141a flex flex-col overflow-hidden">
+        <div className="px-5 py-3.5 border-b cc-border-28363f flex items-center gap-3"
+          style={{ background: "linear-gradient(90deg,#1c1710,#0d141a)" }}>
+          <Crown size={18} className="cc-text-f0e2b8" />
+          <div className="disp cc-text-20px flex-1">The seat is empty</div>
+        </div>
+        <div className="p-5 cc-text-14px leading-relaxed cc-text-c3d5de grid gap-3 overflow-y-auto thin">
+          <p>
+            {n.lord?.succeeded ? n.lord.name : who} is dead. Until someone sits in the seat the realm is leaderless:
+            rations and scrap down a sixth, recruits down a fifth, and nothing learned quickly.
+            The only people who can hold it are the ones who have held your warbands.
+            Whoever you name brings their habits to the whole realm — and everyone you do not name
+            will remember that you did not.
+          </p>
+          {!all.length && <p className="cc-text-e8b98a">You have no captains living. Raise a warband and one will come with it.</p>}
+          <div className="grid gap-2">
+            {all.map(({ c, where }) => (
+              <div key={c.id} className="rounded border cc-border-31454f cc-bg-131f27 px-3 py-2.5">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="cc-text-11d5px cc-text-93a9b5 flex-1">{where}</span>
+                  <button type="button" onClick={() => onChoose(c.id)} className="cc-formbtn">Give them the seat</button>
+                </div>
+                <CaptainLine c={c} compact />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="px-5 pb-4 flex items-center gap-2">
+          <span className="cc-text-12px cc-text-6f8794 flex-1">You can come back to this from the warlord screen.</span>
+          <button type="button" onClick={onLater} className="cc-text-12d5px cc-text-93a9b5 cc-hover-text-e5eef3 px-2 py-1">Leave it empty for now</button>
+        </div>
+      </div>
+    </Overlay>
   );
 }
 
