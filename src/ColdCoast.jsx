@@ -3757,6 +3757,20 @@ export default function ColdCoast() {
   }
 
   function deselect() { setGame((g) => ({ ...g, sel: null })); }
+  /* For the smoke test: somebody comes to the hall now, rather than when the
+     dice and the position agree. The quartermaster needs nothing to be true. */
+  if (typeof window !== "undefined") window.__ccKnock = () => setGame((g) => {
+    if ((g.petitions || []).length) return g;
+    const ctx = petitionContext(g, P);
+    const def = PETITIONS.filter((d) => { try { return !!d.need(ctx); } catch { return false; } })[0]
+      || PETITIONS.find((d) => d.id === "stores_dust");
+    const pt = { id: `p${g.turn}k`, kind: def.id, since: g.turn, until: g.turn + PETITION_WAIT,
+      ctx: { place: ctx.place?.name, placeK: ctx.place ? key(ctx.place.c, ctx.place.r) : null, seat: ctx.seat?.name,
+             captainId: ctx.hungryCaptain?.c.id || ctx.sourCaptain?.c.id, captainName: ctx.hungryCaptain?.c.name || ctx.sourCaptain?.c.name,
+             rival: ctx.rival, rivalName: g.nations[ctx.rival]?.name, rivalShort: g.nations[ctx.rival]?.short,
+             warNames: ctx.warElsewhere ? `${g.nations[ctx.warElsewhere[0]]?.short}–${g.nations[ctx.warElsewhere[1]]?.short}` : "" } };
+    return { ...g, petitions: [pt] };
+  });
   if (typeof window !== "undefined") window.__ccFall = () => setGame((g) => ({
     ...g, nations: { ...g.nations, [P]: { ...g.nations[P], lordDead: true, lordTransit: null, succession: true } },
     armies: g.armies.map((a) => (a.owner === P ? { ...a, lord: false } : a)),
@@ -6559,6 +6573,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
        reach the succession without a long and unlucky campaign. */
     if (typeof window !== "undefined") window.__ccTest = {
       fall: () => selRef.current && window.__ccFall && window.__ccFall(),
+      knock: () => window.__ccKnock && window.__ccKnock(),
     };
     if (typeof window !== "undefined") window.__ccWild = () => {
       const game = gameRef.current;
