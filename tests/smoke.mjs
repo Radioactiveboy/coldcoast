@@ -166,6 +166,27 @@ check("breaking a band gives up what it was carrying",
   afterHost.men > beforeHost.men || afterHost.scrap > beforeHost.scrap,
   `men ${beforeHost.men} -> ${afterHost.men}, scrap ${beforeHost.scrap} -> ${afterHost.scrap}`);
 
+/* The season card and the goals. Ending a season after the host is broken
+   has to tick the first goal and put a card up saying what the season did. */
+await click("End (spring|summer|autumn|winter)"); await wait(500);
+if (await inBattle()) await fightOut();
+check("the season is summed up on a card", await page.evaluate(() =>
+  /of year/.test(document.querySelector(".cc-seasoncard")?.innerText || "")));
+check("breaking the host ticks the first goal", await page.evaluate(() =>
+  document.querySelectorAll(".cc-goaltickon").length >= 1),
+  await page.evaluate(() => (document.querySelector(".cc-goals")?.innerText || "").split("\n").slice(0, 3).join(" | ")));
+check("the season button says who has not moved", await page.evaluate(() =>
+  /not moved/.test([...document.querySelectorAll("header button")].map((b) => b.innerText).join(" "))));
+
+/* The muster roll: every warband on one sheet, a click from the map. */
+await click("warbands?$"); await wait(350);
+const rosterRows = await page.evaluate(() => document.querySelectorAll(".cc-rosterrow").length);
+check("the muster roll lists every warband", rosterRows >= 1, `${rosterRows} rows`);
+await page.evaluate(() => document.querySelectorAll(".cc-rosterrow")[0]?.click()); await wait(500);
+check("picking a row takes the warband in hand", await page.evaluate(() =>
+  /in hand/.test(document.querySelector("aside")?.innerText || "")));
+
+
 
 // A zoom gesture is a composited transform, which is what makes it cheap —
 // and what left the map soft when it stopped, because a scaled layer is the
@@ -360,6 +381,32 @@ await wait(400);
 // screen cannot open is not a working game, so we now walk to the waster lair
 // west of Lunden and hit it.
 let ac = 25, ar = 77;
+/* The first step west is a right-click, which is the other way to march: the
+   warband in hand goes to the hex under the cursor, no chevron needed. */
+{
+  const mv = () => page.evaluate(() => +(document.querySelector("aside")?.innerText.match(/(\d+) of \d+ movement/)?.[1] ?? -1));
+  await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77); await wait(300);
+  // Merging spent the movement. A fresh season, and whatever it brings, first.
+  if ((await mv()) < 2) {
+    await click("End (spring|summer|autumn|winter)"); await wait(500);
+    if (await inBattle()) await fightOut();
+    await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77); await wait(300);
+  }
+  const at = await page.evaluate(() => {
+    const g = document.querySelector(".cc-banner .cc-picked"); const r = g?.getBoundingClientRect();
+    const b = document.querySelector("svg.cc-basemap"); const z = b ? b.getBoundingClientRect().width / +b.getAttribute("width") : 1;
+    return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2, z } : null;
+  });
+  const before = await mv();
+  let mid = before;
+  if (at && before > 1) {
+    await page.mouse.click(at.x - 27.7 * at.z, at.y, { button: "right" }); await wait(900);
+    mid = await mv();
+  }
+  check("a right-click marches the warband in hand", at && before > 1 && mid < before,
+    at ? `${before} -> ${mid}` : "no marker in hand");
+  if (mid < before) ac = 24;
+}
 for (let step = 0; step < 30 && ac > 20; step++) {
   await page.evaluate((c, r) => window.__ccPick(c, r), ac, ar);
   await wait(120);
@@ -421,6 +468,9 @@ const deploy = await page.evaluate(() => ({
   ground: [...document.querySelectorAll(".cc-groundtag")].map((x) => x.textContent).join("/"),
   presets: [...document.querySelectorAll(".cc-formbtn")].length,
 }));
+check("the field is drawn, not just tabulated", await page.evaluate(() =>
+  !!document.querySelector(".cc-fieldsvg") && document.querySelectorAll(".cc-fieldsvg .cc-fieldlabel").length >= 3),
+  await page.evaluate(() => `${document.querySelectorAll(".cc-fieldsvg rect").length} shapes`));
 check("a battle opens on the line, not the first blow", deploy.open && deploy.sectors === 3,
   `${deploy.sectors} sectors, ground ${deploy.ground}, ${deploy.presets} formations`);
 /* You see what your outriders brought back and nothing else. By this point the
@@ -479,12 +529,18 @@ check("the battle screen renders", battle.kids > 0 && battle.orders,
   `#root children ${battle.kids}, orders ${battle.orders}`);
 if (battle.open) {
   await click("Give the order"); await wait(500);
+  check("the round is told in words", await page.evaluate(() => {
+    const n = document.querySelector(".cc-narration");
+    return !!n && n.innerText.trim().length > 20;
+  }), await page.evaluate(() => (document.querySelector(".cc-narration")?.innerText || "").split("\n")[0]));
   await click("Count the cost"); await wait(400);
   await page.evaluate(() => {
     const ov = document.querySelector(".fixed.inset-0.z-50");
     if (ov) [...ov.querySelectorAll("button")].pop()?.click();
   });
   await wait(400);
+} else {
+  check("the round is told in words", false, "no battle to tell");
 }
 check("the game survives the battle", await page.evaluate(() =>
   (document.getElementById("root")?.children.length ?? 0) > 0));
