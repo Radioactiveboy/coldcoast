@@ -400,6 +400,14 @@ await wait(400);
     `${slots.open + slots.filled} slot, ${slots.wards} quarters`);
   check("the seat's quarters are the written ones", /The Trench/.test(slots.text),
     (slots.text.match(/The [A-Z][a-z]+( [A-Z][a-z]+)?/g) || []).slice(0, 3).join(", "));
+  // A quarter with a painting shows it; one without looks the way it did.
+  const art = await page.evaluate(() => {
+    const w = [...document.querySelectorAll(".cc-ward")].find((x) => /The Trench/.test(x.textContent));
+    const img = w && w.querySelector(".cc-wardart img");
+    return { has: !!img, loaded: !!img && img.naturalWidth > 0, wide: img ? img.naturalWidth : 0 };
+  });
+  check("a quarter with a painting shows it", art.has && art.loaded && art.wide <= 1280,
+    art.has ? `${art.wide}px wide` : "no plate on the Trench");
   const scrapNow = () => page.evaluate(() => +((document.querySelector("header")?.innerText.match(/([\d,]+)\s*\n?\s*Scrap/) || [])[1] || "0").replace(/,/g, ""));
   const before = await scrapNow();
   const paid = await page.evaluate(() => {
