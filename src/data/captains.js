@@ -115,6 +115,26 @@ export const BORN_TRAITS = Object.keys(TRAITS).filter((id) => TRAITS[id].born);
 // Pairs that cannot both be true of one person.
 export const TRAIT_CLASH = [["cautious", "reckless"], ["hard", "beloved"]];
 
+/* --------------------------------- THE HALL --------------------------------
+   Nobody leads a warband because it was raised. Somebody leads it because
+   you gave them the command, and you gave it to somebody who was standing in
+   your hall waiting to be given one.
+
+   Fighting men drift to a seat that looks like it is going somewhere — one
+   every few seasons, more if you hold more ground — and you can send word
+   out and pay for one to ride in. Appointing costs: a captain with fields
+   behind them expects more than a man with none. */
+export const HALL = {
+  cap: 4,               // how many will wait around at once
+  driftBase: 0.16,      // chance a season that somebody turns up
+  driftPerHold: 0.012,  // ...better if the realm is visibly growing
+  driftMax: 0.45,
+  sendScrap: 35,        // send word out; one rides in next season
+  appointBase: 25,      // what a man with no record expects
+  appointPerField: 8,   // ...and what every field behind him adds
+};
+export const appointCost = (c) => HALL.appointBase + (c?.fields || 0) * HALL.appointPerField;
+
 export const LOYALTY = {
   start: [45, 70],   // where a new captain begins
   win: 6, loss: -8,  // a field won or lost

@@ -12,14 +12,30 @@
 export const PETITION_WAIT = 3;   // seasons before it resolves itself
 export const PETITION_CHANCE = 0.4;
 
+/* How long the coast remembers a broken word, and what it costs while it
+   does: rivals are keener to come at you, and nobody offers you the chance
+   to promise anything again. */
+export const OATH_MEMORY = 20;
+
 export const PETITIONS = [
   {
     id: "village_herd", who: "A headman from {place}",
     need: (c) => c.herdNear,
     text: "\"There is something in the wood beside us. It took a goat in autumn and a child last month, and the fence is not going to be enough. You have hunters. We have nothing.\"",
+    /* A promise is the only answer here that costs nothing now. That is the
+       point of it, and the reason breaking one is expensive. */
+    promise: {
+      kind: "herd", turns: 6,
+      what: "Clear the wood beside {place}",
+      how: "March a warband into the wood and beat what is in it. Hunters do best — it is animals.",
+      keep: { pop: 45, res: { food: 30 }, loyalty: 4,
+        text: "The wood by {place} is clear, as you said it would be. They come back to the outlying houses, and send thirty sacks to the seat for your trouble." },
+      broke: { pop: -70, loyalty: -8, revolt: 0.4,
+        text: "You gave {place} your word about the wood and six seasons went by. What was in it is still in it, and most of them have gone." },
+    },
     options: [
-      { label: "\"I will see to it.\"", hint: "A promise. Clear the herd within six seasons and the village remembers.",
-        effect: { promise: { kind: "herd", turns: 6, pay: { pop: 40, food: 30 } } },
+      { label: "\"I will see to it.\"", hint: "Costs nothing now. Six seasons to clear the wood, and a great deal if you do not.",
+        effect: { promise: true },
         result: "They go home with your word. Six seasons, before it stops meaning anything." },
       { label: "Send them rations to sit behind the fence.", hint: "25 rations. They stay, for now.",
         effect: { res: { food: -25 }, pop: 10 },
@@ -28,7 +44,7 @@ export const PETITIONS = [
         effect: { pop: -30, res: { men: 15 } },
         result: "About half of them walk to the seat. The rest stay and take their chances." },
     ],
-    ignore: { pop: -20, result: "Nobody answered the headman. The wood took what it took, and the village is smaller for it." },
+    ignore: { pop: -25, result: "Nobody answered the headman. The wood took what it took, and the village is smaller for it." },
   },
   {
     id: "captain_wall", who: "Captain {captain}",
