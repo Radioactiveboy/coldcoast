@@ -171,10 +171,29 @@ check("breaking a band gives up what it was carrying",
   afterHost.men > beforeHost.men || afterHost.scrap > beforeHost.scrap,
   `men ${beforeHost.men} -> ${afterHost.men}, scrap ${beforeHost.scrap} -> ${afterHost.scrap}`);
 
-/* Somebody leads every warband, and the panel says who. */
+/* Nobody leads a warband because it was raised. You appoint somebody from
+   the hall, and it costs. */
 await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77); await wait(300);
-check("a warband has a captain", /Captain [A-Z]/.test(await page.evaluate(() => document.querySelector("aside")?.innerText || "")),
-  (await page.evaluate(() => document.querySelector("aside")?.innerText || "")).split("\n").find((l) => /Captain /.test(l)) || "no captain line");
+check("a warband starts with nobody leading it", await page.evaluate(() =>
+  /Nobody leads them/.test(document.querySelector("aside")?.innerText || "")));
+{
+  const scrapNow = () => page.evaluate(() => +((document.querySelector("header")?.innerText.match(/([\d,]+)\s*\n?\s*Scrap/) || [])[1] || "0").replace(/,/g, ""));
+  const before = await scrapNow();
+  await click("Nobody leads them"); await wait(350);
+  const hall = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  check("the hall has men waiting and names a price", /Waiting in the hall/.test(hall) && /Wants \d+ scrap/.test(hall),
+    hall.match(/Wants \d+ scrap/)?.[0] || "no price");
+  await click("Give them the command"); await wait(450);
+  const after = await scrapNow();
+  check("appointing a captain costs scrap and takes effect at once",
+    after < before && /Captain [A-Z]/.test(await page.evaluate(() => document.querySelector("aside")?.innerText || "")),
+    `${before} -> ${after} scrap`);
+}
+
+/* Companies carry a rank, and it is said in words. */
+check("companies carry a rank", await page.evaluate(() =>
+  /Rank \d · (Raw|Blooded|Seasoned|Hardened|Veteran|Elder)/.test(document.querySelector("aside")?.innerText || "")),
+  (await page.evaluate(() => document.querySelector("aside")?.innerText || "")).match(/Rank \d · \w+/)?.[0] || "no rank line");
 
 /* Someone comes to the hall, and can be heard and answered. */
 await page.evaluate(() => window.__ccTest.knock()); await wait(300);
@@ -196,6 +215,47 @@ check("breaking the host ticks the first goal", await page.evaluate(() =>
 check("the season button says who has not moved", await page.evaluate(() =>
   /not moved/.test([...document.querySelectorAll("header button")].map((b) => b.innerText).join(" "))));
 
+/* Bringing a company back up to strength takes exactly the men it puts in
+   the line. It used to charge a field premium on the bodies as well as the
+   kit, so "bring up 20 men" quietly took 34 of them. */
+{
+  await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77); await wait(300);
+  const btn = await page.evaluate(() =>
+    [...document.querySelectorAll("aside button")].map((b) => b.textContent).find((t) => /Bring up/.test(t)) || "");
+  const m = btn.match(/Bring up (\d+) men — (\d+) recruits/);
+  check("reinforcement costs exactly the men it brings up", !!m && m[1] === m[2], btn.trim() || "nothing to bring up");
+}
+
+/* A promise is a visible, dated thing with a target you can be shown. */
+{
+  let sawPromise = false;
+  for (let i = 0; i < 16 && !sawPromise; i++) {
+    await page.evaluate(() => window.__ccTest.knock()); await wait(220);
+    const hall = await page.evaluate(() => document.querySelector(".cc-hallrow")?.innerText || "");
+    if (!hall) break;
+    await page.evaluate(() => document.querySelector(".cc-hallrow")?.click()); await wait(280);
+    const promised = await page.evaluate(() => {
+      const b = [...document.querySelectorAll(".fixed.inset-0.z-50 .cc-origin")]
+        .find((x) => /I will see to it/.test(x.textContent));
+      if (b) { b.click(); return true; }
+      return false;
+    });
+    if (!promised) {
+      await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50 .cc-origin")].pop()?.click());
+      await wait(280);
+      await click("End (spring|summer|autumn|winter)"); await wait(400);
+      if (await inBattle()) await fightOut();
+      continue;
+    }
+    await wait(350);
+    sawPromise = await page.evaluate(() => !!document.querySelector(".cc-promises"));
+  }
+  const card = await page.evaluate(() => document.querySelector(".cc-promises")?.innerText || "");
+  check("a promise says what it needs and how long you have",
+    sawPromise && /Clear the wood/.test(card) && /seasons?/.test(card),
+    card.split("\n").slice(0, 3).join(" | ") || "no promise made");
+}
+
 /* The warlord falls; a captain takes the seat; the header says so. */
 {
   const before = await page.evaluate(() => document.querySelector("header")?.innerText.split("\n")[1] || "");
@@ -204,6 +264,28 @@ check("the season button says who has not moved", await page.evaluate(() =>
   await click("Give them the seat"); await wait(500);
   const after = await page.evaluate(() => document.querySelector("header")?.innerText.split("\n")[1] || "");
   check("the seat passes to a captain", scene && after !== before && !/Grimhand/.test(after), after.split(" · ")[0]);
+}
+
+/* Everything outstanding, gathered on one screen off the five places it is
+   scattered across. */
+await page.evaluate(() => {
+  const b = [...document.querySelectorAll("header button")].find((x) => x.getAttribute("aria-label") === "Missions");
+  if (b) b.click();
+});
+await wait(400);
+{
+  const t = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  const kinds = [...new Set((t.match(/What now|Your word|The hall|A place|A quarter/g) || []))];
+  check("the missions screen gathers what is outstanding",
+    /Outstanding —/.test(t) && kinds.length >= 2, kinds.join(", ") || "nothing listed");
+  await page.evaluate(() => {
+    const ov = document.querySelector(".fixed.inset-0.z-50");
+    if (ov) [...ov.querySelectorAll("button")].find((b) => /^\s*$/.test(b.textContent) || b.getAttribute("aria-label") === "Close")?.click();
+  });
+  await wait(250);
+  await page.keyboard.press("Escape"); await wait(250);
+  await page.evaluate(() => { const ov = document.querySelector(".fixed.inset-0.z-50"); if (ov) ov.click(); });
+  await wait(300);
 }
 
 /* The muster roll: every warband on one sheet, a click from the map. */
@@ -304,12 +386,34 @@ await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77);
 await wait(300);
 check("a settlement opens a district", await click("Build in the district"));
 await wait(400);
-const slots = await page.evaluate(() => ({
-  open: document.querySelectorAll(".cc-slotempty").length,
-  filled: document.querySelectorAll(".cc-slotfull").length,
-}));
-check("the district has slots to fill", slots.open + slots.filled >= 4,
-  `${slots.open} empty, ${slots.filled} filled`);
+/* A settlement is one slot and a set of quarters that belong to somebody
+   else. Lunden's first is the Trench, and it can be bought. */
+{
+  const slots = await page.evaluate(() => ({
+    open: document.querySelectorAll(".cc-slotempty").length,
+    filled: document.querySelectorAll(".cc-slotfull").length,
+    wards: document.querySelectorAll(".cc-ward").length,
+    text: document.querySelector(".fixed.inset-0.z-50")?.innerText || "",
+  }));
+  check("a settlement starts with one slot and quarters to take",
+    slots.open + slots.filled === 1 && slots.wards >= 4,
+    `${slots.open + slots.filled} slot, ${slots.wards} quarters`);
+  check("the seat's quarters are the written ones", /The Trench/.test(slots.text),
+    (slots.text.match(/The [A-Z][a-z]+( [A-Z][a-z]+)?/g) || []).slice(0, 3).join(", "));
+  const scrapNow = () => page.evaluate(() => +((document.querySelector("header")?.innerText.match(/([\d,]+)\s*\n?\s*Scrap/) || [])[1] || "0").replace(/,/g, ""));
+  const before = await scrapNow();
+  const paid = await page.evaluate(() => {
+    const w = [...document.querySelectorAll(".cc-ward")].find((x) => /The Trench/.test(x.textContent));
+    const b = w && [...w.querySelectorAll("button")].find((x) => !x.disabled && /Pay/.test(x.textContent));
+    if (b) { b.click(); return true; }
+    return false;
+  });
+  await wait(400);
+  const after = await scrapNow();
+  check("a quarter can be bought, and opens a slot", paid && after < before
+    && await page.evaluate(() => document.querySelectorAll(".cc-slotempty").length + document.querySelectorAll(".cc-slotfull").length === 2),
+    `${before} -> ${after} scrap`);
+}
 await page.evaluate(() => document.querySelector(".cc-slotempty")?.click());
 await wait(300);
 const raised = await page.evaluate(() => {
@@ -332,6 +436,15 @@ await wait(400);
 const up = await page.evaluate(() =>
   ([...document.querySelectorAll(".cc-slotup")].map((b) => b.textContent).join(" ")));
 check("a finished building offers its next level", /Cutting floor/.test(up), up.slice(0, 60));
+
+/* Rivals run their own halls and give out commands the same way you do. */
+{
+  const led = await page.evaluate(() => window.__ccWild().led);
+  const rivals = led.filter((x) => !x.startsWith("dogger"));
+  const withCaptains = rivals.filter((x) => +x.split(":")[1].split("/")[0] > 0).length;
+  check("rivals give out commands from their own halls", withCaptains >= 3,
+    rivals.join("  "));
+}
 await page.evaluate(() => {
   const ov = document.querySelector(".fixed.inset-0.z-50");
   if (ov) ov.querySelector("button")?.click();
