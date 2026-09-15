@@ -372,6 +372,13 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-badge{position:absolute;top:-5px;right:-5px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#8a6f36;color:#1a1208;font-size:9.5px;line-height:15px;text-align:center;font-weight:700}
 .cc-sndbtn{position:relative}
 .cc-ward{border:1px solid #5a4636;border-radius:8px;background:#151109;padding:12px 14px}
+.cc-wardpainted{padding:0;overflow:hidden}
+.cc-wardpainted .cc-wardbody{padding:0 14px 12px}
+.cc-wardart{position:relative;overflow:hidden;background:#0a0f13}
+.cc-wardfade{position:absolute;left:0;right:0;bottom:0;height:62%;
+  background:linear-gradient(180deg,rgba(21,17,9,0) 0%,rgba(21,17,9,.72) 55%,#151109 100%)}
+.cc-wardcap{position:absolute;left:14px;bottom:8px;right:14px;font-size:21px;color:#f2c97a;
+  text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 3px rgba(0,0,0,.9)}
 .cc-wardways{grid-template-columns:1fr}
 @media (min-width:760px){.cc-wardways{grid-template-columns:repeat(3,1fr)}}
 .cc-wardway{text-align:left;padding:8px 10px;border:1px solid #31454f;border-radius:6px;background:#111b22;transition:border-color .12s,background .12s}
@@ -882,6 +889,31 @@ const TERRAIN_ART = {
   p: terrainPlains,
   d: terrainSiltFlats,
 };
+
+/* Painted art for the quarters of a settlement. Nothing is imported by name:
+   anything dropped into src/assets called ward-<id>.webp — ward-lundentrench,
+   ward-trench, ward-docks — is picked up at build time and shown on that
+   quarter's card. A quarter with no painting shows none and looks the way it
+   did. Adding art is a matter of adding a file. */
+const WARD_ART = Object.fromEntries(
+  Object.entries(import.meta.glob("./assets/ward-*.{webp,png,jpg}", { eager: true, query: "?url", import: "default" }))
+    .map(([path, src]) => [path.replace(/^.*\/ward-/, "").replace(/\.[a-z]+$/i, ""), src]));
+
+/* A quarter's painting, if it has one. Same treatment as the terrain plates:
+   the image runs the width of the card and falls away into it at the bottom,
+   so the words sit on the picture rather than beside it. */
+function WardArt({ id, height = 212, caption }) {
+  const src = WARD_ART[id];
+  if (!src) return null;
+  return (
+    <div className="cc-wardart" style={{ height }}>
+      <img src={src} alt="" loading="lazy"
+        style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center 58%", display: "block" }} />
+      <span className="cc-wardfade" />
+      {caption && <span className="cc-wardcap disp">{caption}</span>}
+    </div>
+  );
+}
 
 function TerrainArt({ t, height = 116, caption, corner }) {
   const src = TERRAIN_ART[t];
@@ -7631,15 +7663,17 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair, o
                   const need = wardNeed(game, P, prov, d);
                   const afford = canPayWard(nat, d);
                   return (
-                    <div key={d.id} className="cc-ward">
-                      <div className="flex items-baseline gap-2 mb-1">
-                        <span className="disp cc-text-16px cc-text-f2c97a">{d.name}</span>
-                        <span className="cc-text-11d5px cc-text-93a9b5 ml-auto">
-                          held by {FACTION[d.holder]?.short || d.holder}
-                          {" · "}{d.garrison.length} {d.garrison.length === 1 ? "company" : "companies"}
-                        </span>
-                      </div>
-                      <p className="cc-text-13px cc-text-dfeaf0 leading-relaxed mb-2.5">{d.intro}</p>
+                    <div key={d.id} className={`cc-ward ${WARD_ART[d.id] ? "cc-wardpainted" : ""}`}>
+                      <WardArt id={d.id} caption={d.name} />
+                      <div className="cc-wardbody">
+                        <div className="flex items-baseline gap-2 mb-1">
+                          {!WARD_ART[d.id] && <span className="disp cc-text-16px cc-text-f2c97a">{d.name}</span>}
+                          <span className="cc-text-11d5px cc-text-93a9b5 ml-auto">
+                            held by {FACTION[d.holder]?.short || d.holder}
+                            {" · "}{d.garrison.length} {d.garrison.length === 1 ? "company" : "companies"}
+                          </span>
+                        </div>
+                        <p className="cc-text-13px cc-text-dfeaf0 leading-relaxed mb-2.5">{d.intro}</p>
                       <div className="grid gap-1.5 cc-wardways">
                         {pay && (
                           <button type="button" disabled={!afford}
@@ -7672,6 +7706,7 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair, o
                             </span>
                           </button>
                         )}
+                      </div>
                       </div>
                     </div>
                   );
