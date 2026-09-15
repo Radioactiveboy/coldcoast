@@ -80,7 +80,9 @@ await wait(900);
 // The opening scene stands between the picker and the map now.
 check("the opening scene names the threat", await page.evaluate(() =>
   /Rendfast Host/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || "")));
-await click("Call the muster");
+check("the opening asks who you were", await page.evaluate(() =>
+  /hunter's child/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || "")));
+await click("The captain's child");
 await page.waitForSelector("svg.cc-worldmap", { timeout: 30000 });
 await wait(1500);
 
@@ -139,12 +141,14 @@ const purse = () => page.evaluate(() => {
    before anybody swings — so taking the field is step one of fighting one. */
 const inBattle = () => page.evaluate(() =>
   /Take the field|Give the order/.test(document.body.innerText));
+let sawAftermath = false;
 const fightOut = async (rounds = 14) => {
   await click("Take the field"); await wait(300);
   for (let i = 0; i < rounds; i++) {
     const t = await page.evaluate(() => document.body.innerText);
     if (!/Give the order/.test(t)) break;
     await click("Give the order"); await wait(320);
+    if (await page.evaluate(() => /Let them go/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || ""))) sawAftermath = true;
     await click("Count the cost"); await wait(260);
   }
   await page.evaluate(() => {
@@ -162,9 +166,23 @@ for (let i = 0; i < 6 && !metHost; i++) {
 check("the opening host comes for the seat", metHost);
 await fightOut();
 const afterHost = await purse();
+check("a won field asks what to do with the broken", sawAftermath);
 check("breaking a band gives up what it was carrying",
   afterHost.men > beforeHost.men || afterHost.scrap > beforeHost.scrap,
   `men ${beforeHost.men} -> ${afterHost.men}, scrap ${beforeHost.scrap} -> ${afterHost.scrap}`);
+
+/* Somebody leads every warband, and the panel says who. */
+await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77); await wait(300);
+check("a warband has a captain", /Captain [A-Z]/.test(await page.evaluate(() => document.querySelector("aside")?.innerText || "")),
+  (await page.evaluate(() => document.querySelector("aside")?.innerText || "")).split("\n").find((l) => /Captain /.test(l)) || "no captain line");
+
+/* Someone comes to the hall, and can be heard and answered. */
+await page.evaluate(() => window.__ccTest.knock()); await wait(300);
+check("somebody waits in the hall", await page.evaluate(() => !!document.querySelector(".cc-hallrow")));
+await page.evaluate(() => document.querySelector(".cc-hallrow")?.click()); await wait(350);
+const heardOne = await page.evaluate(() => (document.querySelector(".fixed.inset-0.z-50")?.innerText || "").includes("In the hall"));
+await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50 .cc-origin")][0]?.click()); await wait(400);
+check("a petition is heard and answered", heardOne && await page.evaluate(() => !document.querySelector(".cc-hallrow")));
 
 /* The season card and the goals. Ending a season after the host is broken
    has to tick the first goal and put a card up saying what the season did. */
@@ -177,6 +195,16 @@ check("breaking the host ticks the first goal", await page.evaluate(() =>
   await page.evaluate(() => (document.querySelector(".cc-goals")?.innerText || "").split("\n").slice(0, 3).join(" | ")));
 check("the season button says who has not moved", await page.evaluate(() =>
   /not moved/.test([...document.querySelectorAll("header button")].map((b) => b.innerText).join(" "))));
+
+/* The warlord falls; a captain takes the seat; the header says so. */
+{
+  const before = await page.evaluate(() => document.querySelector("header")?.innerText.split("\n")[1] || "");
+  await page.evaluate(() => window.__ccTest.fall()); await wait(500);
+  const scene = await page.evaluate(() => (document.querySelector(".fixed.inset-0.z-50")?.innerText || "").includes("The seat is empty"));
+  await click("Give them the seat"); await wait(500);
+  const after = await page.evaluate(() => document.querySelector("header")?.innerText.split("\n")[1] || "");
+  check("the seat passes to a captain", scene && after !== before && !/Grimhand/.test(after), after.split(" · ")[0]);
+}
 
 /* The muster roll: every warband on one sheet, a click from the map. */
 await click("warbands?$"); await wait(350);
@@ -544,6 +572,12 @@ if (battle.open) {
 }
 check("the game survives the battle", await page.evaluate(() =>
   (document.getElementById("root")?.children.length ?? 0) > 0));
+{
+  await page.evaluate((c, r) => window.__ccPick(c, r), 20, 77); await wait(300);
+  const t = await page.evaluate(() => document.querySelector("aside")?.innerText || "");
+  const ours = /held by Doggerbund/.test(t);
+  check("a cleared place starts its story", !ours || /Bristol Weir · 1 of 3/.test(t), ours ? "" : "the lair was not taken, so no story to start");
+}
 
 let seasons = 0;
 for (let i = 0; i < 200 && seasons < 40; i++) {
@@ -559,6 +593,9 @@ for (let i = 0; i < 200 && seasons < 40; i++) {
   seasons++;
 }
 check("forty seasons pass", seasons === 40, `${seasons}`);
+check("the first chapter was written", await page.evaluate(() =>
+  /The state of the coast/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || "")));
+await click("Read on"); await wait(300);
 
 /* Sieges. Walls have to appear on their own for a siege to ever be offered, and
    a wall has to stop being a wall once the siege has opened it. */
