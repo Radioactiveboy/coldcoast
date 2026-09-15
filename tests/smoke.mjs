@@ -41,6 +41,24 @@ const click = (re) =>
     return false;
   }, re);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+/* Warband detail now lives in the bar along the foot of the map and the ground
+   detail in the right-hand panel, so most checks want both. */
+const panelText = () => page.evaluate(() => [
+  document.querySelector("aside")?.innerText || "",
+  document.querySelector(".cc-warbar")?.innerText || "",
+].join("\n"));
+/* Companies open on a click, the way a unit card does in a strategy game. */
+const openCompany = async (n = 0) => {
+  const did = await page.evaluate((i) => {
+    const u = document.querySelectorAll(".cc-warbar .cc-wbunit")[i];
+    if (!u) return false;
+    if (!u.classList.contains("cc-wbon")) u.click();
+    return true;
+  }, n);
+  await wait(250);
+  return did;
+};
+const popText = () => page.evaluate(() => document.querySelector(".cc-wbpop")?.innerText || "");
 
 await page.goto(URL, { waitUntil: "networkidle0" });
 await wait(500);
@@ -175,7 +193,7 @@ check("breaking a band gives up what it was carrying",
    the hall, and it costs. */
 await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77); await wait(300);
 check("a warband starts with nobody leading it", await page.evaluate(() =>
-  /Nobody leads them/.test(document.querySelector("aside")?.innerText || "")));
+  /Nobody leads them/.test(document.querySelector(".cc-warbar")?.innerText || "")));
 {
   const scrapNow = () => page.evaluate(() => +((document.querySelector("header")?.innerText.match(/([\d,]+)\s*\n?\s*Scrap/) || [])[1] || "0").replace(/,/g, ""));
   const before = await scrapNow();
@@ -186,14 +204,22 @@ check("a warband starts with nobody leading it", await page.evaluate(() =>
   await click("Give them the command"); await wait(450);
   const after = await scrapNow();
   check("appointing a captain costs scrap and takes effect at once",
-    after < before && /Captain [A-Z]/.test(await page.evaluate(() => document.querySelector("aside")?.innerText || "")),
+    after < before && /Captain [A-Z]/.test(await panelText()),
     `${before} -> ${after} scrap`);
 }
 
-/* Companies carry a rank, and it is said in words. */
-check("companies carry a rank", await page.evaluate(() =>
-  /Rank \d · (Raw|Blooded|Seasoned|Hardened|Veteran|Elder)/.test(document.querySelector("aside")?.innerText || "")),
-  (await page.evaluate(() => document.querySelector("aside")?.innerText || "")).match(/Rank \d · \w+/)?.[0] || "no rank line");
+/* Companies carry a rank, and it is said in words — on the card in the bar,
+   and in full when you open the company. */
+await openCompany(0);
+check("companies carry a rank",
+  /Rank \d · (Raw|Blooded|Seasoned|Hardened|Veteran|Elder)/.test(await popText()),
+  (await popText()).match(/Rank \d · \w+/)?.[0] || "no rank line");
+check("the bar names the rank on the company card", await page.evaluate(() =>
+  /Raw|Blooded|Seasoned|Hardened|Veteran|Elder/.test(
+    document.querySelector(".cc-warbar .cc-wbunit")?.innerText || "")));
+check("the bar says how much room is left in the warband",
+  /room for \d|full/.test(await page.evaluate(() => document.querySelector(".cc-warbar")?.innerText || "")),
+  (await page.evaluate(() => document.querySelector(".cc-warbar")?.innerText || "")).match(/room for \d|full/)?.[0] || "no room line");
 
 /* Someone comes to the hall, and can be heard and answered. */
 await page.evaluate(() => window.__ccTest.knock()); await wait(300);
@@ -220,8 +246,12 @@ check("the season button says who has not moved", await page.evaluate(() =>
    kit, so "bring up 20 men" quietly took 34 of them. */
 {
   await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77); await wait(300);
-  const btn = await page.evaluate(() =>
-    [...document.querySelectorAll("aside button")].map((b) => b.textContent).find((t) => /Bring up/.test(t)) || "");
+  let btn = "";
+  for (let i = 0; i < 8 && !btn; i++) {
+    if (!(await openCompany(i))) break;
+    btn = await page.evaluate(() =>
+      [...document.querySelectorAll(".cc-wbpop button")].map((b) => b.textContent).find((t) => /Bring up/.test(t)) || "");
+  }
   const m = btn.match(/Bring up (\d+) men — (\d+) recruits/);
   check("reinforcement costs exactly the men it brings up", !!m && m[1] === m[2], btn.trim() || "nothing to bring up");
 }
@@ -467,7 +497,7 @@ await wait(250);
 await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77);
 await wait(300);
 const bandsBefore = await page.evaluate(() =>
-  (document.querySelector("aside").innerText.match(/Merge .* into this warband/) || []).length);
+  (document.querySelector(".cc-warbar")?.innerText.match(/Merge .* into this warband/) || []).length);
 check("a merge is offered for two warbands on one hex", bandsBefore > 0);
 await click("Put this warband in hand");
 await wait(250);
@@ -476,7 +506,7 @@ check("clicking another warband hands you that one",
 await click("Merge .* into this warband");
 await wait(400);
 const oneBand = await page.evaluate(() =>
-  !/Merge .* into this warband/.test(document.querySelector("aside").innerText));
+  !/Merge .* into this warband/.test(document.querySelector(".cc-warbar")?.innerText || ""));
 check("the two warbands become one", oneBand);
 
 // A warband keeps the name you give it, and a company can be peeled off into
@@ -486,7 +516,7 @@ check("the two warbands become one", oneBand);
 await click("^rename$");
 await wait(200);
 await page.evaluate(() => {
-  const i = document.querySelector("aside input.cc-namefield");
+  const i = document.querySelector(".cc-warbar input.cc-namefield");
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
   setter.call(i, "The Thames Wolves");
   i.dispatchEvent(new Event("input", { bubbles: true }));
@@ -494,12 +524,13 @@ await page.evaluate(() => {
 await click("Name it");
 await wait(300);
 check("a warband can be renamed",
-  /The Thames Wolves/.test(await page.evaluate(() => document.querySelector("aside").innerText)));
+  /The Thames Wolves/.test(await panelText()));
 
+await openCompany(0);
 await click("March out alone");
 await wait(350);
 const splitOk = /Merge .* into this warband/.test(
-  await page.evaluate(() => document.querySelector("aside").innerText));
+  await panelText());
 check("a company can march out on its own", splitOk,
   splitOk ? "" : "no second warband appeared to merge back");
 
@@ -533,7 +564,7 @@ let ac = 25, ar = 77;
 /* The first step west is a right-click, which is the other way to march: the
    warband in hand goes to the hex under the cursor, no chevron needed. */
 {
-  const mv = () => page.evaluate(() => +(document.querySelector("aside")?.innerText.match(/(\d+) of \d+ movement/)?.[1] ?? -1));
+  const mv = () => page.evaluate(() => +(document.querySelector(".cc-warbar")?.innerText.match(/(\d+) of \d+ movement/)?.[1] ?? -1));
   await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77); await wait(300);
   // Merging spent the movement. A fresh season, and whatever it brings, first.
   if ((await mv()) < 2) {
@@ -574,12 +605,12 @@ check("the host can march to the lair", ac === 20, `stopped at ${ac},${ar}`);
 {
   await page.evaluate((c, r) => window.__ccPick(c, r), ac, ar);
   await wait(300);
-  const panel = await page.evaluate(() => document.querySelector("aside")?.innerText || "");
+  const panel = await panelText();
   check("a column out in the wild says it is out of supply",
     /Cut off|Off the waggons/.test(panel), panel.split("\n").find((l) => /rations ×/.test(l)) || "no supply line");
   check("and says what the rations now cost", /rations ×(2\.4|3\.6|5)/.test(panel),
     panel.match(/rations ×[\d.]+/)?.[0] || "no multiplier");
-  const eats = +(panel.match(/eats\s+(\d+)\s+rations/)?.[1] || 0);
+  const eats = +(panel.match(/eats\s+(\d+)/)?.[1] || 0);
   const base = await page.evaluate(() => {
     const a = window.__ccSupply && window.__ccSupply();
     return a ? a.base : 0;
