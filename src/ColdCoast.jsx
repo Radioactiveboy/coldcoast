@@ -26,6 +26,7 @@ import { CAPTAIN_NAMES, TRAITS, BORN_TRAITS, TRAIT_CLASH, LOYALTY, HONOUR_AT, HO
          HALL, appointCost } from "./data/captains.js";
 import { ORIGINS, ORIGIN_IDS } from "./data/origins.js";
 import { RANKS, rankOf, nextRank, XP_FIELD, XP_WON } from "./data/ranks.js";
+import { DISTRICT_POOL, SEAT_DISTRICTS, DISTRICT_COUNT } from "./data/districts.js";
 import { PETITIONS, PETITION_WAIT, PETITION_CHANCE, OATH_MEMORY } from "./data/petitions.js";
 import { STORIES } from "./data/stories.js";
 import { SUPPLY_MAX, SUPPLY_BANDS, bandAt, HARD_GROUND, WINTER_WASTE,
@@ -368,6 +369,16 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-bg-1a1610{background-color:#1a1610}
 .cc-hover-border-f2c97a:hover{border-color:#f2c97a}
 .cc-max-h-90vh{max-height:90vh}
+.cc-badge{position:absolute;top:-5px;right:-5px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:#8a6f36;color:#1a1208;font-size:9.5px;line-height:15px;text-align:center;font-weight:700}
+.cc-sndbtn{position:relative}
+.cc-ward{border:1px solid #5a4636;border-radius:8px;background:#151109;padding:12px 14px}
+.cc-wardways{grid-template-columns:1fr}
+@media (min-width:760px){.cc-wardways{grid-template-columns:repeat(3,1fr)}}
+.cc-wardway{text-align:left;padding:8px 10px;border:1px solid #31454f;border-radius:6px;background:#111b22;transition:border-color .12s,background .12s}
+.cc-wardway:hover:not(:disabled){border-color:#8fe3d6;background:#152229}
+.cc-wardfight{border-color:#8a4a38;background:#1a1210}
+.cc-wardfight:hover:not(:disabled){border-color:#e0644a;background:#241713}
+.cc-wardpoor{opacity:.5}
 .cc-rankpip{width:15px;height:15px;border-radius:3px;border:1px solid #31454f;background:#101a21;color:#8399a6;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:9.5px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
 .cc-rankmid{border-color:#3d5a4a;color:#9fd6b4}
 .cc-rankhigh{border-color:#8a6f36;color:#f2c97a;background:#1a1610}
@@ -932,23 +943,69 @@ const hasBuild = (p, id) => buildsOf(p).some((b) => b.id === id && !b.left);
    a game. */
 const isSettlement = (p) => !!p && !!LANDMARKS[key(p.c, p.r)];
 const DISTRICT_SLOTS = [
-  { at: 1400, n: 5, name: "a city" },
-  { at: 800, n: 4, name: "a town" },
-  { at: 400, n: 3, name: "a market town" },
-  { at: 150, n: 2, name: "a village" },
-  { at: 0, n: 1, name: "a hamlet" },
+  { at: 1400, name: "a city" },
+  { at: 800, name: "a town" },
+  { at: 400, name: "a market town" },
+  { at: 150, name: "a village" },
+  { at: 0, name: "a hamlet" },
 ];
+// How big a place is. It decides what it is called and what it yields; it no
+// longer decides how much of it you control, because that is a question of
+// which quarters you have taken.
 const districtRank = (pop) => DISTRICT_SLOTS.find((d) => (pop || 0) >= d.at) || DISTRICT_SLOTS[DISTRICT_SLOTS.length - 1];
-// A seat holds one more than its size alone would allow: the hall, the yards
-// and the people who came because it is the hall.
-const districtSlots = (p) => districtRank(p && p.pop).n + (p?.capital ? 1 : 0);
-const districtMax = (p) => DISTRICT_SLOTS[0].n + (p?.capital ? 1 : 0);
-// What a locked slot is waiting for, or null when they are all open.
-function districtNeeds(p) {
-  const have = districtSlots(p);
-  const step = [...DISTRICT_SLOTS].reverse().find((d) => d.n > districtRank(p && p.pop).n);
-  return step ? { at: step.at, name: step.name, n: step.n + (p?.capital ? 1 : 0), have } : null;
+
+/* Which quarters a settlement is made of. The seven seats are written by
+   hand; everywhere else draws from the pool by what the ground is, fixed per
+   hex so a place always has the same quarters however often you look. */
+function districtsFor(p) {
+  if (!isSettlement(p)) return [];
+  const seat = SEAT_DISTRICTS[key(p.c, p.r)];
+  const want = seat || p.capital ? DISTRICT_COUNT.seat : DISTRICT_COUNT.other;
+  const out = seat ? seat.slice(0, want) : [];
+  if (out.length >= want) return out;
+  const shore = coastal(p.c, p.r);
+  const fits = DISTRICT_POOL.filter((d) => (!d.on || d.on.includes(p.t))
+    && (d.coast === undefined || d.coast === shore));
+  const pool = fits.length >= want - out.length ? fits : DISTRICT_POOL;
+  const taken = new Set(out.map((d) => d.id));
+  let i = Math.floor(noise(p.c * 3.1, p.r * 7.7, 91) * pool.length);
+  for (let guard = 0; out.length < want && guard < pool.length * 3; guard++) {
+    const d = pool[((i % pool.length) + pool.length) % pool.length];
+    i += 1 + Math.floor(noise(p.c + guard, p.r * 1.7, 13) * 3);
+    if (taken.has(d.id)) continue;
+    taken.add(d.id);
+    out.push(d);
+  }
+  return out;
 }
+const wardsOf = (p) => p?.wards || [];
+const holdsWard = (p, id) => wardsOf(p).includes(id);
+/* One slot for the ground you are standing on, and one for every quarter you
+   have taken off whoever was in it. */
+const districtSlots = (p) => 1 + wardsOf(p).length;
+const districtMax = (p) => 1 + districtsFor(p).length;
+const openDistricts = (p) => districtsFor(p).filter((d) => !holdsWard(p, d.id));
+/* Whether a quarter can be had without paying or fighting, and what it wants
+   if not. */
+function wardNeed(game, P, p, d) {
+  const w = (d.ways || []).find((x) => x.kind === "need");
+  if (!w) return null;
+  const n = w.need || {};
+  const here = game.armies.find((a) => a.owner === P && a.c === p.c && a.r === p.r);
+  if (n.tech) return { w, ok: !!game.nations[P]?.known?.[n.tech], text: `wants the advance: ${TECHS[n.tech]?.name || n.tech}` };
+  if (n.unit) return { w, ok: !!here?.units.some((u) => u.type === n.unit && u.str > 0), text: `wants ${UNITS[n.unit]?.name || n.unit} standing here` };
+  if (n.pop) return { w, ok: (p.pop || 0) >= n.pop, text: `wants ${n.pop.toLocaleString()} people here — ${(p.pop || 0).toLocaleString()} now` };
+  if (n.seasons) {
+    const held = p.since == null ? 99 : game.turn - p.since;
+    return { w, ok: held >= n.seasons, text: `wants ${n.seasons} seasons holding the place — ${Math.max(0, held)} so far` };
+  }
+  return { w, ok: false, text: "wants something you have not got" };
+}
+const wardPay = (d) => (d.ways || []).find((x) => x.kind === "pay") || null;
+const canPayWard = (nat, d) => {
+  const w = wardPay(d);
+  return !!w && Object.entries(w.res || {}).every(([k2, v]) => (nat.res[k2] || 0) >= v);
+};
 const buildSlots = (p) => (isSettlement(p) ? districtSlots(p) : popSlots(p && p.pop));
 const freeSlots = (p) => buildSlots(p) - buildsOf(p).length;
 const BUILD_STEP = [1, 1.75, 2.5];
@@ -3460,6 +3517,28 @@ export default function ColdCoast() {
         return a;
       }).filter((a) => a.units.length > 0);
 
+      /* A rival's captain came out of the same kind of hall and remembers the
+         same kind of afternoon. Traits and honours are the player's business
+         to read; a record and a loyalty are not. */
+      {
+        [["a", b.aArmy], ["d", b.dArmy]].forEach(([side, id]) => {
+          if (pSideB && side === pSideB) return;
+          const was = g.armies.find((a) => a.id === id);
+          if (!was?.captain || isMinor(was.owner)) return;
+          const won = b.winner === side && !b.stalemate;
+          let c = loyaltyShift({ ...was.captain, fields: was.captain.fields + 1,
+            wins: was.captain.wins + (won ? 1 : 0) }, won ? LOYALTY.win : LOYALTY.loss);
+          if (won && b.storming && side === "a" && !c.traits.includes("wallbreaker")) c = withTrait(c, "wallbreaker");
+          if (c.fields >= 5 && !c.traits.includes("veteran")) c = withTrait(c, "veteran");
+          if (armies.some((a) => a.id === id)) armies = armies.map((a) => (a.id === id ? { ...a, captain: c } : a));
+          else if (nations[was.owner]) {
+            // Annihilated. A rival's captain is yours to ransom back to them.
+            nations[was.owner] = { ...nations[was.owner],
+              fallen: [...(nations[was.owner].fallen || []), { captain: c, turn: g.turn, at: b.provName }] };
+          }
+        });
+      }
+
       /* The captain, and the companies, remember the field. */
       const people = [];
       if (pSideB) {
@@ -3549,7 +3628,19 @@ export default function ColdCoast() {
         });
 
       let msg = "";
-      if (b.sally) {
+      if (b.ward) {
+        const tp = provinces[b.ward.k];
+        const d = tp && districtsFor(tp).find((x) => x.id === b.ward.id);
+        if (b.winner === "a" && !b.stalemate && tp && d) {
+          provinces[b.ward.k] = { ...tp, wards: [...wardsOf(tp), b.ward.id] };
+          msg = `${d.name}, at ${tp.name}, is taken. There is room to build in it now.`;
+        } else {
+          msg = `${d ? d.name : "The quarter"} holds. Whoever is in those streets is still in them.`;
+        }
+        // The people of a quarter are not a warband; they stop being an army
+        // the moment the fighting does.
+        armies = armies.filter((a) => !a.wardGuard);
+      } else if (b.sally) {
         const tp = provinces[b.sally];
         if (b.winner === "a" && !b.stalemate && tp) {
           provinces[b.sally] = { ...tp, siege: null };
@@ -3610,7 +3701,8 @@ export default function ColdCoast() {
       people.forEach((m) => entries.push({ turn: g.turn, m }));
       if (msgLord) { entries.unshift({ turn: g.turn, m: msgLord }); if (b.aNat === g.player || b.dNat === g.player) Sound.play("lose"); }
       return {
-        ...g, armies, nations, provinces, battle: next, sel: null, pending: rest,
+        ...g, armies: armies.filter((a) => !a.wardGuard || a.id === next?.dArmy), nations, provinces,
+        battle: next, sel: null, pending: rest,
         log: [...entries, ...g.log].slice(0, 60),
       };
     });
@@ -4127,6 +4219,64 @@ export default function ColdCoast() {
     };
   }
 
+  /* Taking a quarter off whoever is in it. Paying and meeting a condition
+     both settle it here; fighting for one opens a field. */
+  function takeWard(k, did, how) {
+    setGame((g) => {
+      const pr = g.provinces[k];
+      if (!pr || pr.owner !== P) return g;
+      const d = districtsFor(pr).find((x) => x.id === did);
+      if (!d || holdsWard(pr, did)) return g;
+      const nations = { ...g.nations };
+      let line = "";
+      if (how === "pay") {
+        const w = wardPay(d);
+        if (!w || !canPayWard(nations[P], d)) return g;
+        const res = { ...nations[P].res };
+        Object.entries(w.res || {}).forEach(([rk, v]) => { res[rk] = Math.max(0, (res[rk] || 0) - v); });
+        nations[P] = { ...nations[P], res };
+        line = w.text;
+      } else {
+        const need = wardNeed(g, P, pr, d);
+        if (!need || !need.ok) return g;
+        line = need.w.text;
+      }
+      Sound.play("claim");
+      return {
+        ...g, nations,
+        provinces: { ...g.provinces, [k]: { ...pr, wards: [...wardsOf(pr), did] } },
+        log: [{ turn: g.turn, m: `${d.name}, at ${pr.name}, is yours. ${line}` }, ...g.log].slice(0, 60),
+        notices: [{ id: `n${g.turn}w${did}`, kind: "built", text: `${d.name} is yours. There is room to build in ${pr.name} now.`, k }, ...g.notices].slice(0, 6),
+      };
+    });
+  }
+
+  /* Going at one. The people in a quarter are an army for as long as the
+     field lasts and no longer — they are not a warband on the map, they are
+     whoever happens to be holding those streets. */
+  function fightWard(k, did) {
+    setGame((g) => {
+      const pr = g.provinces[k];
+      if (!pr || pr.owner !== P) return g;
+      const d = districtsFor(pr).find((x) => x.id === did);
+      if (!d || holdsWard(pr, did)) return g;
+      const mine = g.armies.find((a) => a.owner === P && a.c === pr.c && a.r === pr.r && a.units.length);
+      if (!mine) return g;
+      const guard = {
+        id: `dg${k}${did}`, owner: d.holder, c: pr.c, r: pr.r, wardGuard: true,
+        name: `${d.name} of ${pr.name}`,
+        units: d.garrison.map((u, i) => makeUnit(u, d.holder, `${k}${did}${i}`)),
+        mp: 0, maxMp: 0,
+      };
+      const armies = [...g.armies, guard];
+      const b = makeBattle(g.provinces, g.nations, armies, mine.id, guard.id, k);
+      if (!b) return g;
+      Sound.play("charge");
+      return { ...g, armies, district: null,
+        battle: { ...b, ward: { k, id: did }, ground: d.ground, provName: `${d.name}, at ${pr.name}` } };
+    });
+  }
+
   /* Sitting down in front of a walled place. Nothing about it is fast: it pays
      nothing while you are there, its people go hungry, its garrison thins, and
      every third season the wall gives somewhere. */
@@ -4171,8 +4321,11 @@ export default function ColdCoast() {
         ...g,
         nations: { ...g.nations, [P]: { ...n, res: { ...n.res,
           food: n.res.food - cost.food, men: n.res.men - cost.men } } },
-        provinces: { ...g.provinces, [k]: { ...pr, owner: P } },
-        log: [{ turn: g.turn, m: `${pr.name} comes under your banner.` }, ...g.log].slice(0, 60),
+        // When you took it, so a quarter that wants seasons of holding can count.
+        provinces: { ...g.provinces, [k]: { ...pr, owner: P, since: g.turn } },
+        log: [{ turn: g.turn, m: `${pr.name} comes under your banner.${isSettlement(pr)
+          ? ` You hold the ground it stands on; the ${districtsFor(pr).length} quarters of it are still somebody else's.` : ""}` },
+          ...g.log].slice(0, 60),
       };
     });
   }
@@ -4517,6 +4670,34 @@ export default function ColdCoast() {
             nations[id] = { ...nn, res: { ...nn.res, scrap: nn.res.scrap - w.scrap } };
             provinces[capk] = { ...cp, project: { kind: "work", id: pick, left: w.turns } };
           }
+        }
+
+        /* --- their hall ---
+           A rival's warbands are led by somebody for the same reason yours
+           are: a man came to their seat looking for a command and they paid
+           him for taking one. They pay out of the same purse they build and
+           recruit from, so a realm that is spending on walls has warbands
+           nobody is leading. */
+        {
+          const nh = nations[id];
+          const hall = [...(nh.hall || [])];
+          const held = heldNow[id] || 0;
+          if (hall.length < HALL.cap
+              && Math.random() < Math.min(HALL.driftMax, HALL.driftBase + held * HALL.driftPerHold)) {
+            hall.push(makeCaptain(id, `d${id}${g.turn}`, namesInUse({ ...nh, hall }, armies, id)));
+          }
+          // The biggest warband with nobody leading it gets the best man going.
+          const bare = armies.filter((a) => a.owner === id && !a.captain && !a.lord && a.units.length)
+            .sort((x, y) => y.units.length - x.units.length)[0];
+          if (bare && hall.length) {
+            const best = hall.slice().sort((x, y) => y.fields - x.fields || y.loyalty - x.loyalty)[0];
+            const price = appointCost(best);
+            if (nh.res.scrap >= price + 40) {     // never at the cost of building
+              armies = armies.map((a) => (a.id === bare.id ? { ...a, captain: best } : a));
+              nations[id] = { ...nh, hall: hall.filter((c) => c.id !== best.id),
+                res: { ...nh.res, scrap: nh.res.scrap - price } };
+            } else nations[id] = { ...nh, hall };
+          } else nations[id] = { ...nh, hall };
         }
 
         // move & fight. A force bound to a place — a lair, or a garrison with a
@@ -5109,14 +5290,15 @@ export default function ColdCoast() {
            you; hungry, a good deal worse — and one who loses men to it counts
            every sack from then on. */
         let captain = a.captain;
-        if (captain && a.owner === g.player) {
+        if (captain) {
           const was = captain.loyalty;
+          const mine = a.owner === g.player;
           captain = loyaltyShift(captain, sup.d >= 3 ? LOYALTY.starve : LOYALTY.fed);
           if (waste > 0 && !captain.traits.includes("careful") && Math.random() < 0.5) {
             captain = withTrait(captain, "careful");
-            newLog.push({ turn: g.turn, m: `${captain.name} has buried enough of the column to start counting sacks. Careful with rations, from now on.` });
+            if (mine) newLog.push({ turn: g.turn, m: `${captain.name} has buried enough of the column to start counting sacks. Careful with rations, from now on.` });
           }
-          if (was >= LOYALTY.mutter && captain.loyalty < LOYALTY.mutter) {
+          if (mine && was >= LOYALTY.mutter && captain.loyalty < LOYALTY.mutter) {
             notice("lord", `${captain.name} is muttering. ${a.name} will not stay yours on an empty stomach.`, key(a.c, a.r));
           }
         }
@@ -5145,9 +5327,12 @@ export default function ColdCoast() {
          to the Wasters: nobody's people, now, holding whatever it is standing
          on. There is no getting it back except the usual way. */
       armies = armies.map((a) => {
-        if (a.owner !== g.player || !a.captain || a.captain.loyalty > 0) return a;
-        notice("loss", `${a.captain.name} has walked, and taken ${a.name} with them. They are Wasters now.`, key(a.c, a.r));
-        newLog.push({ turn: g.turn, m: `${a.name} goes over. ${a.captain.name} was done waiting to be fed.` });
+        if (isMinor(a.owner) || !a.captain || a.captain.loyalty > 0) return a;
+        const mine = a.owner === g.player;
+        if (mine) notice("loss", `${a.captain.name} has walked, and taken ${a.name} with them. They are Wasters now.`, key(a.c, a.r));
+        newLog.push({ turn: g.turn, m: mine
+          ? `${a.name} goes over. ${a.captain.name} was done waiting to be fed.`
+          : `${nations[a.owner]?.short || "A rival"} loses ${a.name} — ${a.captain.name} was done waiting to be fed.` });
         return { ...a, owner: "wasters", name: `${captainSurname(a.captain)}'s Band`, captain: null, lord: false };
       });
 
@@ -5367,6 +5552,7 @@ export default function ColdCoast() {
       <TopBar nat={nat} income={income} turn={game.turn} owned={owned.length}
         armies={game.armies.filter((a) => a.owner === P).length} pop={realmPop}
         idle={game.armies.filter((a) => a.owner === P && a.mp > 0).length}
+        missions={missionList(game, P).filter((m) => !m.done).length}
         onRoster={() => setGame((g) => ({ ...g, roster: !g.roster }))}
         sound={game.sound} onLords={() => setGame((g) => ({ ...g, lords: true }))}
         onSound={(which) => setGame((g) => {
@@ -5473,7 +5659,8 @@ export default function ColdCoast() {
       {game.district && game.provinces[game.district] && (
         <DistrictPanel game={game} P={P} prov={game.provinces[game.district]}
           onClose={() => setGame((g) => ({ ...g, district: null }))}
-          onBuild={build} onImprove={improve} onRepair={repair} />
+          onBuild={build} onImprove={improve} onRepair={repair}
+          onTakeWard={takeWard} onFightWard={fightWard} />
       )}
       {game.seat && game.provinces[game.seat] && (
         <SeatScreen game={game} P={P} prov={game.provinces[game.seat]}
@@ -5504,6 +5691,13 @@ export default function ColdCoast() {
           <RealmScreen title="The works" onClose={shut}>
             <ProductionPanel game={game} P={P} onCraft={setCraft} />
           </RealmScreen>);
+        if (game.screen === "missions") return (
+          <RealmScreen title="Missions" onClose={shut}>
+            <MissionsPanel game={game} P={P}
+              onGo={(k) => setGame((g) => ({ ...g, screen: null, focus: k, sel: { armyId: null, k } }))}
+              onHear={(pid) => setGame((g) => ({ ...g, screen: null, hearing: pid }))}
+              onDistrict={(k) => setGame((g) => ({ ...g, screen: null, district: k }))} />
+          </RealmScreen>);
         if (game.screen === "world") return (
           <RealmScreen title="Rivals" onClose={shut}>
             <WorldPanel game={game} P={P} atWar={atWar} onWar={toggleWar} />
@@ -5526,7 +5720,7 @@ const RES_META = [
   { k: "men", label: "Recruits", Icon: Users, c: "#9db8c4" },
 ];
 
-function TopBar({ nat, income, turn, owned, armies, idle, pop, onEnd, onCodex, sound, onSound, onLords, onSave, saveFailed, onScreen, onRoster }) {
+function TopBar({ nat, income, turn, owned, armies, idle, pop, missions, onEnd, onCodex, sound, onSound, onLords, onSave, saveFailed, onScreen, onRoster }) {
   return (
     <header className="shrink-0 border-b cc-border-28363f cc-bg-0a1015a90 backdrop-blur px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
       <div className="flex items-center gap-2.5 pr-5 border-r cc-border-28363f">
@@ -5589,6 +5783,14 @@ function TopBar({ nat, income, turn, owned, armies, idle, pop, onEnd, onCodex, s
           map is meant to be on. Same 28px square as the warlord and sound
           controls beside them. */}
       <div className="flex items-center gap-1.5">
+        <button type="button" onClick={() => onScreen("missions")}
+          title="Missions — everything still outstanding" aria-label="Missions"
+          className={`cc-sndbtn ${missions ? "cc-sndon" : ""}`}>
+          <svg viewBox="0 0 512 512" width="15" height="15" aria-hidden="true">
+            <path d={ICONS.ui_missions.d} fill="currentColor" />
+          </svg>
+          {missions > 0 && <span className="cc-badge num">{missions}</span>}
+        </button>
         {[["realm", "The realm", Crown], ["tech", "Advances", Sparkles],
           ["make", "The works", Anvil], ["world", "Rivals", Swords]].map(([id, label, Icon]) => (
           <button key={id} type="button" onClick={() => onScreen(id)}
@@ -6793,6 +6995,15 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
         woods: woods.length,
         herds: woods.filter((p) => p.lair === "herd").length,
         mobs: game.armies.filter((a) => a.mob).length,
+        // Who is leading what, across every realm, so a test can see that
+        // rivals are giving out commands rather than only the player.
+        led: NATION_IDS.map((id) => {
+          const mine = game.armies.filter((a) => a.owner === id && a.units.length);
+          return `${id}:${mine.filter((a) => a.captain || a.lord).length}/${mine.length}+${(game.nations[id]?.hall || []).length}`;
+        }),
+        wards: Object.values(game.provinces)
+          .filter((p) => p.owner === game.player && isSettlement(p))
+          .map((p) => `${p.name}:${wardsOf(p).length}/${districtsFor(p).length}`),
         storyLairs: Object.keys(STORIES).filter((k) => game.provinces[k]?.lair),
         stories: Object.keys(STORIES).map((k) => `${k}:${game.provinces[k]?.story ? game.provinces[k].story.step : "-"}${game.provinces[k]?.feature || ""}`),
       };
@@ -7364,15 +7575,16 @@ function LevelPips({ lvl, col = "#8fe3d6" }) {
   );
 }
 
-function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair }) {
+function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair, onTakeWard, onFightWard }) {
   const [pick, setPick] = useState(null);        // which empty slot is being filled
   const nat = game.nations[P];
   const builds = buildsOf(prov);
   const open = districtSlots(prov);
   const max = districtMax(prov);
   const rank = districtRank(prov.pop);
-  const want = districtNeeds(prov);
   const shore = coastal(prov.c, prov.r);
+  const unclaimed = openDistricts(prov);
+  const here = game.armies.find((a) => a.owner === P && a.c === prov.c && a.r === prov.r && a.units.length);
 
   const canPut = (bid) => {
     const b = BUILDINGS[bid];
@@ -7395,6 +7607,7 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair })
             <div className="cc-text-12d5px cc-text-93a9b5">
               {prov.capital ? "your seat" : rank.name} · <span className="num">{prov.pop.toLocaleString()}</span> live here
               {" · "}<span className="num">{builds.length}</span> of <span className="num">{open}</span> slots taken
+              {unclaimed.length > 0 && <> · <span className="num cc-text-e8b98a">{unclaimed.length}</span> {unclaimed.length === 1 ? "quarter" : "quarters"} not yours</>}
             </div>
           </div>
           <button type="button" onClick={onClose} className="cc-seatclose cc-static" aria-label="Close">
@@ -7403,20 +7616,72 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair })
         </div>
 
         <div className="flex-1 overflow-y-auto thin p-5">
-          <div className="grid gap-3 cc-districtgrid">
-            {Array.from({ length: max }, (_, i) => {
-              const b = builds[i];
-              const locked = i >= open;
-              if (locked) {
-                return (
-                  <div key={i} className="cc-slot cc-slotlocked">
-                    <Lock size={18} className="cc-text-4d5f6b" />
-                    <div className="cc-text-12px cc-text-6f8794 text-center mt-1.5 leading-snug">
-                      {want ? `Room for this once ${want.at.toLocaleString()} people live here` : "Not yet"}
+          {unclaimed.length > 0 && (
+            <div className="mb-5">
+              <div className="cc-text-12d5px cc-text-a7bac6 mb-1 pb-1 border-b cc-border-243138">
+                Quarters that are not yours — {unclaimed.length} of {max - 1}
+              </div>
+              <div className="cc-text-12px cc-text-93a9b5 mb-3 leading-snug">
+                You hold the ground the place stands on. Everything else in it belongs to
+                somebody who was here first. Take a quarter and you have room to build in it.
+              </div>
+              <div className="grid gap-3">
+                {unclaimed.map((d) => {
+                  const pay = wardPay(d);
+                  const need = wardNeed(game, P, prov, d);
+                  const afford = canPayWard(nat, d);
+                  return (
+                    <div key={d.id} className="cc-ward">
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <span className="disp cc-text-16px cc-text-f2c97a">{d.name}</span>
+                        <span className="cc-text-11d5px cc-text-93a9b5 ml-auto">
+                          held by {FACTION[d.holder]?.short || d.holder}
+                          {" · "}{d.garrison.length} {d.garrison.length === 1 ? "company" : "companies"}
+                        </span>
+                      </div>
+                      <p className="cc-text-13px cc-text-dfeaf0 leading-relaxed mb-2.5">{d.intro}</p>
+                      <div className="grid gap-1.5 cc-wardways">
+                        {pay && (
+                          <button type="button" disabled={!afford}
+                            onClick={() => onTakeWard(key(prov.c, prov.r), d.id, "pay")}
+                            className={`cc-wardway ${afford ? "" : "cc-wardpoor"}`}>
+                            <span className="cc-text-12d5px cc-block">{pay.label}</span>
+                            <span className="cc-text-11d5px cc-text-93a9b5 cc-block mt-0.5">
+                              {Object.entries(pay.res).map(([k2, v]) => `${v} ${RES_WORD[k2] || k2}`).join(" and ")}
+                              {afford ? "" : " — you have not got it"}
+                            </span>
+                          </button>
+                        )}
+                        <button type="button" disabled={!here}
+                          onClick={() => onFightWard(key(prov.c, prov.r), d.id)}
+                          className={`cc-wardway ${here ? "cc-wardfight" : "cc-wardpoor"}`}>
+                          <span className="cc-text-12d5px cc-block">
+                            {(d.ways.find((w) => w.kind === "fight") || {}).label || "Take it by force"}
+                          </span>
+                          <span className="cc-text-11d5px cc-text-93a9b5 cc-block mt-0.5">
+                            {here ? `${here.name} is standing here` : "march a warband into the place first"}
+                          </span>
+                        </button>
+                        {need && (
+                          <button type="button" disabled={!need.ok}
+                            onClick={() => onTakeWard(key(prov.c, prov.r), d.id, "need")}
+                            className={`cc-wardway ${need.ok ? "" : "cc-wardpoor"}`}>
+                            <span className="cc-text-12d5px cc-block">{need.w.label}</span>
+                            <span className={`cc-text-11d5px cc-block mt-0.5 ${need.ok ? "cc-text-9fd6b4" : "cc-text-93a9b5"}`}>
+                              {need.ok ? "you have what they want" : need.text}
+                            </span>
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              }
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          <div className="grid gap-3 cc-districtgrid">
+            {Array.from({ length: open }, (_, i) => {
+              const b = builds[i];
               if (!b) {
                 return (
                   <button key={i} type="button" onClick={() => setPick(i)}
@@ -7950,8 +8215,8 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
             <Hammer size={15} /> Build in the district
           </button>
           <div className="cc-text-12px cc-text-93a9b5 mt-1.5 leading-snug">
-            {districtNeeds(selProv)
-              ? `Another slot opens at ${districtNeeds(selProv).at.toLocaleString()} people.`
+            {openDistricts(selProv).length
+              ? `${openDistricts(selProv).length} ${openDistricts(selProv).length === 1 ? "quarter is" : "quarters are"} still somebody else's — ${openDistricts(selProv).map((d) => d.name).join(", ")}.`
               : "Every slot this place will ever have is open."}
           </div>
         </Section>
@@ -10825,6 +11090,120 @@ function ChapterScene({ chapter, onClose }) {
         </div>
       </div>
     </Overlay>
+  );
+}
+
+/* ------------------------------- MISSIONS ---------------------------------
+   Everything the realm still owes somebody, or still means to do, gathered
+   off the five places it is scattered across: the goals, the words you have
+   given, whoever is in the hall, the places whose story is part-told, and
+   every quarter of your own settlements that is not yours yet.
+   ------------------------------------------------------------------------ */
+function missionList(game, P) {
+  const out = [];
+  const nat = game.nations[P];
+  const done = game.goals?.done || {};
+  if (!game.goals?.away) {
+    goalsFor(nat?.origin).forEach((g0) => out.push({
+      kind: "goal", id: `goal:${g0.id}`, title: g0.name, done: !!done[g0.id],
+      note: done[g0.id] ? g0.teaches : g0.hint,
+      pay: g0.pay,
+    }));
+  }
+  (game.promises || []).forEach((pr) => out.push({
+    kind: "promise", id: `word:${pr.id}`, title: pr.what, done: false,
+    note: pr.how, k: pr.targetK,
+    urgent: pr.until - game.turn <= 2,
+    when: `${Math.max(0, pr.until - game.turn)} ${pr.until - game.turn === 1 ? "season" : "seasons"} left`,
+  }));
+  (game.petitions || []).forEach((pt) => {
+    const def = PETITIONS.find((d) => d.id === pt.kind);
+    if (!def) return;
+    out.push({ kind: "hall", id: `hall:${pt.id}`, title: fillPetition(def.who, pt, game), done: false,
+      note: "Waiting in your hall for an answer.", hear: pt.id,
+      urgent: pt.until - game.turn <= 1,
+      when: `${Math.max(0, pt.until - game.turn)} ${pt.until - game.turn === 1 ? "season" : "seasons"} left` });
+  });
+  Object.entries(STORIES).forEach(([k, st]) => {
+    const pv = game.provinces[k];
+    if (!pv || !pv.explored) return;
+    if (pv.owner && pv.owner !== P) return;
+    const so = storyOf(pv);
+    if (!so || so.done) return;
+    out.push({ kind: "story", id: `story:${k}`, title: st.title, done: false, k,
+      note: st.steps[so.step].text,
+      when: `${so.step + 1} of ${st.steps.length}` });
+  });
+  Object.values(game.provinces).forEach((pv) => {
+    if (pv.owner !== P || !isSettlement(pv)) return;
+    openDistricts(pv).forEach((d) => out.push({
+      kind: "ward", id: `ward:${key(pv.c, pv.r)}:${d.id}`, title: `${d.name}, at ${pv.name}`, done: false,
+      note: d.intro, k: key(pv.c, pv.r), district: key(pv.c, pv.r),
+      when: `held by ${FACTION[d.holder]?.short || d.holder}`,
+    }));
+  });
+  return out;
+}
+
+const MISSION_LOOK = {
+  goal:    { label: "What now", tone: "cc-border-3d5a4a", text: "cc-text-9fd6b4" },
+  promise: { label: "Your word", tone: "cc-border-8a6f36", text: "cc-text-f2c97a" },
+  hall:    { label: "The hall", tone: "cc-border-8a6f36", text: "cc-text-f2c97a" },
+  story:   { label: "A place", tone: "cc-border-4d7488", text: "cc-text-9fd9e8" },
+  ward:    { label: "A quarter", tone: "cc-border-5a4636", text: "cc-text-e8b98a" },
+};
+
+function MissionsPanel({ game, P, onGo, onHear, onDistrict }) {
+  const all = missionList(game, P);
+  const [tab, setTab] = useState("open");
+  const open = all.filter((m) => !m.done);
+  const shown = tab === "open" ? open : all.filter((m) => m.done);
+  const count = (kind) => open.filter((m) => m.kind === kind).length;
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {[["open", `Outstanding — ${open.length}`], ["done", `Done — ${all.length - open.length}`]].map(([id, label]) => (
+          <button key={id} type="button" onClick={() => setTab(id)}
+            className={`cc-formbtn ${tab === id ? "cc-poston" : ""}`}>{label}</button>
+        ))}
+        <span className="cc-text-11d5px cc-text-6f8794 ml-auto">
+          {["goal", "promise", "hall", "story", "ward"].filter((k) => count(k))
+            .map((k) => `${count(k)} ${MISSION_LOOK[k].label.toLowerCase()}`).join(" · ")}
+        </span>
+      </div>
+      {!shown.length && (
+        <div className="cc-text-13px cc-text-93a9b5">
+          {tab === "open" ? "Nothing outstanding. Go and find something."
+            : "Nothing finished yet."}
+        </div>
+      )}
+      <div className="grid gap-2">
+        {shown.map((m) => {
+          const look = MISSION_LOOK[m.kind];
+          return (
+            <div key={m.id} className={`rounded border cc-bg-131f27 px-3.5 py-2.5 ${m.urgent ? "cc-border-8a4a38" : look.tone}`}>
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className={`cc-text-11px ${look.text}`}>{look.label}</span>
+                <span className={`cc-text-14px flex-1 min-w-0 ${m.done ? "cc-text-6f8794" : "cc-text-e5eef3"}`}
+                  style={m.done ? { textDecoration: "line-through" } : undefined}>{m.title}</span>
+                {m.when && <span className={`cc-text-11d5px num ${m.urgent ? "cc-text-e08a6a" : "cc-text-93a9b5"}`}>{m.when}</span>}
+              </div>
+              {m.note && <div className="cc-text-12d5px cc-text-a7bac6 leading-snug mt-1">{m.note}</div>}
+              <div className="flex items-center gap-3 mt-1.5">
+                {m.pay && !m.done && (
+                  <span className="cc-text-11d5px cc-text-9fd6b4">
+                    {Object.entries(m.pay).map(([k2, v]) => `${v} ${RES_WORD[k2] || k2}`).join(" and ")} when it is done
+                  </span>
+                )}
+                {m.hear && <button type="button" onClick={() => onHear(m.hear)} className="cc-text-11d5px cc-text-8fe3d6">Hear them</button>}
+                {m.district && <button type="button" onClick={() => onDistrict(m.district)} className="cc-text-11d5px cc-text-8fe3d6">Open the district</button>}
+                {m.k && <button type="button" onClick={() => onGo(m.k)} className="cc-text-11d5px cc-text-8fe3d6">Show me</button>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

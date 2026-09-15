@@ -266,6 +266,28 @@ check("the season button says who has not moved", await page.evaluate(() =>
   check("the seat passes to a captain", scene && after !== before && !/Grimhand/.test(after), after.split(" · ")[0]);
 }
 
+/* Everything outstanding, gathered on one screen off the five places it is
+   scattered across. */
+await page.evaluate(() => {
+  const b = [...document.querySelectorAll("header button")].find((x) => x.getAttribute("aria-label") === "Missions");
+  if (b) b.click();
+});
+await wait(400);
+{
+  const t = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  const kinds = [...new Set((t.match(/What now|Your word|The hall|A place|A quarter/g) || []))];
+  check("the missions screen gathers what is outstanding",
+    /Outstanding —/.test(t) && kinds.length >= 2, kinds.join(", ") || "nothing listed");
+  await page.evaluate(() => {
+    const ov = document.querySelector(".fixed.inset-0.z-50");
+    if (ov) [...ov.querySelectorAll("button")].find((b) => /^\s*$/.test(b.textContent) || b.getAttribute("aria-label") === "Close")?.click();
+  });
+  await wait(250);
+  await page.keyboard.press("Escape"); await wait(250);
+  await page.evaluate(() => { const ov = document.querySelector(".fixed.inset-0.z-50"); if (ov) ov.click(); });
+  await wait(300);
+}
+
 /* The muster roll: every warband on one sheet, a click from the map. */
 await click("warbands?$"); await wait(350);
 const rosterRows = await page.evaluate(() => document.querySelectorAll(".cc-rosterrow").length);
@@ -364,12 +386,34 @@ await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77);
 await wait(300);
 check("a settlement opens a district", await click("Build in the district"));
 await wait(400);
-const slots = await page.evaluate(() => ({
-  open: document.querySelectorAll(".cc-slotempty").length,
-  filled: document.querySelectorAll(".cc-slotfull").length,
-}));
-check("the district has slots to fill", slots.open + slots.filled >= 4,
-  `${slots.open} empty, ${slots.filled} filled`);
+/* A settlement is one slot and a set of quarters that belong to somebody
+   else. Lunden's first is the Trench, and it can be bought. */
+{
+  const slots = await page.evaluate(() => ({
+    open: document.querySelectorAll(".cc-slotempty").length,
+    filled: document.querySelectorAll(".cc-slotfull").length,
+    wards: document.querySelectorAll(".cc-ward").length,
+    text: document.querySelector(".fixed.inset-0.z-50")?.innerText || "",
+  }));
+  check("a settlement starts with one slot and quarters to take",
+    slots.open + slots.filled === 1 && slots.wards >= 4,
+    `${slots.open + slots.filled} slot, ${slots.wards} quarters`);
+  check("the seat's quarters are the written ones", /The Trench/.test(slots.text),
+    (slots.text.match(/The [A-Z][a-z]+( [A-Z][a-z]+)?/g) || []).slice(0, 3).join(", "));
+  const scrapNow = () => page.evaluate(() => +((document.querySelector("header")?.innerText.match(/([\d,]+)\s*\n?\s*Scrap/) || [])[1] || "0").replace(/,/g, ""));
+  const before = await scrapNow();
+  const paid = await page.evaluate(() => {
+    const w = [...document.querySelectorAll(".cc-ward")].find((x) => /The Trench/.test(x.textContent));
+    const b = w && [...w.querySelectorAll("button")].find((x) => !x.disabled && /Pay/.test(x.textContent));
+    if (b) { b.click(); return true; }
+    return false;
+  });
+  await wait(400);
+  const after = await scrapNow();
+  check("a quarter can be bought, and opens a slot", paid && after < before
+    && await page.evaluate(() => document.querySelectorAll(".cc-slotempty").length + document.querySelectorAll(".cc-slotfull").length === 2),
+    `${before} -> ${after} scrap`);
+}
 await page.evaluate(() => document.querySelector(".cc-slotempty")?.click());
 await wait(300);
 const raised = await page.evaluate(() => {
@@ -392,6 +436,15 @@ await wait(400);
 const up = await page.evaluate(() =>
   ([...document.querySelectorAll(".cc-slotup")].map((b) => b.textContent).join(" ")));
 check("a finished building offers its next level", /Cutting floor/.test(up), up.slice(0, 60));
+
+/* Rivals run their own halls and give out commands the same way you do. */
+{
+  const led = await page.evaluate(() => window.__ccWild().led);
+  const rivals = led.filter((x) => !x.startsWith("dogger"));
+  const withCaptains = rivals.filter((x) => +x.split(":")[1].split("/")[0] > 0).length;
+  check("rivals give out commands from their own halls", withCaptains >= 3,
+    rivals.join("  "));
+}
 await page.evaluate(() => {
   const ov = document.querySelector(".fixed.inset-0.z-50");
   if (ov) ov.querySelector("button")?.click();
