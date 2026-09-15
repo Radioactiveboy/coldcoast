@@ -397,6 +397,10 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-rosterrow{display:flex;align-items:center;gap:10px;text-align:left;width:100%;padding:7px 9px;border:1px solid #22303a;border-radius:6px;background:#111b22;transition:border-color .12s,background .12s}
 .cc-rosterrow:hover{border-color:#3d6470;background:#152229}
 .cc-rosteron{border-color:#4d9aa6;background:#152a30}
+.cc-standrow{display:flex;align-items:center;gap:10px;text-align:left;width:100%;padding:7px 9px;border:1px solid #22303a;border-radius:6px;background:#111b22;transition:border-color .12s,background .12s}
+.cc-standrow:hover:not(:disabled){border-color:#3d6470;background:#152229}
+.cc-standrow:disabled{opacity:.75}
+.cc-standon{border-color:#4d9aa6;background:#152a30}
 .cc-rosterplate{width:26px;height:28px;border-radius:5px 5px 11px 11px;border:1px solid;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .cc-w-520px{width:520px}
 .cc-seasoncard{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:21;width:440px;max-width:calc(100% - 24px);
@@ -419,6 +423,59 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
   background:rgba(11,18,25,.97);box-shadow:0 4px 14px rgba(3,7,10,.55);
   animation:noticeIn .28s ease}
 @keyframes noticeIn{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+.cc-noticesup{bottom:132px}
+/* The warband in hand, laid along the foot of the map. */
+.cc-warbar{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:23;
+  width:min(1040px,calc(100% - 24px));display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
+.cc-warbar>*{pointer-events:auto;max-width:100%}
+.cc-warbody{display:flex;align-items:stretch;width:100%;border:1px solid #31454f;border-radius:9px;
+  background:linear-gradient(180deg,rgba(15,24,31,.97),rgba(9,15,20,.98));
+  box-shadow:0 8px 26px rgba(3,7,10,.72);backdrop-filter:blur(5px);overflow:hidden}
+.cc-warhead{width:268px;flex-shrink:0;padding:8px 10px;border-right:1px solid #22303a;
+  display:flex;flex-direction:column;gap:2px;min-width:0}
+.cc-warunits{flex:1;min-width:0;display:flex;gap:6px;padding:8px 10px;overflow-x:auto;align-items:flex-start}
+.cc-warunits::-webkit-scrollbar{height:6px}
+.cc-warunits::-webkit-scrollbar-thumb{background:#2a3d48;border-radius:3px}
+.cc-waracts{width:168px;flex-shrink:0;padding:8px 9px;border-left:1px solid #22303a;
+  display:flex;flex-direction:column;gap:4px;justify-content:center}
+.cc-wbunit{position:relative;width:72px;flex-shrink:0;border:1px solid #2a3d48;border-radius:6px;
+  background:#111b22;padding:4px 3px 4px;text-align:center;transition:border-color .12s,background .12s}
+.cc-wbunit:hover{border-color:#4d9aa6;background:#152229}
+.cc-wbon{border-color:#8fe3d6;background:#15282d}
+.cc-wbthin{border-color:#7a4034}
+.cc-wbslot{width:44px;flex-shrink:0;align-self:stretch;min-height:96px;border:1px dashed #2a3d48;border-radius:6px;
+  display:flex;align-items:center;justify-content:center;color:#48606f;font-size:17px}
+.cc-wbstr{height:3px;border-radius:2px;background:#26333c;overflow:hidden;margin-top:3px}
+.cc-wbstr>span{display:block;height:100%}
+.cc-wbrank{position:absolute;top:2px;left:2px;z-index:1}
+.cc-wbhonour{position:absolute;top:1px;right:3px;font-size:10px;color:#f0e2b8;z-index:1}
+.cc-wbpop{width:320px;align-self:flex-start;border:1px solid #31454f;border-radius:8px;
+  background:rgba(11,18,25,.98);box-shadow:0 8px 22px rgba(3,7,10,.72);padding:9px 11px}
+.cc-warbtn{width:100%;padding:5px 7px;border:1px solid #31454f;border-radius:5px;background:#111b22;
+  color:#c6d6de;font-size:11.5px;text-align:center;transition:border-color .12s,color .12s,background .12s}
+.cc-warbtn:hover:not(:disabled){border-color:#4d9aa6;color:#e5eef3;background:#152229}
+.cc-warbtn:disabled{opacity:.45}
+.cc-warbtngold{border-color:#8a6f36;color:#f2c97a;background:#1a1610}
+.cc-warbtngold:hover:not(:disabled){border-color:#f2c97a;background:#241d10}
+.cc-warbtngreen{border-color:#4a6b45;color:#d7ecc9;background:#1a2a1b}
+.cc-warbtngreen:hover:not(:disabled){border-color:#7fb06a;background:#22381f}
+.cc-wartabs{display:flex;gap:4px;align-self:flex-start;flex-wrap:wrap}
+.cc-wartab{padding:3px 10px;border:1px solid #22303a;border-radius:6px;font-size:11.5px;
+  color:#93a9b5;background:rgba(11,18,25,.94);transition:border-color .12s,color .12s}
+.cc-wartab:hover{border-color:#3d6470;color:#e5eef3}
+.cc-wartabon{color:#e5eef3;border-color:#4d9aa6;background:rgba(21,42,48,.96)}
+/* On a narrow screen the map panel is too short to hold the bar, so it sits
+   on the floor of the window instead, where a phone expects it. */
+@media (max-width:860px){
+  .cc-warbar{position:fixed;left:0;right:0;bottom:0;width:auto;transform:none;z-index:40;align-items:stretch;gap:0}
+  .cc-wartabs{align-self:stretch;padding:0 8px 4px}
+  .cc-warbody{flex-wrap:wrap;border-radius:0;border-left:0;border-right:0;border-bottom:0;max-height:62vh;overflow-y:auto}
+  .cc-warhead{width:100%;border-right:0;border-bottom:1px solid #22303a}
+  .cc-waracts{width:100%;border-left:0;border-top:1px solid #22303a;flex-direction:row;flex-wrap:wrap}
+  .cc-waracts>*{flex:1 1 44%}
+  .cc-wbpop{align-self:stretch;width:auto;border-radius:0;border-left:0;border-right:0;max-height:40vh;overflow-y:auto}
+  .cc-noticesup{display:none}
+}
 .cc-terrainart{position:relative;display:block;width:100%;overflow:hidden;border-radius:5px;border:1px solid #2a3d48;margin-bottom:12px}
 .cc-terrainflat{border-radius:0;border:0;border-bottom:1px solid #28363f;margin-bottom:0}
 .cc-terrainfade{position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(8,14,19,.15) 0%,rgba(8,14,19,0) 42%,rgba(8,14,19,.82) 100%)}
@@ -5575,6 +5632,13 @@ export default function ColdCoast() {
   /* -------------------------------- RENDER ------------------------------- */
   const selProv = game.sel?.k ? game.provinces[game.sel.k] : null;
   const selArmy = game.sel?.armyId ? game.armies.find((a) => a.id === game.sel.armyId) : null;
+  /* What the bar along the foot of the map is talking about: the warband in
+     hand if you are holding one, otherwise whatever is standing on the hex you
+     picked — but only if somebody of yours has laid eyes on that ground. */
+  const barArmy = selArmy || (selProv
+    && (sight?.has(key(selProv.c, selProv.r)) || selProv.owner === P)
+    ? game.armies.find((a) => a.c === selProv.c && a.r === selProv.r) : null);
+  const barHex = barArmy ? game.armies.filter((a) => a.c === barArmy.c && a.r === barArmy.r) : [];
 
   return (
     <div className="cc-root cc-app w-full flex flex-col cc-text-e5eef3"
@@ -5607,12 +5671,22 @@ export default function ColdCoast() {
           <GoalsCard goals={game.goals || { done: {}, hidden: false }} origin={game.nations[P]?.origin}
             onToggle={() => setGame((g) => ({ ...g, goals: { ...(g.goals || { done: {} }), hidden: !g.goals?.hidden } }))}
             onPutAway={() => setGame((g) => ({ ...g, goals: { ...(g.goals || { done: {} }), hidden: true, away: true } }))} />
-          <Notices list={game.notices}
+          <Notices list={game.notices} raised={!!barArmy}
             onGo={(n) => setGame((g) => ({ ...g, focus: n.k, sel: { armyId: null, k: n.k },
               notices: g.notices.filter((x) => x.id !== n.id) }))}
             onDismiss={(id) => setGame((g) => ({ ...g, notices: g.notices.filter((x) => x.id !== id) }))} />
           <WorldMap game={game} P={P} sight={sight} onSelect={selectHex} atWar={atWar} onDeselect={deselect}
             onFocused={clearFocus} onMarch={marchTo} />
+          {barArmy && !game.battle && (
+            <WarbandBar game={game} P={P} army={barArmy} sameHex={barHex}
+              onDeselect={deselect} onRename={renameArmy} onCommand={setCommander}
+              onHall={(aid) => setGame((g) => ({ ...g, hall: aid || "open" }))}
+              onReinforce={reinforce} onSplit={splitUnit} onTake={takeCommand} onMerge={mergeInto}
+              onDisband={(aid, uid) => setGame((g) => ({
+                ...g,
+                armies: g.armies.map((a) => a.id === aid ? { ...a, units: a.units.filter((u) => u.id !== uid) } : a).filter((a) => a.units.length),
+              }))} />
+          )}
         </div>
         <aside className="w-full cc-lg-w-352px shrink-0 border-t cc-lg-border-t-0 cc-lg-border-l cc-border-28363f cc-bg-0d141af2 flex flex-col min-h-0 cc-max-h-46vh cc-lg-max-h-none">
           <Sidebar
@@ -7831,8 +7905,12 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
       <p className="mb-1.5">
         Clicking another of your warbands hands you that one instead.
       </p>
-      <p>Marching onto unclaimed or enemy ground takes it. Marching onto an enemy warband starts a battle.
-        Two of your own on one hex can be merged from the second one's card.</p>
+      <p className="mb-1.5">Marching onto unclaimed or enemy ground takes it. Marching onto an enemy warband starts a battle.
+        Two of your own on one hex can be merged from the bar at the foot of the map.</p>
+      <p>What a warband is made of — who leads it, every company and the rank it has reached,
+        how much room is left in it, what it eats and how far it can march — is laid out along
+        the foot of the map. Click a company there to bring it up to strength, march it out on
+        its own, or stand it down.</p>
     </div>
   );
 
@@ -7869,26 +7947,15 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
 
   return (
     <div>
-      {/* Which warband is in hand used to be invisible state you could only
-          infer from a card further down the panel. It travels with you now,
-          says where it is, and can always be put down. */}
-      {selArmy && (
+      {/* What the warband in hand is made of is laid out along the foot of the
+          map now. All this has to say is that it is in hand and standing
+          somewhere other than the ground you are looking at. */}
+      {selArmy && (selArmy.c !== selProv.c || selArmy.r !== selProv.r) && (
         <div className="rounded border cc-border-4d9aa6 cc-bg-152a30 px-2.5 py-2 mb-2.5 flex items-center gap-2">
           <Swords size={14} className="cc-text-8fe3d6 shrink-0" />
           <div className="min-w-0 flex-1 leading-tight">
             <div className="cc-text-13px truncate">{selArmy.name}</div>
-            <div className="cc-text-11d5px cc-text-93a9b5">
-              in hand · <span className="num">{selArmy.units.length}</span> compan{selArmy.units.length === 1 ? "y" : "ies"}
-              {(() => {
-                const allow = moveAllowance(game, selArmy);
-                return (
-                  <>{" · "}<span className="num">{selArmy.mp}</span> of{" "}
-                    <span className="num">{allow.total}</span> movement
-                    {allow.note && <span className="cc-text-9fd6b4"> ({allow.note})</span>}</>
-                );
-              })()}
-              {(selArmy.c !== selProv.c || selArmy.r !== selProv.r) && " · standing elsewhere"}
-            </div>
+            <div className="cc-text-11d5px cc-text-93a9b5">in hand · standing elsewhere</div>
           </div>
           <button type="button" onClick={onDeselect}
             className="shrink-0 cc-text-11d5px cc-text-93a9b5 cc-hover-text-e5eef3 px-1.5 py-1 rounded border cc-border-31454f transition-colors">
@@ -8314,18 +8381,36 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
         </button>
       )}
 
-      {armiesHere.map((a) => (
-        <ArmyCard key={a.id} army={a} game={game} P={P} onDisband={onDisband}
-          held={selArmy?.id === a.id} heldArmy={selArmy}
-          onTake={onTake} onMerge={onMerge} onReinforce={onReinforce} onCommand={onCommand} onHall={onHall}
-          onRename={onRename} onSplit={onSplit} />
-      ))}
-
-      {selArmy && (
-        <button type="button" onClick={onDeselect}
-          className="w-full mt-1 py-2 rounded border cc-border-31454f cc-hover-border-3d6470 cc-text-c6d6de cc-text-13px transition-colors">
-          Put the warband down  ·  Esc
-        </button>
+      {armiesHere.length > 0 && (
+        <Section title={armiesHere.length > 1 ? "Standing here" : "Standing on it"}>
+          {armiesHere.map((a) => {
+            const own = a.owner === P;
+            const held = selArmy?.id === a.id;
+            const n = game.nations[a.owner];
+            const str = a.units.reduce((x, u) => x + u.str, 0);
+            return (
+              <button key={a.id} type="button" disabled={!own} onClick={() => onTake(a.id)}
+                className={`cc-standrow mb-1.5 ${held ? "cc-standon" : ""}`}>
+                <span className="cc-rosterplate" style={{ borderColor: n.color, color: n.color }}>
+                  {a.lord ? <Crown size={13} /> : <Swords size={13} />}
+                </span>
+                <span className="flex-1 min-w-0 text-left">
+                  <span className="block cc-text-13px truncate" style={{ color: n.color }}>{a.name}</span>
+                  <span className="block cc-text-11d5px cc-text-93a9b5 truncate">
+                    {!own && `${n.short} · `}{a.units.length} {a.units.length === 1 ? "company" : "companies"} · {str} strong
+                    {a.lord ? " · your banner" : a.captain ? ` · Captain ${a.captain.name}` : ""}
+                  </span>
+                </span>
+                <span className="cc-text-11px cc-text-8fe3d6 shrink-0 text-right" style={{ maxWidth: 74 }}>
+                  {held ? "in hand" : own ? "Put this warband in hand" : "sighted"}
+                </span>
+              </button>
+            );
+          })}
+          <div className="cc-text-11px cc-text-6f8794 leading-snug">
+            What a warband is made of is laid out along the foot of the map.
+          </div>
+        </Section>
       )}
     </div>
   );
@@ -8411,219 +8496,265 @@ function RankLine({ u }) {
   );
 }
 
-function ArmyCard({ army, game, P, onDisband, held, heldArmy, onTake, onMerge, onReinforce, onCommand, onRename, onSplit, onHall }) {
+/* The warband in hand, along the foot of the map, the way a line of battle is
+   read: who leads it, what it is made of, what rank each company has reached,
+   how much room is left in it, how far it can march and what it is eating.
+   All of this used to live in the right-hand panel, which then had no room
+   left to talk about the ground you were standing on. */
+function WarbandBar({ game, P, army, sameHex, onDeselect, onRename, onHall, onCommand,
+  onReinforce, onSplit, onDisband, onTake, onMerge }) {
+  const [open, setOpen] = useState(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(army.name);
+  useEffect(() => { setOpen(null); setEditing(false); }, [army.id]);
+
+  const own = army.owner === P;
+  const nat = game.nations[army.owner];
   const standingOn = game.provinces[key(army.c, army.r)];
   const friendly = !!standingOn && standingOn.owner === P;
   const muster = musteringGround(standingOn);
-  const own = army.owner === P;
-  const nat = game.nations[army.owner];
+  const cap = bandCap(game.nations[army.owner]);
+  const room = Math.max(0, cap - army.units.length);
   const totalStr = army.units.reduce((n, u) => n + u.str, 0);
   const upkeep = army.units.reduce((acc, u) => {
-    const s = unitStats(u);
-    acc.food += s.food; acc.fuel += s.fuel; return acc;
+    const s = unitStats(u); acc.food += s.food; acc.fuel += s.fuel; return acc;
   }, { food: 0, fuel: 0 });
   const sup = supplyOf(game.provinces, nat, army.owner, army);
+  const allow = moveAllowance(game, army);
+  const supTone = sup.band.tone === "good" ? "cc-text-9fd6b4"
+    : sup.band.tone === "warn" ? "cc-text-e8b98a" : "cc-text-e08a6a";
+  const openU = open ? army.units.find((u) => u.id === open) : null;
+  const mates = (sameHex || []).filter((a) => a.id !== army.id && a.owner === P && own);
 
   return (
-    <Section title={own ? (held ? "In hand" : "Also standing here") : "Warband sighted"}>
-      {own && editing ? (
-        <form className="flex items-center gap-1.5"
-          onSubmit={(e) => { e.preventDefault(); onRename(army.id, draft); setEditing(false); }}>
-          <input autoFocus value={draft} maxLength={40}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Escape") { setDraft(army.name); setEditing(false); } }}
-            className="cc-namefield disp cc-text-15px flex-1 min-w-0" />
-          <button type="submit" className="cc-text-11d5px cc-text-8fe3d6 px-1.5 py-1 rounded border cc-border-4d9aa6">Name it</button>
-          <button type="button" onClick={() => { setDraft(army.name); setEditing(false); }}
-            className="cc-text-11d5px cc-text-93a9b5 px-1.5 py-1">Leave it</button>
-        </form>
-      ) : (
-        <div className="disp cc-text-15px flex items-center gap-2" style={{ color: nat.color }}>
-          <Swords size={14} className="shrink-0" />
-          <span className="min-w-0 truncate">{army.name}</span>
-          {held && <span className="cc-text-11d5px cc-text-8fe3d6 shrink-0">· selected</span>}
-          {army.lord && <Crown size={13} className="cc-text-f0e2b8 shrink-0" />}
-          {own && (
-            <button type="button" title="Give this warband a name"
-              onClick={() => { setDraft(army.name); setEditing(true); }}
-              className="shrink-0 cc-text-11d5px cc-text-93a9b5 cc-hover-text-e5eef3 px-1 transition-colors">
-              rename
+    <div className="cc-warbar">
+      {mates.length > 0 && (
+        <div className="cc-wartabs">
+          <span className="cc-wartab cc-wartabon">{army.name} <span className="num">· {army.units.length}</span></span>
+          {mates.map((a) => (
+            <button key={a.id} type="button" className="cc-wartab" onClick={() => onTake(a.id)}
+              title="Take this one in hand instead">
+              {a.name} <span className="num">· {a.units.length}</span>
             </button>
-          )}
+          ))}
         </div>
       )}
-      {own && army.units.length >= bandCap(game.nations[P]) && (
-        <div className="cc-text-11d5px cc-text-e8b98a mt-1">
-          Full at {bandCap(game.nations[P])} companies. March one out on its own to make room
-          {game.nations[P]?.known?.hosting ? "." : ", or learn the long muster for two more."}
-        </div>
-      )}
-      <div className="cc-text-12d5px cc-text-93a9b5 mb-2">
-        <span className="num">{totalStr}</span> strong
-        {own && (() => {
-          const allow = moveAllowance(game, army);
-          return (
-            <> · <span className="num">{army.mp}</span> of <span className="num">{allow.total}</span> movement
-              {allow.note && <span className="cc-text-9fd6b4"> ({allow.note})</span>}
-              {" "}· eats <span className="num">{Math.round(upkeep.food * sup.band.draw)}</span> rations
-              {upkeep.fuel > 0 && <>, <span className="num">{Math.round(upkeep.fuel * sup.band.draw)}</span> fuel</>}</>
-          );
-        })()}
-      </div>
-      {own && (army.lord ? (
-        <div className="rounded border cc-border-8a6f36 cc-bg-1a1610 px-2.5 py-2 mb-2">
-          <div className="cc-text-13px cc-text-f2c97a">{lordName(nat) || "Your warlord"} leads them</div>
-          <div className="cc-text-11d5px cc-text-93a9b5 mt-0.5">No captain while the banner is here.</div>
-        </div>
-      ) : army.captain ? (
-        <>
-          <CaptainLine c={army.captain} />
-          <button type="button" onClick={() => onHall(army.id)}
-            className="cc-text-11d5px cc-text-93a9b5 cc-hover-text-e5eef3 mb-2">Change the command</button>
-        </>
-      ) : (
-        <button type="button" onClick={() => onHall(army.id)}
-          className="w-full mb-2 py-2 rounded border cc-border-8a6f36 cc-bg-1a1610 cc-text-f2c97a cc-text-13px cc-hover-border-f2c97a transition-colors">
-          Nobody leads them — appoint a captain
-        </button>
-      ))}
-      {own && <SupplyLine sup={sup} />}
-      <div className="grid gap-1.5">
-        {army.units.map((u) => {
-          const s = unitStats(u);
-          return (
-            <div key={u.id} className="rounded border cc-border-31454f cc-bg-131f27 px-2.5 py-2 flex gap-2.5">
-              <UnitArt type={u.type} size={46} />
+
+      {openU && (() => {
+        const s = unitStats(openU);
+        const rc = own ? reinforceCost(openU, P, muster) : null;
+        const afford = rc && game.nations[P].res.men >= rc.men && game.nations[P].res.scrap >= rc.scrap;
+        const ok = rc && friendly && afford;
+        return (
+          <div className="cc-wbpop">
+            <div className="flex gap-2.5">
+              <UnitArt type={openU.type} size={44} />
               <div className="flex-1 min-w-0">
-              <div className="flex justify-between items-baseline">
-                <span className="cc-text-13px">{u.honour && <span className="cc-honour" title={`Named at ${u.honour.at}`}>✦ </span>}{unitLabel(u)}</span>
-                <span className="num cc-text-12d5px cc-text-aac5d1">{u.str}/{u.max}</span>
+                <div className="flex items-baseline gap-2">
+                  <span className="cc-text-13px truncate">
+                    {openU.honour && <span className="cc-honour" title={`Named at ${openU.honour.at}`}>✦ </span>}
+                    {unitLabel(openU)}
+                  </span>
+                  <span className="num cc-text-12px cc-text-aac5d1 ml-auto shrink-0">{openU.str}/{openU.max}</span>
+                  <button type="button" onClick={() => setOpen(null)}
+                    className="cc-text-13px cc-text-8399a6 cc-hover-text-e5eef3 shrink-0" aria-label="Close">×</button>
+                </div>
+                <div className="cc-text-11d5px cc-text-93a9b5 mt-0.5">{unitKit(openU)}</div>
+                <RankLine u={openU} />
+                <div className="flex gap-3 mt-1 cc-text-11d5px cc-text-a0b6c1">
+                  <span className="num">melee {s.melee.toFixed(0)}</span>
+                  <span className="num">shot {s.ranged}</span>
+                  <span className="num">armour {s.def}</span>
+                </div>
               </div>
-              <div className="cc-text-12px cc-text-93a9b5 mt-0.5">
-                {unitKit(u)}
-              </div>
-              <RankLine u={u} />
-              <div className="flex gap-3 mt-1.5 cc-text-11d5px cc-text-a0b6c1">
-                <span className="num">melee {s.melee.toFixed(0)}</span>
-                <span className="num">shot {s.ranged}</span>
-                <span className="num">armour {s.def}</span>
-              </div>
-              <div className="mt-1.5 cc-h-3px cc-bg-26333c rounded overflow-hidden">
-                <div className="h-full" style={{ width: `${(u.str / u.max) * 100}%`, background: nat.color }} />
-              </div>
-              {own && (() => {
-                const rc = reinforceCost(u, P, muster);
-                const canSplit = army.units.length > 1;
-                const splitBtn = canSplit && (
-                  <button type="button" onClick={() => onSplit(army.id, u.id)}
+            </div>
+            {own && rc && (
+              <>
+                <button type="button" disabled={!ok} onClick={() => onReinforce(army.id, openU.id)}
+                  className={`cc-warbtn mt-2 ${ok ? "cc-warbtngreen" : ""}`}>
+                  {!friendly ? "Cannot reinforce outside your own ground"
+                    : !afford ? `Needs ${rc.men} recruits and ${rc.scrap} scrap`
+                    : `Bring up ${rc.gap} men — ${rc.gap} recruits, ${rc.scrap} scrap`}
+                </button>
+                {friendly && !muster && afford && (
+                  <div className="cc-text-11px cc-text-c9a37a mt-1 leading-snug">
+                    The men cost the same anywhere. Arming them off carts in the field does not —
+                    at a muster hall or your seat the kit is most of half the price.
+                  </div>
+                )}
+              </>
+            )}
+            {own && (
+              <div className="flex items-center gap-3 mt-1.5">
+                {army.units.length > 1 && (
+                  <button type="button" onClick={() => onSplit(army.id, openU.id)}
                     title="They become a warband of their own, standing where they are"
                     className="cc-text-11d5px cc-text-93a9b5 cc-hover-text-8fe3d6 transition-colors">
                     March out alone
                   </button>
-                );
-                if (!rc) return (
-                  <div className="mt-1.5 flex items-center gap-3">
-                    {splitBtn}
-                    <button onClick={() => onDisband(army.id, u.id)}
-                      className="cc-text-11d5px cc-text-93a9b5 cc-hover-text-e0644a transition-colors">
-                      Stand down
-                    </button>
-                  </div>
-                );
-                const afford = game.nations[P].res.men >= rc.men && game.nations[P].res.scrap >= rc.scrap;
-                const ok = friendly && afford;
-                return (
-                  <div className="mt-1.5">
-                    <button type="button" disabled={!ok} onClick={() => onReinforce(army.id, u.id)}
-                      className={`w-full py-1.5 rounded border cc-text-12d5px transition-colors ${ok
-                        ? "cc-bg-2b3f2c cc-hover-bg-37502f cc-border-4a6b45 cc-text-d7ecc9"
-                        : "cc-border-25313a cc-text-78909e"}`}>
-                      {!friendly ? "Cannot reinforce outside your own ground"
-                        : !afford ? `Needs ${rc.men} recruits and ${rc.scrap} scrap`
-                        : `Bring up ${rc.gap} men — ${rc.gap} recruits, ${rc.scrap} scrap`}
-                    </button>
-                    {friendly && !muster && afford && (
-                      <div className="cc-text-11d5px cc-text-c9a37a mt-1">
-                        The men cost the same anywhere. Arming them off carts in the field
-                        does not — at a muster hall or your seat the kit is most of half the price.
-                      </div>
-                    )}
-                    <div className="mt-1 flex items-center gap-3">
-                      {splitBtn}
-                      <button onClick={() => onDisband(army.id, u.id)}
-                        className="cc-text-11d5px cc-text-93a9b5 cc-hover-text-e0644a transition-colors">
-                        Stand down
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {own && WARLORDS[P] && lordAlive(game.nations[P]) && (() => {
-        const lordHere = !!army.lord;
-        const lordElsewhere = game.armies.some((a) => a.owner === P && a.lord && a.id !== army.id);
-        const transit = game.nations[P].lordTransit;
-        const blocked = !friendly || !!transit;
-        return (
-          <div className="mt-2">
-            <button type="button" disabled={blocked}
-              onClick={() => onCommand(lordHere ? null : army.id)}
-              className={`w-full py-2 rounded disp cc-text-13d5px border transition-colors ${blocked
-                ? "cc-border-25313a cc-text-78909e"
-                : lordHere ? "cc-bg-5a2f26 cc-hover-bg-6e3a2e cc-border-8a4a38 cc-text-f3d9cf"
-                : "cc-bg-2a3a4a cc-hover-bg-35495c cc-border-4d7488 cc-text-dfeaf0"}`}>
-              {transit ? "You are on the road — you reach them next season"
-                : !friendly ? "You can only join or leave a warband on your own ground"
-                : lordHere ? "Leave them and return to your seat"
-                : lordElsewhere ? "Ride over and take command of this warband"
-                : "Take the field with this warband"}
-            </button>
-            {lordHere && (
-              <div className="cc-text-12px cc-text-f2c97a mt-1">
-                {LORD_COMMAND[P].n} — {LORD_COMMAND[P].d} If this warband is broken, you may fall with it.
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {own && !held && (() => {
-        const together = heldArmy && heldArmy.units.length + army.units.length;
-        const canMerge = heldArmy && heldArmy.id !== army.id
-          && heldArmy.c === army.c && heldArmy.r === army.r;
-        return (
-          <div className="grid gap-1.5 mt-2">
-            {canMerge && (
-              <>
-                <button type="button" disabled={together > bandCap(game.nations[P])}
-                  onClick={() => onMerge(heldArmy.id, army.id)}
-                  className={`w-full py-2 rounded disp cc-text-13d5px border transition-colors ${together > bandCap(game.nations[P])
-                    ? "cc-border-25313a cc-text-78909e"
-                    : "cc-bg-2a3a4a cc-hover-bg-35495c cc-border-4d7488 cc-text-dfeaf0"}`}>
-                  {together > bandCap(game.nations[P]) ? "Too many companies to merge" : `Merge ${heldArmy.name} into this warband`}
+                )}
+                <button type="button" onClick={() => onDisband(army.id, openU.id)}
+                  className="cc-text-11d5px cc-text-93a9b5 cc-hover-text-e0644a transition-colors">
+                  Stand down
                 </button>
-                <div className="cc-text-12px cc-text-95aab6">
-                  {together > bandCap(game.nations[P])
-                    ? `That would be ${together} companies; ${bandCap(game.nations[P])} is the limit.`
-                    : `They would march on as one warband of ${together} companies.`}
-                </div>
-              </>
+              </div>
             )}
-            <button type="button" onClick={() => onTake(army.id)}
-              className="w-full py-2 rounded border cc-border-31454f cc-hover-border-3d6470 cc-text-c6d6de cc-text-13px transition-colors">
-              Put this warband in hand
-            </button>
           </div>
         );
       })()}
-    </Section>
+
+      <div className="cc-warbody">
+        <div className="cc-warhead">
+          {own && editing ? (
+            <form className="flex items-center gap-1"
+              onSubmit={(e) => { e.preventDefault(); onRename(army.id, draft); setEditing(false); }}>
+              <input autoFocus value={draft} maxLength={40}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") { setDraft(army.name); setEditing(false); } }}
+                className="cc-namefield disp cc-text-14px flex-1 min-w-0" />
+              <button type="submit" className="cc-text-11px cc-text-8fe3d6 px-1 py-0.5 rounded border cc-border-4d9aa6">Name it</button>
+            </form>
+          ) : (
+            <div className="disp cc-text-15px flex items-center gap-1.5 min-w-0" style={{ color: nat.color }}>
+              <Swords size={13} className="shrink-0" />
+              <span className="truncate min-w-0">{army.name}</span>
+              {army.lord && <Crown size={12} className="cc-text-f0e2b8 shrink-0" />}
+              {own && (
+                <button type="button" title="Give this warband a name"
+                  onClick={() => { setDraft(army.name); setEditing(true); }}
+                  className="shrink-0 cc-text-11px cc-text-6f8794 cc-hover-text-e5eef3 transition-colors">
+                  rename
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="cc-text-11d5px cc-text-93a9b5">
+            {!own && <span style={{ color: nat.color }}>{nat.short} · </span>}
+            <span className="num">{totalStr}</span> strong ·{" "}
+            <span className="num">{army.units.length}</span>/<span className="num">{cap}</span> companies
+            {own && (room > 0
+              ? <span className="cc-text-9fd6b4"> · room for {room}</span>
+              : <span className="cc-text-e8b98a"> · full</span>)}
+          </div>
+
+          {own && (
+            <div className="cc-text-11d5px cc-text-93a9b5" title={allow.note}>
+              <span className="num">{army.mp}</span> of <span className="num">{allow.total}</span> movement
+              {allow.note && <span className="cc-text-6f8794"> ({allow.note})</span>}
+            </div>
+          )}
+
+          {own && (
+            <div className="cc-text-11d5px" title={sup.band.note}>
+              <span className={supTone}>{sup.band.name}</span>
+              <span className="cc-text-93a9b5"> · rations <span className="num">&times;{sup.band.draw}</span>
+                {" "}· eats <span className="num">{Math.round(upkeep.food * sup.band.draw)}</span> a season
+                {upkeep.fuel > 0 && <>, and <span className="num">{Math.round(upkeep.fuel * sup.band.draw)}</span> fuel</>}
+              </span>
+            </div>
+          )}
+          {own && sup.band.waste > 0 && (
+            <div className="cc-text-11px cc-text-e08a6a">
+              Wasting <span className="num">{Math.round(sup.band.waste * 100)}%</span> of every company each season out here.
+            </div>
+          )}
+
+          {own && (army.lord ? (
+            <div className="cc-text-11d5px cc-text-f2c97a mt-auto pt-1">
+              {lordName(nat) || "Your warlord"} leads them — no captain while the banner is here.
+            </div>
+          ) : army.captain ? (
+            <button type="button" onClick={() => onHall(army.id)} title="Change the command"
+              className="mt-auto pt-1 text-left cc-text-11d5px cc-text-f0e2b8 cc-hover-text-f2c97a transition-colors truncate">
+              Captain {army.captain.name}
+              <span className={`ml-1 ${army.captain.loyalty >= 50 ? "cc-text-9fd6b4"
+                : army.captain.loyalty >= LOYALTY.mutter ? "cc-text-e8b98a" : "cc-text-e08a6a"}`}>
+                · {loyaltyWord(army.captain.loyalty)}
+              </span>
+            </button>
+          ) : (
+            <button type="button" onClick={() => onHall(army.id)}
+              className="cc-warbtn cc-warbtngold mt-auto">
+              Nobody leads them — appoint a captain
+            </button>
+          ))}
+        </div>
+
+        <div className="cc-warunits">
+          {army.units.map((u) => {
+            const r = rankOf(u.xp);
+            return (
+              <button key={u.id} type="button" title={unitFull(u)}
+                onClick={() => setOpen(open === u.id ? null : u.id)}
+                className={`cc-wbunit ${open === u.id ? "cc-wbon" : ""} ${u.str < u.max * 0.6 ? "cc-wbthin" : ""}`}>
+                <span className="cc-wbrank">
+                  <span className={`cc-rankpip ${r.n >= 4 ? "cc-rankhigh" : r.n >= 2 ? "cc-rankmid" : ""}`}>{r.n}</span>
+                </span>
+                {u.honour && <span className="cc-wbhonour" title={`Named at ${u.honour.at}`}>✦</span>}
+                <span className="flex items-center justify-center" style={{ height: 34 }}>
+                  <UnitArt type={u.type} size={32} />
+                </span>
+                <span className="block cc-text-11px cc-text-c6d6de truncate" style={{ lineHeight: 1.15 }}>{unitLabel(u)}</span>
+                <span className={`block cc-text-11px truncate ${r.n >= 4 ? "cc-text-f2c97a" : r.n >= 2 ? "cc-text-9fd6b4" : "cc-text-6f8794"}`}>
+                  {r.name}
+                </span>
+                <span className="block num cc-text-11px cc-text-8399a6">{u.str}/{u.max}</span>
+                <span className="cc-wbstr">
+                  <span style={{ width: `${(u.str / u.max) * 100}%`, background: nat.color }} />
+                </span>
+              </button>
+            );
+          })}
+          {own && Array.from({ length: room }).map((_, i) => (
+            <span key={`slot${i}`} className="cc-wbslot" title="Room for another company">+</span>
+          ))}
+        </div>
+
+        <div className="cc-waracts">
+          {!own && (
+            <div className="cc-text-11d5px cc-text-93a9b5 leading-snug">
+              Sighted, not yours. You cannot give them orders.
+            </div>
+          )}
+          {own && mates.slice(0, 2).map((a) => {
+            const together = a.units.length + army.units.length;
+            return (
+              <button key={a.id} type="button" disabled={together > cap}
+                onClick={() => onMerge(a.id, army.id)}
+                title={together > cap
+                  ? `That would be ${together} companies; ${cap} is the limit.`
+                  : `They would march on as one warband of ${together} companies.`}
+                className="cc-warbtn">
+                {together > cap ? `Too many to merge ${a.name}` : `Merge ${a.name} into this warband`}
+              </button>
+            );
+          })}
+          {own && WARLORDS[P] && lordAlive(game.nations[P]) && (() => {
+            const lordHere = !!army.lord;
+            const lordElsewhere = game.armies.some((a) => a.owner === P && a.lord && a.id !== army.id);
+            const transit = game.nations[P].lordTransit;
+            const blocked = !friendly || !!transit;
+            return (
+              <button type="button" disabled={blocked} onClick={() => onCommand(lordHere ? null : army.id)}
+                title={lordHere ? `${LORD_COMMAND[P].n} — ${LORD_COMMAND[P].d} If this warband is broken, you may fall with it.` : ""}
+                className={`cc-warbtn ${blocked ? "" : "cc-warbtngold"}`}>
+                {transit ? "On the road — you reach them next season"
+                  : !friendly ? "Join them only on your own ground"
+                  : lordHere ? "Leave them, return to your seat"
+                  : lordElsewhere ? "Ride over and take command"
+                  : "Ride out with this warband"}
+              </button>
+            );
+          })()}
+          {own && (
+            <button type="button" onClick={onDeselect} className="cc-warbtn">
+              Put the warband down · Esc
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -11557,10 +11688,10 @@ function RosterPanel({ game, P, sight, atWar, onClose, onPick }) {
   );
 }
 
-function Notices({ list, onGo, onDismiss }) {
+function Notices({ list, onGo, onDismiss, raised }) {
   if (!list.length) return null;
   return (
-    <div className="cc-notices">
+    <div className={`cc-notices ${raised ? "cc-noticesup" : ""}`}>
       {list.slice(0, 5).map((n) => {
         const look = NOTICE_LOOK[n.kind] || NOTICE_LOOK.built;
         const Icon = look.icon;
@@ -11822,6 +11953,7 @@ function Codex({ onClose }) {
           <div>
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Marching</div>
             <p>Click a warband and it lifts, ringed in white, with its remaining movement shown as pips beneath. Every hex it can reach lights up with a chevron pointing the way. Click one to march. Click the warband again, press Escape, or click the sea to put it down. Rough ground costs more movement, and stepping onto an enemy warband starts a battle.</p>
+            <p className="mt-2">The warband in hand is laid out along the foot of the map: its captain if it has one, every company with the rank it has reached, the empty places left in it, what it eats where it is standing, and what movement it has left. Click a company to bring it up to strength, march it out as a warband of its own, or stand it down. Where two of yours share a hex, the tabs above the bar hand you the other one and the bar itself offers the merge. The right-hand panel is about the ground; the bar is about the men.</p>
           </div>
           <div>
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Supply</div>

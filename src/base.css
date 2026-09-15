@@ -30,6 +30,9 @@ button, input, select, textarea { font: inherit; color: inherit; background-colo
 .rounded{border-radius:.25rem}.rounded-lg{border-radius:.5rem}.rounded-sm{border-radius:.125rem}
 .text-center{text-align:center}.text-left{text-align:left}.text-right{text-align:right}
 .whitespace-nowrap{white-space:nowrap}.cursor-pointer{cursor:pointer}
+.block{display:block}.items-stretch{align-items:stretch}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mt-auto{margin-top:auto}.pt-1{padding-top:.25rem}.ml-1{margin-left:.25rem}
 .gap-1{gap:.25rem}.gap-1\.5{gap:.375rem}.gap-2{gap:.5rem}.gap-2\.5{gap:.625rem}
 .gap-3{gap:.75rem}.gap-4{gap:1rem}.gap-5{gap:1.25rem}.gap-7{gap:1.75rem}
 .gap-x-4{column-gap:1rem}.gap-x-5{column-gap:1.25rem}.gap-y-1\.5{row-gap:.375rem}.gap-y-2{row-gap:.5rem}
