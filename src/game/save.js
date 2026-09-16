@@ -13,7 +13,12 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 7: battles are fought on a line — every company carries the sector it stands
+/* 9: meeting a people is an event now, and everyone you have met carries a
+   regard for you, a standing arrangement or the memory of a demand. A version
+   8 save has no regard at all, so every holdout in it would read as a shrug
+   and the scene for anybody already met would never be shown.
+   8: quarters are claimed, not grown, and companies carry a rank.
+   7: battles are fought on a line — every company carries the sector it stands
    in — and a walled province can be under siege. A version 6 save has neither.
    6: the wild has things in it now — about a third of the woods hold a feral
    herd, and every realm opens with a Waster host marching at its seat. A
@@ -31,7 +36,7 @@ export const SAVE_KEY = "coldcoast.save";
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight

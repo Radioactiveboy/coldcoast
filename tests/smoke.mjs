@@ -221,6 +221,39 @@ check("the bar says how much room is left in the warband",
   /room for \d|full/.test(await page.evaluate(() => document.querySelector(".cc-warbar")?.innerText || "")),
   (await page.evaluate(() => document.querySelector(".cc-warbar")?.innerText || "")).match(/room for \d|full/)?.[0] || "no room line");
 
+/* Meeting a people for the first time is a scene with lore and an answer, and
+   the answer has to do something you can point at afterwards. Red-Ruth is a
+   dozen seasons' walk away, so the test puts your riders on the rim. */
+{
+  const rates = () => page.evaluate(() => {
+    const t = document.querySelector("header")?.innerText || "";
+    const g = (l) => { const m = t.match(new RegExp(l + "\\s*([+\u2212-][\\d]+)", "i")); return m ? m[1] : "?"; };
+    return `${g("Scrap")}/${g("Powder")}/${g("Rations")}`;
+  });
+  const ledgerBefore = await rates();
+  await page.evaluate(() => window.__ccTest.meet("quarrymen")); await wait(450);
+  const scene = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  check("meeting a people opens a scene, not a log line",
+    /Quarrymen of Red-Ruth/.test(scene) && /Gorran Black/.test(scene),
+    (scene.split("\n")[1] || "").slice(0, 40));
+  check("the scene carries lore and four answers",
+    /china clay pits/.test(scene)
+    && ["Send a man down", "Ask the Pit-King", "Range your guns", "Mark it on the map"]
+      .every((t) => scene.includes(t)));
+  await click("Ask the Pit-King"); await wait(300);
+  check("an answer shows what came of it before you commit",
+    /carts start east/.test(await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "")));
+  await click("So it is said"); await wait(450);
+  const meet = await page.evaluate(() => window.__ccWild());
+  check("the answer is remembered", (meet.regard || []).some((r) => /^quarrymen:/.test(r)),
+    (meet.regard || []).join(" "));
+  check("a standing arrangement shows in the ledger",
+    (meet.pacts || []).includes("quarrymen:quarryTrade") && (await rates()) !== ledgerBefore,
+    `${ledgerBefore} -> ${await rates()}`);
+  check("the scene closes once it is answered",
+    await page.evaluate(() => !document.querySelector(".fixed.inset-0.z-50")));
+}
+
 /* Someone comes to the hall, and can be heard and answered. */
 await page.evaluate(() => window.__ccTest.knock()); await wait(300);
 check("somebody waits in the hall", await page.evaluate(() => !!document.querySelector(".cc-hallrow")));
