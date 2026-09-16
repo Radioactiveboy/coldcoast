@@ -28,6 +28,7 @@ import { ORIGINS, ORIGIN_IDS } from "./data/origins.js";
 import { RANKS, rankOf, nextRank, XP_FIELD, XP_WON } from "./data/ranks.js";
 import { DISTRICT_POOL, SEAT_DISTRICTS, DISTRICT_COUNT } from "./data/districts.js";
 import { PETITIONS, PETITION_WAIT, PETITION_CHANCE, OATH_MEMORY } from "./data/petitions.js";
+import { FIRST_MEET, PACTS, REGARD_START, regardBand } from "./data/encounters.js";
 import { STORIES } from "./data/stories.js";
 import { SUPPLY_MAX, SUPPLY_BANDS, bandAt, HARD_GROUND, WINTER_WASTE,
          CART_RELIEF_CAP, QUARTER_RELIEF, QUARTER_EASE } from "./data/supply.js";
@@ -496,6 +497,10 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-text-f2c97a{color:#f2c97a}
 .cc-w-42px{width:42px}
 .cc-w-620px{width:620px}
+.cc-w-680px{width:680px}
+.cc-encface{width:74px;height:89px;border-radius:5px;flex-shrink:0}
+.cc-encopts{grid-template-columns:1fr}
+@media (min-width:640px){.cc-encopts{grid-template-columns:1fr 1fr}}
 .cc-text-28px{font-size:28px}
 .cc-w-960px{width:960px}
 .cc-bg-101820{background-color:#101820}
@@ -1272,6 +1277,12 @@ const loyaltyWord = (n) => (n >= 75 ? "devoted" : n >= 50 ? "loyal" : n >= LOYAL
 /* The warlord is whoever holds the seat now — the founder from the table, or
    the captain who took it when the founder fell. */
 const lordName = (nat) => nat?.lord?.name || WARLORDS[nat?.id]?.name || "";
+/* How a people regard you, painted the same way loyalty is. */
+const regardTone = (n) => {
+  const t = regardBand(n).tone;
+  return t === "good" ? "cc-text-9fd6b4" : t === "mid" ? "cc-text-c6d6de"
+    : t === "warn" ? "cc-text-e8b98a" : "cc-text-e08a6a";
+};
 const lordTitle = (nat) => nat?.lord?.title || WARLORDS[nat?.id]?.title || "";
 /* What reaches every warband from the seat: the habits of a captain who rose
    to it, and the one the warlord was born with. */
@@ -2690,6 +2701,17 @@ function nationIncome(state, natId, turn) {
       gross.fuel -= Math.round(st.fuel * keep * draw);
     });
   });
+  /* A standing arrangement with somebody you met on the road is part of the
+     ledger like anything else, and it shows up in the header the season after
+     it is struck. */
+  Object.entries(state.pacts || {}).forEach(([fid, pid]) => {
+    if (natId !== state.player) return;
+    const pact = PACTS[pid];
+    if (!pact) return;
+    // Ground taken off them is the end of it — see `breakPact`.
+    Object.entries(pact.give || {}).forEach(([k, v]) => { gross[k] = (gross[k] || 0) + v; });
+    Object.entries(pact.take || {}).forEach(([k, v]) => { gross[k] = (gross[k] || 0) - v; });
+  });
   return gross;
 }
 
@@ -3011,6 +3033,8 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
   let defenderBonus = 0;
   if (defender.owner === "alpine" && ["h", "m"].includes(prov.t)) defenderBonus += 35;
   if (isMinor(defender.owner)) defenderBonus += MINORS[defender.owner].defBonus;
+  // What a threat at first meeting cost you: they cut the face back and ranged it.
+  defenderBonus += prov.hard || 0;
   defenderBonus += seatDefence(prov);
   return {
     round: 1,
@@ -3129,7 +3153,7 @@ function initialState() {
   return {
     turn: 1, player: null, ...w, war, armies, uid,
     sel: null, battle: null, log: [], recruit: null, over: null,
-    showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, notices: [], focus: null, sound: { music: true, sfx: true },
+    showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, regard: {}, pacts: {}, meetings: [], notices: [], focus: null, sound: { music: true, sfx: true },
     goals: { done: {}, hidden: false }, summary: null, roster: false,
     petitions: [], promises: [], hearing: null, chapter: null, hall: null,
   };
@@ -3426,10 +3450,23 @@ export default function ColdCoast() {
   }
 
   function startBattle(attacker, defender, prov, extra) {
-    setGame((g) => ({
-      ...g,
-      battle: { ...makeBattle(g.provinces, g.nations, g.armies, attacker.id, defender.id, key(prov.c, prov.r)), ...(extra || {}) },
-    }));
+    setGame((g) => {
+      /* An arrangement does not survive your companies walking onto their
+         ground. The carts stop the day the first shot is fired, and they do
+         not forget who fired it. */
+      let pacts = g.pacts, regard = g.regard, log = g.log;
+      const foe = attacker.owner === g.player ? defender.owner : null;
+      if (foe && (g.pacts || {})[foe]) {
+        pacts = { ...g.pacts }; delete pacts[foe];
+        regard = { ...(g.regard || {}), [foe]: Math.max(0, (g.regard?.[foe] ?? REGARD_START) - 30) };
+        log = [{ turn: g.turn, m: `${PACTS[g.pacts[foe]].name} ends — you came at them with companies.` },
+          ...g.log].slice(0, 60);
+      }
+      return {
+        ...g, pacts, regard, log,
+        battle: { ...makeBattle(g.provinces, g.nations, g.armies, attacker.id, defender.id, key(prov.c, prov.r)), ...(extra || {}) },
+      };
+    });
   }
 
   /* Out through the breach. A garrison with a hole in its own wall can go at
@@ -4077,6 +4114,16 @@ export default function ColdCoast() {
              warNames: ctx.warElsewhere ? `${g.nations[ctx.warElsewhere[0]]?.short}–${g.nations[ctx.warElsewhere[1]]?.short}` : "" } };
     return { ...g, petitions: [pt] };
   });
+  /* For the smoke test only: open a full-screen panel, and read the ledger. */
+  if (typeof window !== "undefined") window.__ccScreen = (id) => setGame((g) => ({ ...g, screen: id }));
+  /* For the smoke test only: your riders come over the rim at Red-Ruth. The
+     walk there is a dozen seasons and a test cannot wait for it. */
+  if (typeof window !== "undefined") window.__ccMeet = (id) => setGame((g) => ({
+    ...g,
+    met: { ...(g.met || {}), [id]: true },
+    regard: { ...(g.regard || {}), [id]: g.regard?.[id] ?? REGARD_START },
+    meetings: (g.meetings || []).includes(id) ? g.meetings : [...(g.meetings || []), id],
+  }));
   if (typeof window !== "undefined") window.__ccFall = () => setGame((g) => ({
     ...g, nations: { ...g.nations, [P]: { ...g.nations[P], lordDead: true, lordTransit: null, succession: true } },
     armies: g.armies.map((a) => (a.owner === P ? { ...a, lord: false } : a)),
@@ -4271,6 +4318,43 @@ export default function ColdCoast() {
 
   /* A step in a place's story, taken from the panel once the need is met.
      Seasons standing there are counted at the turn of the season instead. */
+  /* What you said when you met them. Every answer moves their regard for you,
+     most of them cost or pay something on the spot, and one of them makes the
+     place harder to take for the rest of the game. */
+  function answerEncounter(fid, optId) {
+    setGame((g) => {
+      const enc = FIRST_MEET[fid];
+      const opt = enc?.options.find((o) => o.id === optId);
+      if (!enc || !opt) return g;
+      const nat = g.nations[g.player];
+      if (opt.need && Object.entries(opt.need).some(([k, v]) => (nat.res[k] || 0) < v)) return g;
+      const res = { ...nat.res };
+      Object.entries(opt.res || {}).forEach(([k, v]) => { res[k] = Math.max(0, Math.round((res[k] || 0) + v)); });
+      const regard = { ...(g.regard || {}) };
+      regard[fid] = Math.max(0, Math.min(100, (regard[fid] ?? REGARD_START) + (opt.regard || 0)));
+      const pacts = { ...(g.pacts || {}) };
+      if (opt.pact) pacts[fid] = opt.pact;
+      let provinces = g.provinces, armies = g.armies;
+      const m = MINORS[fid];
+      const k = m?.at ? key(m.at[0], m.at[1]) : null;
+      if (k && provinces[k] && opt.harden) {
+        provinces = { ...provinces, [k]: { ...provinces[k], hard: (provinces[k].hard || 0) + opt.harden } };
+      }
+      if (k && opt.addGarrison) {
+        armies = armies.map((a) => (a.owner === fid && a.c === m.at[0] && a.r === m.at[1]
+          ? { ...a, units: [...a.units, makeUnit(opt.addGarrison, fid, `hard${fid}${g.turn}`)] }
+          : a));
+      }
+      Sound.play(opt.harden ? "horn" : "give");
+      return {
+        ...g, provinces, armies, pacts, regard,
+        nations: { ...g.nations, [g.player]: { ...nat, res } },
+        meetings: (g.meetings || []).filter((x) => x !== fid),
+        log: [{ turn: g.turn, m: `${FACTION[fid]?.short || fid}: ${opt.label.toLowerCase()}.` }, ...g.log].slice(0, 60),
+      };
+    });
+  }
+
   function advanceStory(k) {
     setGame((g) => {
       const pr0 = g.provinces[k];
@@ -5208,12 +5292,30 @@ export default function ColdCoast() {
       });
 
       // --- who you have laid eyes on ---
+      /* Meeting somebody for the first time is an event, not a line in a
+         ledger: where they are, what they are and what you propose to do about
+         it. Everyone you meet gets an opinion of you from this season on, and
+         the ones written up get the scene. */
       {
         const sight = seenSet(provinces, armies, g.player);
         const met = { ...(g.met || {}) };
-        sight.forEach((k) => { const q = provinces[k]; if (q && q.owner) met[q.owner] = true; });
-        armies.forEach((a) => { if (sight.has(key(a.c, a.r))) met[a.owner] = true; });
-        g = { ...g, met };
+        const fresh = [];
+        const lay = (id) => {
+          if (!id || id === g.player || met[id]) return;
+          met[id] = true; fresh.push(id);
+        };
+        sight.forEach((k) => { const q = provinces[k]; if (q && q.owner) lay(q.owner); });
+        armies.forEach((a) => { if (sight.has(key(a.c, a.r))) lay(a.owner); });
+        const regard = { ...(g.regard || {}) };
+        Object.keys(met).forEach((id) => { if (regard[id] === undefined) regard[id] = REGARD_START; });
+        const meetings = [...(g.meetings || [])];
+        fresh.forEach((id) => {
+          const nm = FACTION[id]?.short || id;
+          newLog.push({ turn: g.turn + 1, m: `Your riders have found ${nm}.` });
+          if (FIRST_MEET[id] && !meetings.includes(id)) meetings.push(id);
+          else notice("lord", `Your riders have found ${nm}.`, null);
+        });
+        g = { ...g, met, regard, meetings };
       }
 
       // --- the workshops turn out arms ---
@@ -5731,6 +5833,9 @@ export default function ColdCoast() {
       )}
       {game.chapter && !game.battle && (
         <ChapterScene chapter={game.chapter} onClose={() => setGame((g) => ({ ...g, chapter: null }))} />
+      )}
+      {!game.battle && (game.meetings || []).length > 0 && FIRST_MEET[game.meetings[0]] && (
+        <EncounterScene enc={FIRST_MEET[game.meetings[0]]} game={game} P={P} onAnswer={answerEncounter} />
       )}
       {game.hearing && (game.petitions || []).some((x) => x.id === game.hearing) && (
         <PetitionScene pt={game.petitions.find((x) => x.id === game.hearing)} game={game}
@@ -6493,17 +6598,26 @@ function BuildingMark({ b, x, y, small, tiny, left, damaged }) {
 /* What a warband is carrying, for the glyph on the map: guns and vehicles
    announce themselves, a mostly-mounted band reads as horse, and otherwise
    the heaviest thing in the column names it. */
+/* Which company speaks for the whole warband on the map. Something that is
+   not arms at all comes first — a horde or a herd is what you need to know
+   before anything else — then the pieces that change how it fights, then
+   whatever is best-drilled in it, with the carts never speaking for anybody
+   unless they are all there is. */
+const MARK_TIER = { tribal: 0, forged: 1, drilled: 2, powder: 3, vault: 4 };
 function warbandKind(a) {
   const u = a.units;
-  if (!u.length) return "spear";
-  if (u.some((x) => x.type === "fleshhorde")) return "horde";
-  if (u.some((x) => x.type === "guncrew")) return "cannon";
-  if (u.some((x) => x.type === "technicals")) return "vehicle";
-  if (u.filter((x) => UNITS[x.type]?.cav).length * 2 >= u.length) return "horse";
-  const rank = { spearmen: 0, pikemen: 0, ironclad: 1, axemen: 1, line: 1,
-                 hunters: 2, bowmen: 2, musketeers: 3, riflemen: 3, vaultguard: 3 };
-  const top = u.reduce((m, x) => Math.max(m, rank[x.type] ?? 0), 0);
-  return ["spear", "blade", "bow", "gun"][top];
+  if (!u.length) return "spearmen";
+  const has = (t) => u.find((x) => x.type === t);
+  for (const t of ["fleshhorde", "feralherd", "guncrew", "technicals"]) if (has(t)) return t;
+  if (u.filter((x) => UNITS[x.type]?.cav).length * 2 >= u.length) {
+    const c = u.find((x) => UNITS[x.type]?.cav);
+    if (c) return c.type;
+  }
+  const count = {};
+  u.forEach((x) => { count[x.type] = (count[x.type] || 0) + 1; });
+  const worth = (t) => (t === "baggage" ? -1 : MARK_TIER[UNITS[t]?.tier] ?? 0);
+  return Object.keys(count).sort((x, y) =>
+    worth(y) - worth(x) || count[y] - count[x] || (UNITS[y]?.scrap || 0) - (UNITS[x]?.scrap || 0))[0];
 }
 
 /* Warbands on the map.
@@ -6511,64 +6625,26 @@ function warbandKind(a) {
    These were little stick figures inside a dark disc almost as wide as the
    hex itself, with a second disc for the company count and a halo on top of
    that — three rings of furniture around a shape you could not read anyway.
+   Then they were eight hand-drawn category shapes, which was a great deal
+   better but told you only that a warband carried bows, not whose bows: a
+   hunting party and a company of massed archers wore the same mark.
 
-   They are the arms themselves now, in the same language as the buildings:
-   one filled silhouette, a dark outline so it holds over any terrain, a small
-   ground shadow, and nothing else. Drawn inside about 11 wide against a hex
-   of 27, so the ground stays visible underneath them. */
+   They are the company's own mark now, from the same icon set the muster roll
+   uses, so what is on the map and what is on the card are the same thing. The
+   mark is set in an eleven-wide box against a hex of 27, with a dark outline
+   painted behind the fill so the silhouette holds over any ground. */
+const MARK_BOX = 11.4;
 function WarbandGlyph({ kind }) {
-  switch (kind) {
-    // A shield and a levelled spear.
-    case "spear": return (<>
-      <path d="M-4.8-2.6h4v3q0 2.6-2 3.6-2-1-2-3.6z" />
-      <path d="M1 4.4L3.6-4.2" fill="none" strokeWidth="1.3" />
-      <path d="M3.6-4.6l1.3 1.9-2.4.5z" />
-    </>);
-    // An axe on its haft.
-    case "blade": return (<>
-      <path d="M0-6.2l.9 1.6v4.4h-1.8v-4.4z" />
-      <path d="M-2.8.2h5.6v1.2h-5.6z" />
-      <path d="M-.6 1.6h1.2v2.6h-1.2z" />
-      <circle cx="0" cy="4.8" r="0.95" />
-    </>);
-    // A recurve, strung, with the arrow on it.
-    case "bow": return (<>
-      <path d="M-1.4-4.8a6 6 0 0 1 0 9.6" fill="none" strokeWidth="1.3" />
-      <path d="M-1.4-4.8v9.6" fill="none" strokeWidth="0.6" />
-      <path d="M-3.2 0h5.6" fill="none" strokeWidth="1" />
-      <path d="M2.8 0l-1.6-1v2z" />
-    </>);
-    // A musket, angled as if shouldered.
-    case "gun": return (<>
-      <path d="M-3.2 4.2L3.2-4.2" fill="none" strokeWidth="1.3" />
-      <path d="M-3 3.8l-1.8 1.1 1.1 1.6 1.6-1.4z" />
-      <path d="M0.2 0.6l1.6.9" fill="none" strokeWidth="1.7" />
-    </>);
-    // A shoe, for the horse under it.
-    case "horse": return (<>
-      <path d="M-3.8 4.6A4.2 5 0 1 1 3.8 4.6H1.9A2.4 3.1 0 1 0-1.9 4.6z" />
-      <circle cx="-3" cy="3.4" r="0.5" fill="#0a1015" stroke="none" />
-      <circle cx="3" cy="3.4" r="0.5" fill="#0a1015" stroke="none" />
-    </>);
-    // A running chassis.
-    case "vehicle": return (<>
-      <path d="M-5 2.2v-2.6h4.6l1.6-2.2h2.6l1.2 2.2v2.6z" />
-      <circle cx="-2.6" cy="3.4" r="1.6" fill="none" strokeWidth="1.1" />
-      <circle cx="2.8" cy="3.4" r="1.6" fill="none" strokeWidth="1.1" />
-    </>);
-    // Not arms at all. A mass of it, coming up the stair.
-    case "horde": return (<>
-      <path d="M-4.6 4.6q-1.4-3.4.8-5.2 1.6-1.3 3.4-.5.4-2.4 2.4-2.4 2.2 0 2.4 2.6 2.2.5 2 3-.2 1.8-1.8 2.5z" />
-      <path d="M-2.4 1.2l-1.8-2.6M0.4-.4l-.4-3.2M2.8 1l2-2.4" fill="none" strokeWidth="0.8" />
-    </>);
-    // A barrel on its carriage.
-    case "cannon": return (<>
-      <path d="M-3.6 0.6L4.4-1.8" fill="none" strokeWidth="2.1" strokeLinecap="round" />
-      <path d="M-3.8 1.2L-1 4" fill="none" strokeWidth="1.1" strokeLinecap="round" />
-      <circle cx="-2.6" cy="3.2" r="2" fill="none" strokeWidth="1.2" />
-    </>);
-    default: return <path d="M-4.4-2.6h4v3q0 2.6-2 3.6-2-1-2-3.6z" />;
-  }
+  const ic = unitIcon(kind) || unitIcon("spearmen");
+  if (!ic) return null;
+  const s = MARK_BOX / 512;
+  return (
+    <g transform={`translate(${-MARK_BOX / 2},${-MARK_BOX / 2 - 0.4}) scale(${s})`}>
+      {/* The outline is given in the icon's own 512 space, so it thickens and
+          thins with the map rather than staying a fixed number of pixels. */}
+      <path d={ic.d} strokeWidth={0.62 / s} paintOrder="stroke" />
+    </g>
+  );
 }
 
 /* A warband on the map is a banner plate now: a shield in the realm's colour
@@ -7092,6 +7168,8 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
     if (typeof window !== "undefined") window.__ccTest = {
       fall: () => selRef.current && window.__ccFall && window.__ccFall(),
       knock: () => window.__ccKnock && window.__ccKnock(),
+      // Walking to Red-Ruth takes a dozen seasons; a test cannot wait for it.
+      meet: (id) => window.__ccMeet && window.__ccMeet(id),
     };
     if (typeof window !== "undefined") window.__ccWild = () => {
       const game = gameRef.current;
@@ -7110,6 +7188,13 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
         wards: Object.values(game.provinces)
           .filter((p) => p.owner === game.player && isSettlement(p))
           .map((p) => `${p.name}:${wardsOf(p).length}/${districtsFor(p).length}`),
+        // Ground somebody dug into after you came at them with a demand, and
+        // what is standing on it now.
+        hardened: Object.values(game.provinces).filter((p) => p.hard)
+          .map((p) => `${p.name}:${p.hard}:${game.armies.filter((a) => a.c === p.c && a.r === p.r)
+            .reduce((n, a) => n + a.units.length, 0)}`),
+        regard: Object.entries(game.regard || {}).map(([k, v]) => `${k}:${v}`),
+        pacts: Object.entries(game.pacts || {}).map(([k, v]) => `${k}:${v}`),
         storyLairs: Object.keys(STORIES).filter((k) => game.provinces[k]?.lair),
         stories: Object.keys(STORIES).map((k) => `${k}:${game.provinces[k]?.story ? game.provinces[k].story.step : "-"}${game.provinces[k]?.feature || ""}`),
       };
@@ -8115,9 +8200,24 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
         <Section title="Holdout">
           <div className="cc-text-13px cc-text-c6d6de leading-relaxed">{MINORS[selProv.owner].trait}</div>
           <div className="cc-text-12d5px cc-text-e09a8a mt-1.5">
-            Defenders here take a further <span className="num">+{MINORS[selProv.owner].defBonus}%</span> on
+            Defenders here take a further{" "}
+            <span className="num">+{MINORS[selProv.owner].defBonus + (selProv.hard || 0)}%</span> on
             top of the ground. They never march out, and there is nothing to negotiate.
           </div>
+          {selProv.hard > 0 && (
+            <div className="cc-text-12px cc-text-c9a37a mt-1">
+              <span className="num">+{selProv.hard}%</span> of that is yours: they cut the face back and
+              ranged it the day you came to the rim with a demand.
+            </div>
+          )}
+          {game.met?.[selProv.owner] && (
+            <div className="cc-text-12d5px cc-text-93a9b5 mt-1.5">
+              They regard you as{" "}
+              <span className={regardTone(game.regard?.[selProv.owner])}>
+                {regardBand(game.regard?.[selProv.owner]).word}
+              </span>.
+            </div>
+          )}
         </Section>
       )}
 
@@ -8847,6 +8947,25 @@ function WorldPanel({ game, P, atWar, onWar }) {
                 </span>
               </div>
               <div className="cc-text-12d5px cc-text-93a9b5 mt-1 leading-snug">{m.trait}</div>
+              <div className="cc-text-12d5px cc-text-93a9b5 mt-1.5">
+                They regard you as{" "}
+                <span className={regardTone(game.regard?.[id])}>{regardBand(game.regard?.[id]).word}</span>.
+              </div>
+              {game.pacts?.[id] && PACTS[game.pacts[id]] && (
+                <div className="rounded border cc-border-3d5a4a cc-bg-131f27 px-2.5 py-1.5 mt-1.5">
+                  <div className="cc-text-12d5px cc-text-9fd6b4">{PACTS[game.pacts[id]].name}</div>
+                  <div className="cc-text-11d5px cc-text-93a9b5 mt-0.5 leading-snug">{PACTS[game.pacts[id]].note}</div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {Object.entries(PACTS[game.pacts[id]].give || {}).map(([k, v]) => (
+                      <span key={k} className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">+{v} {k}</span>
+                    ))}
+                    {Object.entries(PACTS[game.pacts[id]].take || {}).map(([k, v]) => (
+                      <span key={k} className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-5a3230 cc-text-e09a8a">−{v} {k}</span>
+                    ))}
+                    <span className="cc-text-11px cc-text-6f8794 ml-auto">a season, while you leave them alone</span>
+                  </div>
+                </div>
+              )}
               {seated && !held && (
                 <div className="cc-text-12d5px cc-text-9fd6b4 mt-1.5">The workings answer to someone else now.</div>
               )}
@@ -8876,6 +8995,10 @@ function WorldPanel({ game, P, atWar, onWar }) {
                 <span className="num cc-text-12d5px cc-text-a0b6c1">{counts[id]} holdings</span>
               </div>
               <div className="cc-text-12px cc-text-93a9b5 mt-1 leading-snug">{n.trait}</div>
+              <div className="cc-text-12d5px cc-text-93a9b5 mt-1">
+                They regard you as{" "}
+                <span className={regardTone(game.regard?.[id])}>{regardBand(game.regard?.[id]).word}</span>.
+              </div>
               {!gone && (
                 <button onClick={() => onWar(id)}
                   className={`mt-2 w-full py-1.5 rounded cc-text-13px border transition-colors flex items-center justify-center gap-1.5 ${war
@@ -11233,6 +11356,137 @@ function GoalsCard({ goals, origin, onToggle, onPutAway }) {
   );
 }
 
+/* ----------------------------- FIRST CONTACT ------------------------------
+   Meeting a people for the first time. The scene, then what they are and why
+   they are still here, then the man who came out to look at you — and then
+   four things you might say, each of which costs something and each of which
+   they will remember. The answer is shown before the scene closes, because an
+   answer you cannot see the result of is not a choice, it is a dice roll.
+   ------------------------------------------------------------------------ */
+const resWord = (k) => RES_META.find((r) => r.k === k)?.label.toLowerCase() || k;
+function EncounterScene({ enc, game, P, onAnswer }) {
+  const [taken, setTaken] = useState(null);
+  const scroll = useRef(null);
+  const fac = FACTION[enc.who] || {};
+  const nat = game.nations[P];
+  const opt = taken && enc.options.find((o) => o.id === taken);
+  const afford = (o) => !o.need || Object.entries(o.need).every(([k, v]) => (nat.res[k] || 0) >= v);
+  const cost = (o) => Object.entries(o.res || {})
+    .map(([k, v]) => `${v > 0 ? "+" : "\u2212"}${Math.abs(v)} ${resWord(k)}`).join(", ");
+  // Saying it scrolls you to what came of it, rather than leaving the answer
+  // somewhere below the fold.
+  useEffect(() => {
+    if (taken && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
+  }, [taken]);
+  return (
+    <Overlay>
+      <div className="cc-w-680px cc-max-w-94vw cc-max-h-90vh rounded-lg border cc-border-8a6f36 cc-bg-0d141a overflow-hidden flex flex-col">
+        <div className="px-5 py-3.5 border-b cc-border-28363f flex items-center gap-3 shrink-0"
+          style={{ background: `linear-gradient(90deg,${mix(fac.color || "#8a6f36", "#0d141a", 0.72)},#0d141a)` }}>
+          <Sigil id={enc.who} size={20} color={fac.color} />
+          <div className="flex-1 min-w-0">
+            <div className="cc-text-11d5px cc-text-a7bac6">{enc.kicker} · {enc.where}</div>
+            <div className="disp cc-text-20px truncate" style={{ color: fac.color }}>{enc.title}</div>
+          </div>
+        </div>
+
+        <div ref={scroll} className="overflow-y-auto thin px-5 py-4 grid gap-3">
+          {enc.scene.map((l, i) => (
+            <p key={`s${i}`} className="cc-text-14px leading-relaxed cc-text-dfeaf0">{l}</p>
+          ))}
+
+          <div className="rounded border cc-border-31454f cc-bg-131f27 px-3.5 py-3 grid gap-2">
+            <div className="cc-text-12px cc-text-8399a6">What your riders could tell you about them</div>
+            {enc.lore.map((l, i) => (
+              <p key={`l${i}`} className="cc-text-13px leading-relaxed cc-text-c3d5de">{l}</p>
+            ))}
+          </div>
+
+          {enc.voice && (
+            <div className="flex gap-3 items-start rounded border cc-border-8a6f36 cc-bg-1a1610 px-3.5 py-3">
+              <LordPortrait id={enc.who} className="cc-encface shrink-0" />
+              <div className="min-w-0">
+                <div className="cc-text-13px cc-text-f2c97a">{enc.voice.name}</div>
+                <div className="cc-text-11d5px cc-text-93a9b5 mb-1.5">{enc.voice.title}</div>
+                <p className="cc-text-13d5px leading-relaxed cc-text-e6dcc4">{enc.voice.said}</p>
+              </div>
+            </div>
+          )}
+
+          {opt && (
+            <>
+              <div className="rounded border cc-border-4d7488 cc-bg-152a30 px-3.5 py-3">
+                <div className="cc-text-12px cc-text-8fe3d6 mb-1">{opt.label}</div>
+                <p className="cc-text-13d5px leading-relaxed cc-text-dfeaf0">{opt.outcome}</p>
+              </div>
+              <div className="cc-text-12d5px cc-text-93a9b5">
+                {fac.short} now regard you as{" "}
+                <span className={regardTone(Math.max(0, Math.min(100, (game.regard?.[enc.who] ?? REGARD_START) + (opt.regard || 0))))}>
+                  {regardBand(Math.max(0, Math.min(100, (game.regard?.[enc.who] ?? REGARD_START) + (opt.regard || 0)))).word}
+                </span>.{" "}
+                <button type="button" onClick={() => setTaken(null)}
+                  className="cc-text-12px cc-text-8399a6 cc-hover-text-e5eef3">say something else instead</button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* The answers sit on the floor of the card where they can be seen
+            without scrolling for them — the scene is what you scroll. */}
+        <div className="px-5 py-4 border-t cc-border-28363f shrink-0">
+          {!opt ? (
+            <>
+              <div className="cc-text-12px cc-text-8399a6 mb-2">What do you say to them?</div>
+              <div className="grid gap-2 cc-encopts">
+                {enc.options.map((o) => {
+                  const ok = afford(o);
+                  const c = cost(o);
+                  return (
+                    <button key={o.id} type="button" disabled={!ok}
+                      onClick={() => setTaken(o.id)}
+                      className={`cc-origin ${ok ? "" : "cc-wardpoor"}`}>
+                      <div className="cc-text-13d5px cc-text-e5eef3 leading-snug">{o.label}</div>
+                      <div className="cc-text-11d5px cc-text-93a9b5 mt-0.5 leading-snug">{o.note}</div>
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {c && <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-8a6f36 cc-text-f2c97a">{c}</span>}
+                        {o.pact && (
+                          <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">
+                            {PACTS[o.pact].name}
+                          </span>
+                        )}
+                        {o.harden > 0 && (
+                          <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-5a3230 cc-text-e09a8a">
+                            they dig in · +{o.harden}% to hold it
+                          </span>
+                        )}
+                        <span className={`cc-text-11px rounded px-1.5 py-0.5 border ${o.regard > 0
+                          ? "cc-border-3d5a4a cc-text-9fd6b4" : o.regard < 0
+                          ? "cc-border-5a3230 cc-text-e09a8a" : "cc-border-31454f cc-text-93a9b5"}`}>
+                          {o.regard > 0 ? `+${o.regard} regard` : o.regard < 0 ? `${o.regard} regard` : "nothing decided"}
+                        </span>
+                      </div>
+                      {!ok && (
+                        <div className="cc-text-11px cc-text-e09a8a mt-1">
+                          You do not have {Object.entries(o.need).map(([k, v]) => `${v} ${resWord(k)}`).join(", ")}.
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <button type="button" onClick={() => onAnswer(enc.who, taken)}
+              className="w-full py-2.5 rounded border disp cc-text-15px transition-colors cc-bg-2a3a4a cc-hover-bg-35495c cc-border-4d7488 cc-text-dfeaf0">
+              So it is said
+            </button>
+          )}
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
 function ChapterScene({ chapter, onClose }) {
   return (
     <Overlay onClose={onClose}>
@@ -11964,6 +12218,11 @@ function Codex({ onClose }) {
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Battles</div>
             <p>A battle is a line: left, centre and right, with a reserve behind it. Before a blow is struck you draw it up — pick one of the preset formations, or drag companies between sectors and into reserve yourself. You see only what your outriders brought back, so a warband with no scouts deploys blind.</p>
             <p className="mt-2">Then each sector takes its own order and both lines resolve at once. Every sector fights the one opposite it, on its own ground: broken ground is worth holding and useless to horse, a wall has to come down before anything behind it can be reached. When a sector breaks, the enemy in it turns onto whichever sector is beside it, which is how a line comes apart rather than simply wearing down. Companies that lose their nerve run before they are killed, and you get about half of them back — unless the other side still has horse to chase them.</p>
+          </div>
+          <div>
+            <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Meeting people</div>
+            <p>What you have not laid eyes on, you know nothing about. The season your riders first come within sight of somebody, you get the meeting itself: where they are, what they are, why they are still here after three hundred years, and three or four things you might say to them. Every answer costs or pays something on the spot and every answer is remembered — each people carries a regard for you, said in a word, in the Rivals panel.</p>
+            <p className="mt-2">Regard is not decoration. A people who think well of you will sell you what they dig out of the ground, season after season, and that arrangement sits in your ledger like any other income. A people you came at with a demand will cut the face back and range it, and the place costs more to take for the rest of the game. Marching companies onto their ground ends any arrangement the same day.</p>
           </div>
           <div>
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Winning</div>
