@@ -28,7 +28,7 @@ import { ORIGINS, ORIGIN_IDS } from "./data/origins.js";
 import { RANKS, rankOf, nextRank, XP_FIELD, XP_WON } from "./data/ranks.js";
 import { DISTRICT_POOL, SEAT_DISTRICTS, DISTRICT_COUNT } from "./data/districts.js";
 import { PETITIONS, PETITION_WAIT, PETITION_CHANCE, OATH_MEMORY } from "./data/petitions.js";
-import { FIRST_MEET, PACTS, REGARD_START, regardBand } from "./data/encounters.js";
+import { FIRST_MEET, PACTS, REGARD_START, regardBand, pactTerms } from "./data/encounters.js";
 import { STORIES } from "./data/stories.js";
 import { SUPPLY_MAX, SUPPLY_BANDS, bandAt, HARD_GROUND, WINTER_WASTE,
          CART_RELIEF_CAP, QUARTER_RELIEF, QUARTER_EASE } from "./data/supply.js";
@@ -604,9 +604,9 @@ const MAP_ROWS = [
   "~~~~~fffpp~ddddpppppffpphhppdddddd~hpppphhpphfffpppppfppppfpfppppfppprhphhccccccccccccccssssspppppssspps",
   "~~~~~~~pp~~~dd~~~~prppfpfpppdddd~~~hfffffppfffffpppppppppphpffpppfppfpphfcccccccccccccccssssssspsssssspp",
   "~~~~~~~~~~~~~~~~~~rrrrpffrpdddd~ppppffffhpffffffffpppppppphhppppphhhhhphcccccccccccccpppsssssssssssppsps",
-  "~~~~~~~~~~~~~~~~~~frffffffppddhp~ffppfprppppfpppppfhhfffffhhhfhphphhpphpcppfpppffppfffcpsssssssssssspsss",
+  "~~~~~~~~~~~~~~~~~~frffffffppwwww~ffppfprppppfpppppfhhfffffhhhfhphphhpphpcppfpppffppfffcpsssssssssssspsss",
   "~~~~~~~~~~~~~~~~~ffff~dddddppdfffffhffpfrppppppppphhhhfhhhhhppfhfffpppfphfpffppppppppfppssssssssssssssss",
-  "~~~~~~~~~~~~~~~~~dd~~~ddhdddppfffffhfppffppppfpppppphhhhhhhhfpppfffppfffffppfhhpppppphhssrssssssssssssss",
+  "~~~~~~~~~~~~~~~~~dd~~~ddhddwppfffffhfppffppppfpppppphhhhhhhhfpppfffppfffffppfhhpppppphhssrssssssssssssss",
   "~~~~~~~~~~~~ddr~~f~~~dddd~~pffffpfhphpppppppffpfpppphhhhhhhhpppfffffffffffpffhpppppfpppsrrssssssssssspps",
   "~~~~~~~~~~~~dddddd~dddddd~~~fffpppfpfppppppppfffffphhhhhhhhfpffhhfffffpfpppffffpfppffpshsrssssssssssssps",
   "~~~~~~~~~~~~ddddddddddd~~~~~pppppfffffpppppphhhfffphhhhrhhhfffpphffffppfpppffffhfffffhhfsssssssssssssspp",
@@ -696,6 +696,10 @@ const TERRAIN = {
   c: { name: "Saltmarsh",     color: "#6c7760", food: 2, scrap: 1, fuel: 1, powder: 0, men: 0, def: 12, move: 2, land: true },
   r: { name: "Ruinfield",     color: "#7d6355", food: 0, scrap: 5, fuel: 1, powder: 2, men: 1, def: 22, move: 2, land: true },
   b: { name: "Saltpan",       color: "#b0a184", food: 0, scrap: 1, fuel: 3, powder: 0, men: 0, def: -5, move: 1, land: true },
+  /* Ground that is being fought over rather than lived on: the floor of the
+     old Channel, churned to bog by three hundred years of people killing each
+     other across it. Slow, ugly, and worth picking over if you ever hold it. */
+  w: { name: "Bogged warzone", color: "#5f5647", food: 0, scrap: 3, fuel: 1, powder: 1, men: 0, def: 18, move: 3, land: true },
   l: { name: "Freshwater",    color: "#41697a", food: 3, scrap: 0, fuel: 0, powder: 0, men: 0, def: -12, move: 2, land: true },
   "~": { name: "Open sea",    color: "#1b2c38", land: false },
   _: { name: "", color: "transparent", land: false },
@@ -1562,6 +1566,16 @@ const LAIR_KINDS = {
     garrison: ["spearmen", "axemen", "hunters"],
     loot: { scrap: 55, food: 25 },
   },
+  /* The floor of the old Channel. Nobody holds it; two lots of people are
+     still arguing about it and have been for longer than anyone remembers.
+     Marked `ambush`, which means you do not walk onto it and find out later —
+     they come out of the mud at you the moment you set foot on it. */
+  bogged: {
+    faction: "wasters", ambush: true, title: "The mud is already taken",
+    text: "The crossing here is a mile of churned bog with standing water in every shell hole and stakes driven into the mud between them, and it is loud. Two lots of people are fighting over it — a waster band working the wrecks from the east and something out of the treeline that is not organised enough to be called a tribe and not frightened enough to be called anything else. They stop fighting each other when your column comes over the lip, which is the worst possible outcome.",
+    garrison: ["axemen", "feralherd", "hunters", "feralherd"],
+    loot: { scrap: 40, powder: 10, food: 20 },
+  },
   changed: {
     faction: "changed", title: "Something is living here",
     text: "The lower floors are wet and warm and smell of ammonia. What comes up the stairwell at you is the wrong shape and there is a great deal of it. Nobody agrees afterwards on how many there were.",
@@ -1628,6 +1642,10 @@ const MINORS = {
     ],
     /* Left alone, the near arch is a fortress inside twenty seasons. */
     fortify: { add: 4, cap: 34, every: 2, company: "pikemen", companyEvery: 9, companyMax: 3 },
+    /* They take the clay behind the gate and nothing else. The bog out on the
+       crossing is somebody else's argument and they have no intention of
+       joining it. */
+    grows: { at: [[28, 79], [28, 80], [29, 80], [27, 81]], every: 3, chance: 0.6 },
   },
   holk: {
     name: "The Silt Farmers of Holk", short: "Holk", color: "#6fae8f",
@@ -2626,6 +2644,8 @@ function buildWorld() {
 
      Herds do not add to a tile's population. They are not people. */
   Object.values(provinces).forEach((q) => {
+    // A warzone is a warzone because somebody is on it. All of them are.
+    if (q.t === "w") { q.lair = "bogged"; q.pop += POP_LAIR.bogged || 0; return; }
     const named = NAMED_LAIRS[key(q.c, q.r)];
     if (named) { q.lair = named; q.pop += POP_LAIR[named] || 0; return; }
     if (q.owner) return;
@@ -2694,12 +2714,33 @@ function moveAllowance(game, army) {
   };
 }
 
+/* Whether a people have opened their ground to you — a toll paid, a road
+   agreed. Their garrison is still standing on it; it simply lets you by, and
+   the hex stays theirs. */
+function opened(game, prov) {
+  if (!prov || !prov.owner) return null;
+  const pid = (game.pacts || {})[prov.owner];
+  const pact = pid && PACTS[pid];
+  return pact && pact.pass ? { pact, id: pid, who: prov.owner } : null;
+}
+
 function moveInfo(game, army, prov, P, atWar) {
   if (!army || !prov || army.owner !== P) return null;
   if (army.c === prov.c && army.r === prov.r) return { here: true };
   const adj = neighbours(army.c, army.r).some(([x, y]) => x === prov.c && y === prov.r);
   if (!adj) return { ok: false, why: "Not next to your warband." };
   const cost = moveCost(prov);
+  const open = opened(game, prov);
+  if (open) {
+    if (army.mp < cost) return { ok: false, cost, why: `Needs ${cost} movement; ${army.mp} left this season.` };
+    // An open gate is a choice, not a cage: you can always decide to stop
+    // paying and go through it the other way.
+    const guard = game.armies.find((a) => a.c === prov.c && a.r === prov.r && a.owner === prov.owner);
+    return { ok: true, cost, kind: "cross",
+      label: `Cross at ${prov.name} — ${open.pact.name.replace(/^The /, "the ")} is paid`,
+      note: "They stand aside. The ground stays theirs.",
+      storm: guard ? `Break the arrangement and storm ${prov.name}` : null };
+  }
   const other = game.armies.find((a) => a.c === prov.c && a.r === prov.r && a.owner !== P);
   if (other && !atWar(P, other.owner))
     return { ok: false, cost, why: `${game.nations[other.owner].short} stands there. Declare war first.` };
@@ -3490,9 +3531,26 @@ export default function ColdCoast() {
     });
   }
 
-  function attemptMove(army, target) {
+  const openedTo = (prov) => !!opened(game, prov);
+
+  function attemptMove(army, target, force) {
     const cost = moveCost(target);
     if (army.mp < cost) { push("That warband is out of movement for this turn."); return; }
+    /* Ground you have paid to cross. The gate is open, the garrison stands
+       aside, and the hex does not change hands — you are passing through, not
+       taking it. Unless you have decided to stop paying. */
+    if (!force && openedTo(target)) {
+      setGame((g) => ({
+        ...g,
+        armies: g.armies.map((a) => (a.id === army.id
+          ? { ...a, c: target.c, r: target.r, mp: a.mp - cost,
+              route: [[a.c, a.r], [target.c, target.r]], seq: (a.seq || 0) + 1 }
+          : a)),
+        sel: g.sel?.armyId === army.id ? { ...g.sel, k: key(target.c, target.r) } : g.sel,
+      }));
+      Sound.play("march");
+      return;
+    }
     const enemyArmy = game.armies.find(
       (a) => a.c === target.c && a.r === target.r && a.owner !== P && atWar(P, a.owner)
     );
@@ -3522,6 +3580,15 @@ export default function ColdCoast() {
     }
 
     setGame((g) => {
+      /* Some ground has people on it who do not wait for you to look around
+         first. Walking onto it springs them, and your warband is back where it
+         started with the season gone. */
+      const tk0 = key(target.c, target.r);
+      const there = g.provinces[tk0];
+      if (there && there.lair && LAIR_KINDS[there.lair]?.ambush) {
+        Sound.play("horn");
+        return springLair(g, tk0, army, army.c, army.r);
+      }
       const armies = g.armies.map((a) => (a.id === army.id
         ? { ...a, c: target.c, r: target.r, mp: a.mp - cost, route: [[a.c, a.r], [target.c, target.r]], seq: (a.seq || 0) + 1 }
         : a));
@@ -3951,6 +4018,13 @@ export default function ColdCoast() {
     if (a && t) { Sound.play("march"); attemptMove(a, t); }
   }
 
+  /* Going through a gate you have paid to walk through, the other way. */
+  function storm(armyId, k) {
+    const a = game.armies.find((x) => x.id === armyId);
+    const t = game.provinces[k];
+    if (a && t) { Sound.play("horn"); attemptMove(a, t, true); }
+  }
+
   function research(id) {
     setGame((g) => {
       if (techState(g, P, id).s !== "open") return g;
@@ -4215,6 +4289,20 @@ export default function ColdCoast() {
   });
   /* For the smoke test only: open a full-screen panel, and read the ledger. */
   if (typeof window !== "undefined") window.__ccScreen = (id) => setGame((g) => ({ ...g, screen: id }));
+  /* For the smoke test only: a warband is stood on a given hex with a full
+     season in hand, so a check about what happens next does not have to march
+     there first. */
+  if (typeof window !== "undefined") window.__ccPut = (c, r) => setGame((g) => {
+    const mine = g.armies.find((a) => a.id === g.sel?.armyId && a.owner === g.player)
+      || g.armies.find((a) => a.owner === g.player && a.units.length);
+    if (!mine || !g.provinces[key(c, r)]) return g;
+    return {
+      ...g,
+      armies: g.armies.map((a) => (a.id === mine.id ? { ...a, c, r, mp: a.maxMp } : a)),
+      sel: { armyId: mine.id, k: key(c, r) },
+    };
+  });
+
   /* For the smoke test only: a holdout's seat changes hands, so the things
      that hang off breaking one can be reached without a campaign. */
   if (typeof window !== "undefined") window.__ccBreak = (id) => setGame((g) => {
@@ -4345,6 +4433,46 @@ export default function ColdCoast() {
     });
   }
 
+  /* Whoever is living on a piece of ground stands up out of it. Used two ways:
+     when a warband surveys a ruin it is standing next to, and when one walks
+     onto ground whose people do not wait to be surveyed — see `ambush`. The
+     warband is put back where it came from either way: you did not get through.
+     `from` is where to push it back to; without one, any neighbour will do. */
+  function springLair(g, k, army, fromC, fromR) {
+    const pr = g.provinces[k];
+    const kind = LAIR_KINDS[pr.lair];
+    if (!kind) return g;
+    // The garrison is bound to its ruin: the roaming code must never walk it out.
+    let armies = [...g.armies, {
+      id: `lair${k}`, owner: kind.faction, c: pr.c, r: pr.r, lairBound: true,
+      name: `${MINORS[kind.faction].short} of ${pr.name}`,
+      units: kind.garrison.map((u, i) => makeUnit(u, kind.faction, `${k}-${i}`)),
+      mp: 0, maxMp: 0,
+    }];
+    const fell = fromC != null && g.provinces[key(fromC, fromR)]
+      && !armies.some((z) => z.c === fromC && z.r === fromR && z.owner !== P)
+      ? [fromC, fromR] : null;
+    const back = fell || neighbours(pr.c, pr.r).find(([x, y]) => {
+      const q = g.provinces[key(x, y)];
+      return q && (!q.owner || q.owner === P)
+        && !armies.some((z) => z.c === x && z.r === y && z.owner !== P);
+    });
+    if (back) {
+      armies = armies.map((a) => (a.id === army.id
+        ? { ...a, c: back[0], r: back[1], mp: 0,
+            route: [[pr.c, pr.r], [back[0], back[1]]], seq: (a.seq || 0) + 1 }
+        : a));
+    }
+    return {
+      ...g, armies,
+      sel: back ? { armyId: army.id, k: key(back[0], back[1]) } : g.sel,
+      provinces: { ...g.provinces, [k]: {
+        ...pr, explored: true, owner: kind.faction, lair: null, loot: kind.loot } },
+      lair: { k, kind: pr.lair },
+      log: [{ turn: g.turn, m: `${pr.name} is occupied — ${kind.title.toLowerCase()}.` }, ...g.log].slice(0, 60),
+    };
+  }
+
   function investigate(k) {
     setGame((g) => {
       const pr = g.provinces[k];
@@ -4353,37 +4481,7 @@ export default function ColdCoast() {
       if (!army || army.mp < 1) return g;
       Sound.play("survey");
       // An occupied ruin is not an encounter you read your way out of.
-      if (pr.lair) {
-        const kind = LAIR_KINDS[pr.lair];
-        // The garrison is bound to its ruin: the roaming code must never walk it out.
-        let armies = [...g.armies, {
-          id: `lair${k}`, owner: kind.faction, c: pr.c, r: pr.r, lairBound: true,
-          name: `${MINORS[kind.faction].short} of ${pr.name}`,
-          units: kind.garrison.map((u, i) => makeUnit(u, kind.faction, `${k}-${i}`)),
-          mp: 0, maxMp: 0,
-        }];
-        // Your scouts are driven back out of the building rather than left
-        // standing on the same ground as the people who live in it.
-        const back = neighbours(pr.c, pr.r).find(([x, y]) => {
-          const q = g.provinces[key(x, y)];
-          return q && (!q.owner || q.owner === P)
-            && !armies.some((z) => z.c === x && z.r === y && z.owner !== P);
-        });
-        if (back) {
-          armies = armies.map((a) => (a.id === army.id
-            ? { ...a, c: back[0], r: back[1], mp: 0,
-                route: [[pr.c, pr.r], [back[0], back[1]]], seq: (a.seq || 0) + 1 }
-            : a));
-        }
-        return {
-          ...g, armies,
-          sel: back ? { armyId: army.id, k: key(back[0], back[1]) } : g.sel,
-          provinces: { ...g.provinces, [k]: {
-            ...pr, explored: true, owner: kind.faction, lair: null, loot: kind.loot } },
-          lair: { k, kind: pr.lair },
-          log: [{ turn: g.turn, m: `${pr.name} is occupied — ${kind.title.toLowerCase()}.` }, ...g.log].slice(0, 60),
-        };
-      }
+      if (pr.lair) return springLair(g, k, army, pr.c, pr.r);
       if (STORIES[k]) return { ...g, survey: { k, story: true, armyId: army.id, result: null } };
       return { ...g, survey: { k, encId: pickEncounter(pr.t).id, armyId: army.id, result: null } };
     });
@@ -5431,12 +5529,22 @@ export default function ColdCoast() {
           // Holk, and anybody else who answers a season by ploughing.
           if (m.grows && g.turn % (m.grows.every || 3) === 0 && Math.random() < (m.grows.chance ?? 0.5)) {
             const held = Object.values(provinces).filter((q) => q.owner === id);
-            if (held.length < m.grows.max) {
+            if (held.length < (m.grows.max || (m.grows.at ? m.grows.at.length + 1 : 99))) {
+              /* Either a named list of ground they mean to have — Bridgerton
+                 cements the clay behind the gate and nothing else — or a kind
+                 of ground they will keep taking, which is how Holk works. */
               const edge = [];
-              held.forEach((q) => neighbours(q.c, q.r).forEach(([x, y]) => {
-                const z = provinces[key(x, y)];
-                if (z && !z.owner && m.grows.on.includes(z.t)) edge.push(z);
-              }));
+              if (m.grows.at) {
+                m.grows.at.forEach(([x, y]) => {
+                  const z = provinces[key(x, y)];
+                  if (z && !z.owner && !z.lair) edge.push(z);
+                });
+              } else {
+                held.forEach((q) => neighbours(q.c, q.r).forEach(([x, y]) => {
+                  const z = provinces[key(x, y)];
+                  if (z && !z.owner && !z.lair && m.grows.on.includes(z.t)) edge.push(z);
+                }));
+              }
               const take = edge[Math.floor(Math.random() * edge.length)];
               if (take) {
                 changeOwner(key(take.c, take.r), id);
@@ -5448,6 +5556,20 @@ export default function ColdCoast() {
             }
           }
         });
+
+        /* Ground that is being fought over goes back to being fought over. Kill
+           whoever is standing in the bog, walk away, and within a few years
+           there is somebody else standing in it — which is what keeps the
+           bridge worth paying for. Ground you actually hold stays yours. */
+        if (g.turn % 5 === 0) {
+          Object.values(provinces).forEach((q) => {
+            if (q.t !== "w" || q.owner || q.lair) return;
+            if (armies.some((a) => a.c === q.c && a.r === q.r)) return;
+            if (Math.random() > 0.5) return;
+            provinces[key(q.c, q.r)] = { ...q, lair: "bogged", explored: false,
+              pop: (q.pop || 0) + (POP_LAIR.bogged || 0) };
+          });
+        }
 
         /* An arrangement that was never yours to break. The Skinless keep the
            silt empty so that everything crosses the bridge and pays for it;
@@ -6035,7 +6157,7 @@ export default function ColdCoast() {
             game={game} P={P} nat={nat} sight={sight} selProv={selProv} selArmy={selArmy} atWar={atWar}
             onBuild={build} onRecruitOpen={(k) => setGame((g) => ({ ...g, recruit: k }))}
             onWar={toggleWar} onDeselect={deselect}
-            onInvestigate={investigate} onClaim={claim} onMarch={march}
+            onInvestigate={investigate} onClaim={claim} onMarch={march} onStorm={storm}
             onInvest={invest} onLift={liftSiege} onStory={advanceStory} onSally={sally}
             onHall={(aid) => setGame((g) => ({ ...g, hall: aid || "open" }))}
             onSeat={(k) => setGame((g) => ({ ...g, seat: k }))} onResearch={research}
@@ -6381,7 +6503,7 @@ const inkFor = (col) => (lum(col) > 0.22 ? mix(col, "#04080b", 0.62) : mix(col, 
 const RELIEF_H = {
   m: 1, g: 0.86, h: 0.46,
   p: 0.16, f: 0.16, s: 0.16, t: 0.16, r: 0.16, c: 0.12,
-  l: 0.1, d: -0.05, b: -0.08, "~": -0.2, _: -0.2,
+  l: 0.1, d: -0.05, w: -0.04, b: -0.08, "~": -0.2, _: -0.2,
 };
 const RELIEF_LIGHT = [-0.62, -0.62, 0.48];   // from the north-west, fairly low
 const RELIEF_K = 5.2;                        // vertical exaggeration
@@ -6602,6 +6724,29 @@ function glyphFor(t, cx, cy, c, r) {
         const y = cy - 5.5 + i * between(i + 2, 3.4, 4.4) + between(i + 5, -0.6, 0.6);
         const w = between(i + 8, 7.5, 9.5);
         ink += `M${(cx - w).toFixed(1)} ${(y - lean).toFixed(1)}q${(w * 0.5).toFixed(1)} -2.4 ${w.toFixed(1)} 0t${w.toFixed(1)} ${(lean * 2).toFixed(1)}`;
+      }
+      break;
+    }
+    case "w": {
+      // Shell holes with water in them, and the stakes somebody drove into the
+      // mud between them. Nothing here grows and nothing here is tidy.
+      const pools = n(0, 2, 3);
+      for (let i = 0; i < pools; i++) {
+        const x = cx + between(i + 1, -8, 6);
+        const y = cy + between(i + 4, -4, 6);
+        const w = between(i + 7, 3.4, 6);
+        ink += `M${(x - w).toFixed(1)} ${y.toFixed(1)}q${(w * 0.6).toFixed(1)} ${between(i + 9, 1.6, 3).toFixed(1)} `
+          + `${w.toFixed(1)} 0q${(w * 0.4).toFixed(1)} ${(-between(i + 11, 1.2, 2.4)).toFixed(1)} ${(-w).toFixed(1)} 0Z`;
+        fill += `M${(x - w).toFixed(1)} ${y.toFixed(1)}q${(w * 0.6).toFixed(1)} ${between(i + 9, 1.6, 3).toFixed(1)} `
+          + `${w.toFixed(1)} 0q${(w * 0.4).toFixed(1)} ${(-between(i + 11, 1.2, 2.4)).toFixed(1)} ${(-w).toFixed(1)} 0Z`;
+      }
+      const stakes = n(14, 2, 4);
+      for (let i = 0; i < stakes; i++) {
+        const x = cx + between(i + 17, -9, 9);
+        const y = cy + between(i + 20, -2, 6.5);
+        const h = between(i + 23, 3, 5.5);
+        const lean = between(i + 26, -1.8, 1.8);
+        ink += `M${x.toFixed(1)} ${y.toFixed(1)}l${lean.toFixed(1)} ${(-h).toFixed(1)}`;
       }
       break;
     }
@@ -7412,6 +7557,8 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
       meet: (id) => window.__ccMeet && window.__ccMeet(id),
       // ...and neither can it wait to storm Wight Mountain.
       break: (id) => window.__ccBreak && window.__ccBreak(id),
+      // ...or to walk a warband four hexes to look at something.
+      put: (c, r) => window.__ccPut && window.__ccPut(c, r),
     };
     if (typeof window !== "undefined") window.__ccWild = () => {
       const game = gameRef.current;
@@ -7441,6 +7588,9 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           const us = game.armies.filter((a) => isMinor(a.owner)).flatMap((a) => a.units);
           return { owners: [...new Set(us.map((u) => u.owner))], types: [...new Set(us.map((u) => u.type))] };
         })(),
+        // Which ground each holdout has taken, by hex.
+        holdGround: SEATED_MINORS.map((id) => `${id}:` + Object.values(game.provinces)
+          .filter((q) => q.owner === id).map((q) => `${q.c},${q.r}`).join("/")),
         // Every holdout: what it holds, what stands on its seat, how deep it
         // has dug in, and how many bands it has out.
         holdouts: SEATED_MINORS.map((id) => {
@@ -7945,7 +8095,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
 }
 
 /* -------------------------------- SIDEBAR --------------------------------- */
-function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift, onStory, onSally, onHall }) {
+function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onStorm, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift, onStory, onSally, onHall }) {
   const [tab, setTab] = useState("here");
   // Only the two that are about what is in front of you. The realm-wide
   // screens moved to the top bar; six tabs did not fit this column.
@@ -7968,7 +8118,7 @@ function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecr
           <SelectionPanel game={game} P={P} sight={sight} selProv={selProv} selArmy={selArmy}
             onBuild={onBuild} onRecruitOpen={onRecruitOpen} onDisband={onDisband}
             onDeselect={onDeselect} onInvestigate={onInvestigate} onClaim={onClaim}
-            onMarch={onMarch} atWar={atWar} onSeat={onSeat} onRepair={onRepair} onDistrict={onDistrict}
+            onMarch={onMarch} onStorm={onStorm} atWar={atWar} onSeat={onSeat} onRepair={onRepair} onDistrict={onDistrict}
             onInvest={onInvest} onLift={onLift} onStory={onStory} onSally={onSally} onHall={onHall}
             onTake={onTake} onMerge={onMerge} onReinforce={onReinforce} onCommand={onCommand} onHall={onHall}
             onInvestPop={onInvestPop} onRename={onRename} onSplit={onSplit} />
@@ -8235,7 +8385,7 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair, o
   );
 }
 
-function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift, onStory, onSally, onHall }) {
+function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onStorm, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift, onStory, onSally, onHall }) {
   if (!selProv) return (
     <div className="cc-text-13d5px cc-text-93a9b5 leading-relaxed">
       <p className="mb-3">Pick a hex to see what it grows and what it hides.</p>
@@ -8363,12 +8513,21 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
                 <button type="button" onClick={() => onMarch(selArmy.id, key(selProv.c, selProv.r))}
                   className={`w-full py-2.5 rounded disp cc-text-14d5px border transition-colors ${info.kind === "attack"
                     ? "cc-bg-5a2f26 cc-hover-bg-6e3a2e cc-border-8a4a38 cc-text-f3d9cf"
+                    : info.kind === "cross"
+                    ? "cc-bg-1a1610 cc-hover-bg-241d10 cc-border-8a6f36 cc-text-f2c97a"
                     : "cc-bg-1f4a52 cc-hover-bg-2a5f69 cc-border-356b76 cc-text-d9f0f2"}`}>
                   {info.label}
                 </button>
                 <div className="cc-text-12d5px cc-text-95aab6 mt-1.5">
                   Costs <span className="num">{info.cost}</span> of <span className="num">{selArmy.mp}</span> movement.
+                  {info.note && <span className="cc-text-9fd6b4"> {info.note}</span>}
                 </div>
+                {info.storm && (
+                  <button type="button" onClick={() => onStorm(selArmy.id, key(selProv.c, selProv.r))}
+                    className="w-full mt-2 py-1.5 rounded border cc-border-5a3230 cc-text-e09a8a cc-hover-bg-2a1a18 cc-text-12d5px transition-colors">
+                    {info.storm}
+                  </button>
+                )}
               </>
             ) : (
               <div className="cc-text-13px cc-text-95aab6">{info.why}</div>
@@ -9217,15 +9376,21 @@ function WorldPanel({ game, P, atWar, onWar }) {
                 <div className="rounded border cc-border-3d5a4a cc-bg-131f27 px-2.5 py-1.5 mt-1.5">
                   <div className="cc-text-12d5px cc-text-9fd6b4">{PACTS[game.pacts[id]].name}</div>
                   <div className="cc-text-11d5px cc-text-93a9b5 mt-0.5 leading-snug">{PACTS[game.pacts[id]].note}</div>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {Object.entries(PACTS[game.pacts[id]].give || {}).map(([k, v]) => (
-                      <span key={k} className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">+{v} {k}</span>
-                    ))}
-                    {Object.entries(PACTS[game.pacts[id]].take || {}).map(([k, v]) => (
-                      <span key={k} className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-5a3230 cc-text-e09a8a">−{v} {k}</span>
-                    ))}
-                    <span className="cc-text-11px cc-text-6f8794 ml-auto">a season, while you leave them alone</span>
-                  </div>
+                  {(() => {
+                    const t = pactTerms(game.pacts[id]);
+                    return (
+                      <>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">{t.gives} a season</span>
+                          <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-5a3230 cc-text-e09a8a">{t.takes} a season</span>
+                        </div>
+                        <div className="cc-text-11px cc-text-6f8794 mt-1">
+                          Every season, for as long as you leave them alone.
+                          {t.pass && <span className="cc-text-8fe3d6"> Your warbands may cross their ground.</span>}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
               {seated && !held && (
@@ -11425,13 +11590,15 @@ function LairModal({ lair, prov, onClose }) {
               <div className="disp cc-text-16px" style={{ color: f.color }}>{f.name}</div>
               <div className="cc-text-12d5px cc-text-93a9b5">
                 {kind.garrison.length} companies, dug in. They hold the{" "}
-                {lair.kind === "herd" ? "wood" : "ruin"} until somebody takes it off them.
+                {lair.kind === "herd" ? "wood" : lair.kind === "bogged" ? "crossing" : "ruin"}{" "}
+                until somebody takes it off them.
               </div>
             </div>
           </div>
           <div className="cc-text-12d5px cc-text-c9a37a mt-3">
-            Your scouts were driven back out. Nothing more will be learned about the place while
-            they are in it — march in and take it off them, or leave it and go around.
+            {lair.kind === "bogged"
+              ? "Your column is back on the ground it started from with the season gone. There is no way through here that does not go through them — take it off them, or find another road."
+              : "Your scouts were driven back out. Nothing more will be learned about the place while they are in it — march in and take it off them, or leave it and go around."}
           </div>
           <button type="button" onClick={onClose}
             className="w-full mt-4 py-2.5 rounded cc-bg-5a2f26 cc-hover-bg-6e3a2e border cc-border-8a4a38 cc-text-f3d9cf disp cc-text-15px transition-colors">
@@ -11716,11 +11883,24 @@ function EncounterScene({ enc, game, P, onAnswer }) {
                       <div className="cc-text-11d5px cc-text-93a9b5 mt-0.5 leading-snug">{o.note}</div>
                       <div className="flex flex-wrap gap-1 mt-1.5">
                         {c && <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-8a6f36 cc-text-f2c97a">{c}</span>}
-                        {o.pact && (
-                          <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">
-                            {PACTS[o.pact].name}
-                          </span>
-                        )}
+                        {o.pact && (() => {
+                          const t = pactTerms(o.pact);
+                          return (
+                            <>
+                              <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">
+                                {t.gives} a season
+                              </span>
+                              <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-8a6f36 cc-text-f2c97a">
+                                {t.takes} a season
+                              </span>
+                              {t.pass && (
+                                <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-4d7488 cc-text-8fe3d6">
+                                  their ground opens to you
+                                </span>
+                              )}
+                            </>
+                          );
+                        })()}
                         {o.harden > 0 && (
                           <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-5a3230 cc-text-e09a8a">
                             they dig in · +{o.harden}% to hold it

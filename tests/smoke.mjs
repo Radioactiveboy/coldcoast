@@ -59,6 +59,22 @@ const openCompany = async (n = 0) => {
   return did;
 };
 const popText = () => page.evaluate(() => document.querySelector(".cc-wbpop")?.innerText || "");
+/* Shut whatever full-screen panel is open — a seat, the works, a codex — so a
+   click meant for the map reaches the map. Scenes are answered by
+   clearScenes(); this is for the ones that just have a way out. */
+const closeOverlay = async () => {
+  for (let i = 0; i < 3; i++) {
+    const shut = await page.evaluate(() => {
+      const ov = document.querySelector(".fixed.inset-0.z-50");
+      if (!ov) return false;
+      const b = ov.querySelector('[aria-label="Close"]') || ov.querySelector("button");
+      if (b) { b.click(); return true; }
+      return false;
+    });
+    if (!shut) return;
+    await wait(250);
+  }
+};
 /* A people can walk into your sight at the end of any season, and meeting them
    stops the game until you have said something back. Say the neutral thing and
    carry on, the way a player would when they are busy with something else. */
@@ -303,6 +319,14 @@ await clearScenes();
    of the place at the head of it. */
 await clearScenes();
 {
+  // Unpaid, the only thing on offer at the gate is a fight.
+  await page.evaluate(() => window.__ccTest.put(28, 79)); await wait(300);
+  await page.evaluate(() => window.__ccPick(27, 79)); await wait(300);
+  const gate = await page.evaluate(() => document.querySelector("aside")?.innerText || "");
+  check("an unpaid gate offers nothing but a fight",
+    /Attack the Bridgers/.test(gate) && !/Cross at/.test(gate),
+    (gate.match(/(Attack|Cross)[^\n]*/) || [])[0] || "no order offered");
+
   await page.evaluate(() => window.__ccTest.meet("bridgers")); await wait(450);
   const sc = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
   check("the bridge has a scene of its own",
@@ -310,11 +334,53 @@ await clearScenes();
     (sc.split("\n")[1] || "").slice(0, 40));
   check("a seat with a painting shows it at the head of the scene",
     await page.evaluate(() => !!document.querySelector(".fixed.inset-0.z-50 .cc-wardart img")));
+  check("the toll says what it costs every season", /a season/.test(sc),
+    (sc.match(/[+\u2212]\d+ [a-z]+[^\n]{0,24} a season/g) || []).join(" / ") || "no season line");
+  check("and says that it opens their ground", /ground opens to you/.test(sc));
   await click("Pay the board"); await wait(300);
   await click("So it is said"); await wait(450);
   const after = await page.evaluate(() => window.__ccWild());
   check("the toll is a standing arrangement", (after.pacts || []).includes("bridgers:bridgeToll"),
     (after.pacts || []).join(" "));
+
+  // Paid, it is a road — and one you can still decide to stop paying for.
+  await page.evaluate(() => window.__ccTest.put(28, 79)); await wait(300);
+  await page.evaluate(() => window.__ccPick(27, 79)); await wait(300);
+  const open = await page.evaluate(() => document.querySelector("aside")?.innerText || "");
+  check("a paid gate offers the crossing", /Cross at Bridgerton/.test(open),
+    (open.match(/Cross at [^\n]*/) || [])[0] || "no crossing offered");
+  check("and still lets you stop paying", /Break the arrangement and storm/.test(open));
+  await click("Cross at"); await wait(500);
+  const mine = await page.evaluate(() => window.__ccSiege().mine || []);
+  const holds = await page.evaluate(() => window.__ccWild().holdouts);
+  check("crossing puts you on the bridge without taking it",
+    mine.some((x) => x.startsWith("27,79:")) && holds.some((h) => h.startsWith("bridgers:held")),
+    mine.join(" "));
+  await page.evaluate(() => window.__ccTest.put(25, 77)); await wait(250);
+}
+
+/* The old Channel floor is a warzone, and it does not wait to be surveyed. A
+   warband that walks onto it is met on it and put back where it came from. */
+await clearScenes();
+{
+  await page.evaluate(() => window.__ccTest.put(28, 79)); await wait(350);
+  await page.evaluate(() => window.__ccPick(28, 78)); await wait(300);
+  const panel = await page.evaluate(() => document.querySelector("aside")?.innerText || "");
+  check("the old Channel floor is its own ground", /Bogged warzone/.test(panel),
+    (panel.split("\n")[2] || "").slice(0, 40));
+  await click("March here|March in and take it"); await wait(600);
+  const sc = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  check("marching into the bog is met, not surveyed", /mud is already taken/.test(sc),
+    (sc.split("\n")[1] || "").slice(0, 40));
+  await page.evaluate(() => {
+    const ov = document.querySelector(".fixed.inset-0.z-50");
+    if (ov) [...ov.querySelectorAll("button")].pop()?.click();
+  });
+  await wait(400);
+  const mine = await page.evaluate(() => window.__ccSiege().mine || []);
+  check("and the warband is back where it started", mine.some((x) => x.startsWith("28,79:")),
+    mine.join(" "));
+  await page.evaluate(() => window.__ccTest.put(25, 77)); await wait(250);
 }
 
 /* Holk are friendly before you have done anything at all, which is a fact
@@ -523,7 +589,13 @@ await page.evaluate(() => {
 });
 await wait(250);
 
-for (let i = 0; i < 6; i++) { await click("End (spring|summer|autumn|winter)"); await wait(300); await clearScenes(); }
+/* Six seasons, with whatever the Skinless send at you fought off on the way —
+   their bands reach Lunden itself, so a season can end in a field. */
+for (let i = 0; i < 6; i++) {
+  await click("End (spring|summer|autumn|winter)"); await wait(320);
+  if (await inBattle()) await fightOut();
+  await clearScenes();
+}
 await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77);
 await wait(300);
 check("a settlement opens a district", await click("Build in the district"));
@@ -682,8 +754,13 @@ let ac = 25, ar = 77;
   if ((await mv()) < 2) {
     await click("End (spring|summer|autumn|winter)"); await wait(500);
     if (await inBattle()) await fightOut();
+    await clearScenes();
     await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77); await wait(300);
   }
+  // Anything over the map eats the right-click before the map ever sees it.
+  await clearScenes();
+  await closeOverlay();
+  await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77); await wait(250);
   const at = await page.evaluate(() => {
     const g = document.querySelector(".cc-banner .cc-picked"); const r = g?.getBoundingClientRect();
     const b = document.querySelector("svg.cc-basemap"); const z = b ? b.getBoundingClientRect().width / +b.getAttribute("width") : 1;
@@ -869,6 +946,10 @@ check("forty seasons pass", seasons === 40, `${seasons}`);
   const held = +((one("holk").match(/:(\d+)hex/) || [])[1] || 0);
   const bands = +((one("skinless").match(/(\d+)bands/) || [])[1] || 0);
   check("Bridgerton is heavier than it was", hard > 0, one("bridgers"));
+  const ground = await page.evaluate(() => window.__ccWild().holdGround);
+  const bg = (ground.find((x) => x.startsWith("bridgers:")) || "").slice(9).split("/").filter(Boolean);
+  check("Bridgerton cements the clay behind it and nothing else",
+    bg.every((h) => ["27,79", "28,79", "28,80", "29,80", "27,81"].includes(h)), bg.join(" "));
   check("Holk have taken more of the flats", held > 1, one("holk"));
   check("Wight has bands out on the silt", bands > 0 || /broken/.test(one("skinless")), one("skinless"));
   check("the Quarrymen neither dig in nor raid",
