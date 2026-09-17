@@ -125,18 +125,18 @@ export const STORIES = {
     ],
     reward: { feature: "works", text: "The works gives scrap every season, more than anywhere." },
   },
-  "28,72": { // Norwich Fen
-    title: "Norwich Fen",
-    intro: "Flat, wet, green, and full of birds. The old drains still run and somebody has been keeping them clear.",
+  "28,72": { // Holk — the ring of hulls, once you are the one holding it
+    title: "Holk",
+    intro: "A hundred trawlers dragged bow-to-stern into a ring on the open silt, cut into halls and roofed with their own decks, with a mile of ploughed seabed around them. The masts are a stockade. The winches still turn.",
     steps: [
-      { text: "The drain-keepers are a village on stilts a mile in. They have food and no iron, and they know it.",
-        need: { seasons: 1 }, action: "Find the village", done: "Forty houses on posts, and a headman who wants to talk about hoes." },
-      { text: "The great sluice at the seaward end is choked. Cleared, the whole fen drains and turns into the best farmland on the coast.",
-        need: { scrap: 45 }, action: "Clear the sluice", done: "The fen drains over a fortnight. The birds leave. The headman does not." },
-      { text: "Farmland needs a lord. Hold the Fen.",
-        need: { hold: true }, action: "Claim the Fen", done: "Norwich Fen is under the plough." },
+      { text: "The ring was dragged together by hand and by winch three hundred years ago and nobody since has written down which hull is holding which up. Somebody has to walk it and find out.",
+        need: { seasons: 1 }, action: "Walk the ring", done: "Ninety-one hulls, eleven of them load-bearing, and one stern trawler that everything else is leaning on." },
+      { text: "The threshing floor is the afterdeck of the Holkfast and it has been turned by hand since before anyone alive was born. Iron would make it a mill.",
+        need: { scrap: 45 }, action: "Iron the threshing floor", done: "It does in a morning what took a week. The reeve stands and watches it for an hour without saying anything." },
+      { text: "Silt wheat wants a lord who understands that the flats are not a field but a fleet that stopped moving. Hold Holk.",
+        need: { hold: true }, action: "Take the ring", done: "Holk is yours, hulls, furrows and all." },
     ],
-    reward: { feature: "granary", text: "The granary gives rations every season, more than anywhere." },
+    reward: { feature: "hulks", text: "The hulls give grain off the flats and scrap off the ships, every season." },
   },
   "35,72": { // Amsterdam Bed
     title: "Amsterdam Bed",

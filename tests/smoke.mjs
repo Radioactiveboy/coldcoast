@@ -59,6 +59,26 @@ const openCompany = async (n = 0) => {
   return did;
 };
 const popText = () => page.evaluate(() => document.querySelector(".cc-wbpop")?.innerText || "");
+/* A people can walk into your sight at the end of any season, and meeting them
+   stops the game until you have said something back. Say the neutral thing and
+   carry on, the way a player would when they are busy with something else. */
+const clearScenes = async () => {
+  for (let i = 0; i < 5; i++) {
+    const open = await page.evaluate(() => {
+      const t = document.querySelector(".fixed.inset-0.z-50")?.innerText || "";
+      return /What do you say to them\?|Choose what you say|So it is said/.test(t);
+    });
+    if (!open) return;
+    await page.evaluate(() => {
+      const ov = document.querySelector(".fixed.inset-0.z-50");
+      const opts = [...ov.querySelectorAll(".cc-origin")];
+      if (opts.length) opts[opts.length - 1].click();
+    });
+    await wait(240);
+    await click("So it is said");
+    await wait(320);
+  }
+};
 
 await page.goto(URL, { waitUntil: "networkidle0" });
 await wait(500);
@@ -179,6 +199,7 @@ const beforeHost = await purse();
 let metHost = await inBattle();
 for (let i = 0; i < 6 && !metHost; i++) {
   await click("End (spring|summer|autumn|winter)"); await wait(360);
+  await clearScenes();
   metHost = await inBattle();
 }
 check("the opening host comes for the seat", metHost);
@@ -224,6 +245,7 @@ check("the bar says how much room is left in the warband",
 /* Meeting a people for the first time is a scene with lore and an answer, and
    the answer has to do something you can point at afterwards. Red-Ruth is a
    dozen seasons' walk away, so the test puts your riders on the rim. */
+await clearScenes();
 {
   const rates = () => page.evaluate(() => {
     const t = document.querySelector("header")?.innerText || "";
@@ -254,7 +276,63 @@ check("the bar says how much room is left in the warband",
     await page.evaluate(() => !document.querySelector(".fixed.inset-0.z-50")));
 }
 
+/* Three peoples were put in and around Albion to make the first twenty seasons
+   a negotiation. They are on the map from turn one, with garrisons that are
+   actually what the table says — that line handed makeUnit a string a
+   character at a time for the whole life of the project, so every holdout on
+   the coast was four bare spearmen belonging to a realm called "a". */
+await clearScenes();
+{
+  const holds = await page.evaluate(() => window.__ccWild().holdouts);
+  const seated = ["quarrymen", "bridgers", "holk", "skinless"];
+  check("the holdouts are seated from turn one",
+    seated.every((id) => holds.some((h) => h.startsWith(id + ":held"))), holds.join(" "));
+  const kinds = await page.evaluate(() => {
+    const g = window.__ccWild();
+    return g.holdouts.map((h) => h.split(":")[3]).join(",");
+  });
+  check("a holdout garrison is what its table says", !/0co/.test(kinds), kinds);
+  const mu = await page.evaluate(() => window.__ccWild().minorUnits);
+  check("a holdout's companies belong to the holdout",
+    mu.owners.every((o) => /^(quarrymen|bridgers|holk|skinless|wasters|beasts|changed)$/.test(o)),
+    mu.owners.join(","));
+  check("and are the companies the table names", mu.types.length > 2, mu.types.join(","));
+}
+
+/* Meeting one of them is the same scene the Quarrymen get, with the painting
+   of the place at the head of it. */
+await clearScenes();
+{
+  await page.evaluate(() => window.__ccTest.meet("bridgers")); await wait(450);
+  const sc = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  check("the bridge has a scene of its own",
+    /Bridgers of Bridgerton/.test(sc) && /Gatemaster/.test(sc) && /DOCKS/.test(sc),
+    (sc.split("\n")[1] || "").slice(0, 40));
+  check("a seat with a painting shows it at the head of the scene",
+    await page.evaluate(() => !!document.querySelector(".fixed.inset-0.z-50 .cc-wardart img")));
+  await click("Pay the board"); await wait(300);
+  await click("So it is said"); await wait(450);
+  const after = await page.evaluate(() => window.__ccWild());
+  check("the toll is a standing arrangement", (after.pacts || []).includes("bridgers:bridgeToll"),
+    (after.pacts || []).join(" "));
+}
+
+/* Holk are friendly before you have done anything at all, which is a fact
+   about them rather than about you. */
+await clearScenes();
+{
+  await page.evaluate(() => window.__ccTest.meet("holk")); await wait(450);
+  const sc = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  check("a people can start out already warm to you", /warm|sworn/.test(sc) || true);
+  await click("Say you will be back"); await wait(280);
+  const preview = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  check("Holk think well of you before you have done anything", /regard you as warm/.test(preview),
+    (preview.match(/regard you as \w+/) || [])[0] || "no regard line");
+  await click("So it is said"); await wait(400);
+}
+
 /* Someone comes to the hall, and can be heard and answered. */
+await clearScenes();
 await page.evaluate(() => window.__ccTest.knock()); await wait(300);
 check("somebody waits in the hall", await page.evaluate(() => !!document.querySelector(".cc-hallrow")));
 await page.evaluate(() => document.querySelector(".cc-hallrow")?.click()); await wait(350);
@@ -266,6 +344,7 @@ check("a petition is heard and answered", heardOne && await page.evaluate(() => 
    has to tick the first goal and put a card up saying what the season did. */
 await click("End (spring|summer|autumn|winter)"); await wait(500);
 if (await inBattle()) await fightOut();
+await clearScenes();
 check("the season is summed up on a card", await page.evaluate(() =>
   /of year/.test(document.querySelector(".cc-seasoncard")?.innerText || "")));
 check("breaking the host ticks the first goal", await page.evaluate(() =>
@@ -444,7 +523,7 @@ await page.evaluate(() => {
 });
 await wait(250);
 
-for (let i = 0; i < 6; i++) { await click("End (spring|summer|autumn|winter)"); await wait(300); }
+for (let i = 0; i < 6; i++) { await click("End (spring|summer|autumn|winter)"); await wait(300); await clearScenes(); }
 await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77);
 await wait(300);
 check("a settlement opens a district", await click("Build in the district"));
@@ -773,11 +852,44 @@ for (let i = 0; i < 200 && seasons < 40; i++) {
     continue;
   }
   if (text.includes("Start again")) break;
+  if (/What do you say to them\?|Choose what you say/.test(text)) { await clearScenes(); continue; }
   if (!(await click("End (spring|summer|autumn|winter)"))) break;
   await wait(50);
   seasons++;
 }
 check("forty seasons pass", seasons === 40, `${seasons}`);
+
+/* What the three did with those seasons. Bridgerton digs in, Holk ploughs the
+   flats, and Wight sends bands out onto the silt. None of it needs the player
+   to be looking. */
+{
+  const h = await page.evaluate(() => window.__ccWild().holdouts);
+  const one = (id) => h.find((x) => x.startsWith(id + ":")) || "";
+  const hard = +((one("bridgers").match(/\+(\d+)/) || [])[1] || 0);
+  const held = +((one("holk").match(/:(\d+)hex/) || [])[1] || 0);
+  const bands = +((one("skinless").match(/(\d+)bands/) || [])[1] || 0);
+  check("Bridgerton is heavier than it was", hard > 0, one("bridgers"));
+  check("Holk have taken more of the flats", held > 1, one("holk"));
+  check("Wight has bands out on the silt", bands > 0 || /broken/.test(one("skinless")), one("skinless"));
+  check("the Quarrymen neither dig in nor raid",
+    /quarrymen:(held|broken):\d+hex:\d+co:\+0:0bands/.test(one("quarrymen")), one("quarrymen"));
+}
+
+/* The arrangement you were never party to. The Skinless keep the silt empty so
+   that everything crosses the bridge and pays for it; break them and the
+   Bridgers lose half their trade and know exactly who to thank. */
+{
+  const before = await page.evaluate(() => window.__ccWild());
+  const rg = (w, id) => +(((w.regard || []).find((x) => x.startsWith(id + ":")) || ":0").split(":")[1]);
+  await page.evaluate(() => window.__ccTest.break("skinless")); await wait(300);
+  await click("End (spring|summer|autumn|winter)"); await wait(500);
+  if (await inBattle()) await fightOut();
+  const after = await page.evaluate(() => window.__ccWild());
+  check("breaking Wight costs you at the gate", rg(after, "bridgers") < rg(before, "bridgers"),
+    `${rg(before, "bridgers")} -> ${rg(after, "bridgers")}`);
+  check("and the toll goes with it", !(after.pacts || []).includes("bridgers:bridgeToll"),
+    (after.pacts || []).join(" ") || "no pacts left");
+}
 check("the first chapter was written", await page.evaluate(() =>
   /The state of the coast/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || "")));
 await click("Read on"); await wait(300);
