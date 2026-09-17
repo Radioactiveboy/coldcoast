@@ -13,7 +13,10 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 10: three peoples around Albion — Bridgerton on the crossing, Holk out on
+/* 11: the floor of the old Channel is its own terrain — a bogged warzone with
+   people already standing on it — and Bridgerton holds the clay behind the
+   gate. A version 10 save has silt there and nobody on it.
+   10: three peoples around Albion — Bridgerton on the crossing, Holk out on
    the flats and the Skinless on Wight — hold ground a version 9 save has
    nobody on, and Wight Mountain is high ground now where that save has silt.
    9: meeting a people is an event now, and everyone you have met carries a
@@ -39,7 +42,7 @@ export const SAVE_KEY = "coldcoast.save";
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 10;
+export const SAVE_VERSION = 11;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight

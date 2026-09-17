@@ -39,9 +39,11 @@ export const PACTS = {
   },
   bridgeToll: {
     name: "The Dover toll",
-    note: "Your carts cross at the gate and come back loaded. The toll is taken on the way out, in scrap, every time.",
+    note: "The gate stands open to your banner and your carts come back loaded. They weigh every one on the way out and take their cut of it, season after season, for as long as you keep crossing.",
     give: { food: 5, metal: 1 },
     take: { scrap: 4 },
+    // What the toll is actually for: their ground is open to your warbands.
+    pass: true,
   },
   holkGrain: {
     name: "The Holk grain",
@@ -144,13 +146,13 @@ export const FIRST_MEET = {
       {
         id: "toll",
         label: "Pay the board like anybody else",
-        note: "30 scrap to open an account at the gate. Your carts cross from now on.",
+        note: "30 scrap once, to write your banner into the ledger. After that the toll runs every season you keep the road — and your warbands cross the bridge instead of the mud.",
         need: { scrap: 30 },
         res: { scrap: -30 },
         regard: 12,
         pact: "bridgeToll",
         outcome:
-          "The Gatemaster writes your banner into a ledger a hand thick, turns it round so you can see it written, and has the gate opened without another word. Carts go over that same week and come back with the continent in them.",
+          "The Gatemaster writes your banner into a ledger a hand thick, turns it round so you can see it written, and has the gate opened without another word. Carts go over that same week and come back with the continent in them — and your companies go over with them, which is worth more than the carts are.",
       },
       {
         id: "guard",
@@ -306,3 +308,21 @@ export const FIRST_MEET = {
 };
 
 export const encounterFor = (id) => FIRST_MEET[id] || null;
+
+/* A standing arrangement said the way a ledger would say it: what comes in and
+   what goes out, every season, with the word "season" in it — a toll that only
+   ever showed its joining fee read as a one-off, which is not what it is. */
+const RES_WORD = { food: "rations", scrap: "scrap", metal: "metal", fuel: "fuel", powder: "powder", men: "recruits" };
+export function pactTerms(id) {
+  const p = PACTS[id];
+  if (!p) return null;
+  const list = (o, sign) => Object.entries(o || {}).map(([k, v]) => `${sign}${v} ${RES_WORD[k] || k}`);
+  const gives = list(p.give, "+"), takes = list(p.take, "\u2212");
+  return {
+    name: p.name,
+    gives: gives.join(", "),
+    takes: takes.join(", "),
+    line: [gives.join(", "), takes.join(", ")].filter(Boolean).join(" against ") + " a season",
+    pass: !!p.pass,
+  };
+}

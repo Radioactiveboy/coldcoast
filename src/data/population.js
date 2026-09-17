@@ -47,11 +47,12 @@ export const POP_TERRAIN = {
   r: 60,    // Ruinfield — 1, whoever is still picking it over
   b: 20,    // Saltpan — 0
   l: 30,    // Freshwater — 0
+  w: 0,     // Bogged warzone — nobody lives on it; what is on it is fighting
 };
 
 /* Wasters and the changed are people too. A ruin somebody is holding has more
    in it than an empty one, and taking it takes them with it. */
-export const POP_LAIR = { wasters: 180, changed: 60, barricade: 140 };
+export const POP_LAIR = { wasters: 180, changed: 60, barricade: 140, bogged: 120 };
 
 /* The named places, by hand. These are the only tiles that are not simply
    their terrain, and the reason Lunden feels like somewhere. A capital is
