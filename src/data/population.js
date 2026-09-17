@@ -65,6 +65,8 @@ export const POP_LANDMARK = {
   "87,91": 1400,  // Karkhan Wells — the Horde's seat
   "17,120": 1350, // Meseta Prime — the Solar Throne's seat
   "14,81": 900,   // Red-Ruth — the Quarrymen, three hundred years down the shafts
+  "27,79": 1400,  // Bridgerton — a town living on the deck of its own bridge
+  "24,80": 400,   // Wight Mountain — the Skinless, and what they have taken
 
   "23,67": 620,   // York Minster — the stone kept people around it
   "20,68": 560,   // Manchester Pit
@@ -78,7 +80,7 @@ export const POP_LANDMARK = {
   "19,77": 400,   // Cardiff Tide
   "20,77": 380,   // Bristol Weir
   "17,81": 340,   // Plymouth Hulk
-  "28,72": 300,   // Norwich Fen
+  "28,72": 900,   // Holk — a hundred hulls in a ring and a mile of furrows
 
   "46,68": 640,   // Hamburg Yards — the yards still work
   "35,72": 580,   // Amsterdam Bed

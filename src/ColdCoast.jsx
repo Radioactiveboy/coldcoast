@@ -606,7 +606,7 @@ const MAP_ROWS = [
   "~~~~~~~~~~~~~~~~~~rrrrpffrpdddd~ppppffffhpffffffffpppppppphhppppphhhhhphcccccccccccccpppsssssssssssppsps",
   "~~~~~~~~~~~~~~~~~~frffffffppddhp~ffppfprppppfpppppfhhfffffhhhfhphphhpphpcppfpppffppfffcpsssssssssssspsss",
   "~~~~~~~~~~~~~~~~~ffff~dddddppdfffffhffpfrppppppppphhhhfhhhhhppfhfffpppfphfpffppppppppfppssssssssssssssss",
-  "~~~~~~~~~~~~~~~~~dd~~~ddddddppfffffhfppffppppfpppppphhhhhhhhfpppfffppfffffppfhhpppppphhssrssssssssssssss",
+  "~~~~~~~~~~~~~~~~~dd~~~ddhdddppfffffhfppffppppfpppppphhhhhhhhfpppfffppfffffppfhhpppppphhssrssssssssssssss",
   "~~~~~~~~~~~~ddr~~f~~~dddd~~pffffpfhphpppppppffpfpppphhhhhhhhpppfffffffffffpffhpppppfpppsrrssssssssssspps",
   "~~~~~~~~~~~~dddddd~dddddd~~~fffpppfpfppppppppfffffphhhhhhhhfpffhhfffffpfpppffffpfppffpshsrssssssssssssps",
   "~~~~~~~~~~~~ddddddddddd~~~~~pppppfffffpppppphhhfffphhhhrhhhfffpphffffppfpppffffhfffffhhfsssssssssssssspp",
@@ -703,6 +703,8 @@ const TERRAIN = {
 
 // Places worth naming. Everything else gets a regional name.
 const LANDMARKS = {
+  "27,79": "Bridgerton",
+  "24,80": "Wight Mountain",
   "58,28": "Skjoldhall",
   "48,44": "Oslo Cleft",
   "62,46": "Stockholm Reef",
@@ -723,7 +725,7 @@ const LANDMARKS = {
   "12,70": "Dublin Bar",
   "64,70": "Volgograd Line",
   "22,72": "Birmingham Heap",
-  "28,72": "Norwich Fen",
+  "28,72": "Holk",
   "35,72": "Amsterdam Bed",
   "54,72": "Berlin Vault",
   "70,74": "Warszawa Stack",
@@ -960,6 +962,26 @@ const TERRAIN_ART = {
 const WARD_ART = Object.fromEntries(
   Object.entries(import.meta.glob("./assets/ward-*.{webp,png,jpg}", { eager: true, query: "?url", import: "default" }))
     .map(([path, src]) => [path.replace(/^.*\/ward-/, "").replace(/\.[a-z]+$/i, ""), src]));
+
+/* A people's seat, painted. Keyed by the `art` on their MINORS entry, so a
+   file dropped in as seat-<id>.webp appears in the meeting scene and on the
+   ground itself with no code change. */
+const SEAT_ART = Object.fromEntries(
+  Object.entries(import.meta.glob("./assets/seat-*.{webp,png,jpg}", { eager: true, query: "?url", import: "default" }))
+    .map(([path, src]) => [path.replace(/^.*\/seat-/, "").replace(/\.[a-z]+$/i, ""), src]));
+
+function SeatPlate({ id, height = 190, caption }) {
+  const src = SEAT_ART[id];
+  if (!src) return null;
+  return (
+    <div className="cc-wardart" style={{ height }}>
+      <img src={src} alt="" loading="lazy"
+        style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center 52%", display: "block" }} />
+      <span className="cc-wardfade" />
+      {caption && <span className="cc-wardcap disp">{caption}</span>}
+    </div>
+  );
+}
 
 /* A quarter's painting, if it has one. Same treatment as the terrain plates:
    the image runs the width of the card and falls away into it at the bottom,
@@ -1277,6 +1299,10 @@ const loyaltyWord = (n) => (n >= 75 ? "devoted" : n >= 50 ? "loyal" : n >= LOYAL
 /* The warlord is whoever holds the seat now — the founder from the table, or
    the captain who took it when the founder fell. */
 const lordName = (nat) => nat?.lord?.name || WARLORDS[nat?.id]?.name || "";
+/* Most peoples start at a shrug. A few start out already pleased to see
+   anybody at all, which is a fact about them, not about you. */
+const regardStart = (id) => (MINORS[id] && MINORS[id].regard != null ? MINORS[id].regard : REGARD_START);
+
 /* How a people regard you, painted the same way loyalty is. */
 const regardTone = (n) => {
   const t = regardBand(n).tone;
@@ -1572,12 +1598,72 @@ const MINORS = {
       "Three hundred years down the same shafts. They kept the pumps running, the china clay pits open and the smelters lit, and they have never once needed anyone's permission.",
     trait:
       "Dug in behind spoil heaps and cut faces, with guns ranged on every approach. They will not expand and they will not treat. Break them and the workings are yours.",
+    guardName: "The Red-Ruth Pit Guard",
     garrison: [
-      "vaultguard",
-      "pikemen",
-      "pikemen",
-      ["battery", "cannon", "rags", "foot"],
+      ["vaultguard", "steel", "plate"],
+      ["pikemen", "iron", "leather"],
+      ["pikemen", "iron", "leather"],
+      ["guncrew", "iron", "leather"],
     ],
+  },
+  /* Three peoples in and around Albion, put there to make the first twenty
+     seasons a negotiation rather than a walk. Each one does something the
+     holdouts did not: Bridgerton digs in a little deeper every season, Holk
+     puts another furlong of the flats under the plough, and Wight sends bands
+     out onto the silt to take whatever is crossing it. */
+  bridgers: {
+    name: "The Bridgers of Bridgerton", short: "Bridgers", color: "#e2b33c",
+    at: [27, 79], seatName: "Bridgerton", defBonus: 50,
+    feature: "tollgate", building: "redoubt", art: "bridgerton",
+    blurb:
+      "The crossing was a third built when the water went out from under it. They finished it out of hulls and gantry steel, one span a decade, and they have never left the deck since.",
+    trait:
+      "The only dry-shod road from Albion to the continent, and every yard of it is theirs. They do not raid and they do not expand. They fortify — the gate is heavier every season than it was the last.",
+    guardName: "The Bridgerton Gate Watch",
+    garrison: [
+      ["pikemen", "iron", "leather"],
+      ["pikemen", "iron", "leather"],
+      ["bowmen", "iron", "leather"],
+      ["ironclad", "iron", "scrap"],
+    ],
+    /* Left alone, the near arch is a fortress inside twenty seasons. */
+    fortify: { add: 4, cap: 34, every: 2, company: "pikemen", companyEvery: 9, companyMax: 3 },
+  },
+  holk: {
+    name: "The Silt Farmers of Holk", short: "Holk", color: "#6fae8f",
+    at: [28, 72], seatName: "Holk", defBonus: 12, regard: 68,
+    feature: "hulks", building: "siltfarm", art: "holk",
+    blurb:
+      "The Dogger trawler fleet settled where it floated when the water went. The crews dragged the hulls into a ring, cut them into halls, and started turning over the seabed — which is the best soil left on the island.",
+    trait:
+      "Friendly on principle and on arithmetic: a town with no walls that grows more than it can eat has to be. They do not fight anybody. They do take the flats, a few furlongs a year, and they are not asking.",
+    guardName: "The Holk Deck Watch",
+    garrison: [
+      ["spearmen", "iron", "leather"],
+      "spearmen",
+      "hunters",
+    ],
+    grows: { on: ["d"], every: 3, max: 10, chance: 0.5 },
+  },
+  skinless: {
+    name: "The Skinless of Wight Mountain", short: "Skinless", color: "#b5453f",
+    at: [24, 80], seatName: "Wight Mountain", defBonus: 35,
+    feature: "eyrie", art: "wightmountain",
+    blurb:
+      "The old island did not drown and did not drain. It stands eight hundred feet out of the dry Channel with the whole floor laid out flat around it, and they took the top of it.",
+    trait:
+      "They do not farm, build or trade. They live on what crosses the silt, and they have an old arrangement with Bridgerton that they have never once broken: nothing crosses the mud, so everything crosses the bridge.",
+    guardName: "The Wight Poles",
+    garrison: [
+      ["axemen", "iron", "leather"],
+      ["axemen", "iron", "leather"],
+      "hunters",
+      "hunters",
+    ],
+    /* Nothing goes out onto the silt in the first two years. The opening host,
+       the first petitions and the first winter are enough to be going on with;
+       after that the poles start appearing. */
+    raids: { bands: 3, reach: 9, after: 8, units: ["hunters", "axemen", "axemen"], spare: ["bridgers"], chance: 0.42 },
   },
   wasters: {
     name: "The Wasters", short: "Wasters", color: "#b5793f", defBonus: 10, roaming: true,
@@ -1616,6 +1702,12 @@ const FEATURES = {
   boneyard: { name: "Boneyard",          yield: { scrap: 1 },            desc: "Machines died here in numbers." },
   quarry:   { name: "The Red-Ruth workings", yield: { scrap: 5, fuel: 3, powder: 1 },
               desc: "Deep shafts, standing smelters and pumps that still turn. The best industry left on the island." },
+  tollgate: { name: "The Dover gate",    yield: { scrap: 4, metal: 1 }, def: 15, move: 1, supply: 1,
+              desc: "Sixteen piers of ship plate across the dry Channel, lit end to end, with a customs gate on the near arch. Everything that crosses, crosses here." },
+  hulks:    { name: "The Holk hulls",    yield: { food: 4, scrap: 2 },
+              desc: "A hundred trawlers dragged into a ring and cut into halls, with a mile of ploughed seabed round them." },
+  eyrie:    { name: "The Wight watch",   yield: { scrap: 2 }, sight: 2, def: 10,
+              desc: "Eight hundred feet of old island standing out of the mud. From the top you can see everything crossing, days before it arrives." },
   /* What a place's story leaves behind. These do more than yield: `sight`
      carries your sight further, `def` is a wall, `move` makes the hex a
      road, `supply` and `carry` pull the supply line in for whoever stands
@@ -3138,10 +3230,17 @@ function initialState() {
 
   SEATED_MINORS.forEach((id) => {
     const m = MINORS[id];
+    /* A garrison entry is a company type, or [type, weapon, armour] when they
+       have better kit than bone and hide. It used to be handed to makeUnit a
+       character at a time — makeUnit("v", "a", "u", "l") — so every holdout on
+       the map was four bare spearmen belonging to a realm called "a". */
     armies.push({
       id: `m${id}`, owner: id, c: m.at[0], r: m.at[1],
-      name: `${m.short} Pit Guard`,
-      units: m.garrison.map((g) => makeUnit(g[0], g[1], g[2], g[3], id, uid++)),
+      name: m.guardName || `${m.short} guard`,
+      units: m.garrison.map((g, i) => {
+        const spec = Array.isArray(g) ? g : [g];
+        return makeUnit(spec[0], id, `${id}g${i}`, spec[1], spec[2]);
+      }),
       mp: 0, maxMp: 0,
     });
   });
@@ -4116,12 +4215,26 @@ export default function ColdCoast() {
   });
   /* For the smoke test only: open a full-screen panel, and read the ledger. */
   if (typeof window !== "undefined") window.__ccScreen = (id) => setGame((g) => ({ ...g, screen: id }));
+  /* For the smoke test only: a holdout's seat changes hands, so the things
+     that hang off breaking one can be reached without a campaign. */
+  if (typeof window !== "undefined") window.__ccBreak = (id) => setGame((g) => {
+    const m = MINORS[id];
+    if (!m || !m.at) return g;
+    const k = key(m.at[0], m.at[1]);
+    if (!g.provinces[k]) return g;
+    return {
+      ...g,
+      provinces: { ...g.provinces, [k]: { ...g.provinces[k], owner: g.player, capital: false, seat: null } },
+      armies: g.armies.filter((a) => a.owner !== id),
+    };
+  });
+
   /* For the smoke test only: your riders come over the rim at Red-Ruth. The
      walk there is a dozen seasons and a test cannot wait for it. */
   if (typeof window !== "undefined") window.__ccMeet = (id) => setGame((g) => ({
     ...g,
     met: { ...(g.met || {}), [id]: true },
-    regard: { ...(g.regard || {}), [id]: g.regard?.[id] ?? REGARD_START },
+    regard: { ...(g.regard || {}), [id]: g.regard?.[id] ?? regardStart(id) },
     meetings: (g.meetings || []).includes(id) ? g.meetings : [...(g.meetings || []), id],
   }));
   if (typeof window !== "undefined") window.__ccFall = () => setGame((g) => ({
@@ -4331,7 +4444,12 @@ export default function ColdCoast() {
       const res = { ...nat.res };
       Object.entries(opt.res || {}).forEach(([k, v]) => { res[k] = Math.max(0, Math.round((res[k] || 0) + v)); });
       const regard = { ...(g.regard || {}) };
-      regard[fid] = Math.max(0, Math.min(100, (regard[fid] ?? REGARD_START) + (opt.regard || 0)));
+      regard[fid] = Math.max(0, Math.min(100, (regard[fid] ?? regardStart(fid)) + (opt.regard || 0)));
+      // Nothing said on this coast is said only to the people it is said to.
+      Object.entries(opt.also || {}).forEach(([other, d]) => {
+        if (!g.met?.[other]) return;
+        regard[other] = Math.max(0, Math.min(100, (regard[other] ?? regardStart(other)) + d));
+      });
       const pacts = { ...(g.pacts || {}) };
       if (opt.pact) pacts[fid] = opt.pact;
       let provinces = g.provinces, armies = g.armies;
@@ -4345,10 +4463,16 @@ export default function ColdCoast() {
           ? { ...a, units: [...a.units, makeUnit(opt.addGarrison, fid, `hard${fid}${g.turn}`)] }
           : a));
       }
+      // A people who live on what they take send more bands out when you have
+      // just told them what you think of them.
+      const theirs = g.nations[fid];
+      const nations = opt.anger && theirs
+        ? { ...g.nations, [fid]: { ...theirs, spite: (theirs.spite || 0) + opt.anger } }
+        : g.nations;
       Sound.play(opt.harden ? "horn" : "give");
       return {
         ...g, provinces, armies, pacts, regard,
-        nations: { ...g.nations, [g.player]: { ...nat, res } },
+        nations: { ...nations, [g.player]: { ...nat, res } },
         meetings: (g.meetings || []).filter((x) => x !== fid),
         log: [{ turn: g.turn, m: `${FACTION[fid]?.short || fid}: ${opt.label.toLowerCase()}.` }, ...g.log].slice(0, 60),
       };
@@ -5128,11 +5252,13 @@ export default function ColdCoast() {
         }
       });
 
-      // --- the Wasters ---
-      // They do not claim ground. They walk to whoever has something worth
-      // taking, and take it. Everyone is free to go and kill them.
+      // --- raiders ---
+      // People who do not claim ground: they walk to whoever has something
+      // worth taking, and take it. The Wasters do it everywhere. A holdout
+      // that lives on what crosses its ground does it within sight of home.
       {
         const claimed = NATION_IDS.reduce((n, x) => n + (heldNow[x] || 0), 0);
+        const raiders = ["wasters", ...MINOR_IDS.filter((id) => MINORS[id].raids)];
         const bands = armies.filter((a) => a.owner === "wasters" && !a.lairBound && !a.mob);
         const want = Math.min(7, Math.floor(claimed / 55));
         if (bands.length < want && Math.random() < 0.4) {
@@ -5151,7 +5277,29 @@ export default function ColdCoast() {
           }
         }
 
-        armies.filter((a) => a.owner === "wasters" && !a.lairBound && !a.mob).forEach((a) => {
+        /* A holdout's bands come off its own ground and go back to it. How
+           many it keeps out at once rises with how angry it is with you. */
+        MINOR_IDS.filter((id) => MINORS[id].raids).forEach((id) => {
+          const m = MINORS[id], cfg = m.raids;
+          const seatK = key(m.at[0], m.at[1]);
+          if (!provinces[seatK] || provinces[seatK].owner !== id) return;   // broken, no bands
+          if (g.turn < (cfg.after || 0)) return;
+          const out = armies.filter((a) => a.owner === id && !a.lairBound);
+          const spite = (nations[id] && nations[id].spite) || 0;
+          if (out.length - 1 >= cfg.bands + spite) return;                  // the guard does not count
+          if (Math.random() > (cfg.chance ?? 0.4)) return;
+          armies.push({
+            id: `r${id}${g.turn}${Math.random().toString(36).slice(2, 5)}`, owner: id,
+            c: m.at[0], r: m.at[1], name: `${m.short} band`,
+            units: cfg.units.map((t, i) =>
+              makeUnit(t, id, `r${id}${g.turn}${i}${Math.random().toString(36).slice(2, 5)}`)),
+            mp: 0, maxMp: 3,
+          });
+        });
+
+        armies.filter((a) => raiders.includes(a.owner) && !a.lairBound && !a.mob
+          && !(MINORS[a.owner] && MINORS[a.owner].at && a.c === MINORS[a.owner].at[0] && a.r === MINORS[a.owner].at[1] && a.id === `m${a.owner}`)
+        ).forEach((a) => {
           // They never settle. Every winter they move on, and they will not
           // walk back over ground they have just stripped.
           a.recent = (a.recent || []).slice(-5);
@@ -5161,6 +5309,9 @@ export default function ColdCoast() {
             const opts = neighbours(a.c, a.r).map(([x, y]) => provinces[key(x, y)]).filter(Boolean)
               .filter((q) => moveCost(q) <= mp);
             if (!opts.length) break;
+            const home = MINORS[a.owner] && MINORS[a.owner].at;
+            const cfg = MINORS[a.owner] && MINORS[a.owner].raids;
+            const spare = (cfg && cfg.spare) || [];
             const score = (q) => {
               const k = key(q.c, q.r);
               let v = (q.owner && !isMinor(q.owner) ? 34 : 0)
@@ -5170,11 +5321,19 @@ export default function ColdCoast() {
                     const z = provinces[key(x, y)]; return z && z.owner && !isMinor(z.owner);
                   }).length * 5;
               if (a.recent.includes(k)) v -= 40;             // stripped already
+              // A holdout's band works its own ground: it will not go further
+              // out than its reach, and it will not set foot on the ground of
+              // whoever it has an arrangement with.
+              if (spare.includes(q.owner)) return -1000;
+              if (home && cfg) {
+                const d = hexDist(q.c, q.r, home[0], home[1]);
+                if (d > (cfg.reach || 8)) v -= (d - (cfg.reach || 8)) * 25;
+              }
               return v + Math.random() * 6;
             };
             opts.sort((x, y) => score(y) - score(x));
             const best = opts[0];
-            if (armies.some((z) => z.c === best.c && z.r === best.r && z.owner !== "wasters")) break;
+            if (armies.some((z) => z.c === best.c && z.r === best.r && z.owner !== a.owner)) break;
             mp -= moveCost(best);
             a.c = best.c; a.r = best.r;
             a.recent.push(key(best.c, best.r));
@@ -5188,6 +5347,7 @@ export default function ColdCoast() {
           const on = provinces[key(a.c, a.r)];
           if (!on || !on.owner || isMinor(on.owner)) return;
           const victim = on.owner;
+          const raiderName = FACTION[a.owner] ? FACTION[a.owner].short : "Raiders";
           const vn = nations[victim];
           const roll = Math.random();
           const res3 = { ...vn.res };
@@ -5219,20 +5379,100 @@ export default function ColdCoast() {
           }
           nations[victim] = { ...vn, res: res3 };
           if (victim === g.player) {
-            newLog.push({ turn: g.turn, m: `Wasters ${what}.` });
-            notice("raid", `Raiders have attacked your land — they ${what}.`, key(a.c, a.r));
+            newLog.push({ turn: g.turn, m: `${raiderName} ${what}.` });
+            notice("raid", `${raiderName} have been on your land — they ${what}.`, key(a.c, a.r));
           }
 
           // An undefended holding with nothing worth wrecking gets taken.
           const guarded = armies.some((z) => z.c === a.c && z.r === a.r && z.owner === victim);
           if (!guarded && !on.capital && Math.random() < 0.28) {
-            changeOwner(key(a.c, a.r), "wasters");
-            provinces[key(a.c, a.r)] = { ...provinces[key(a.c, a.r)], owner: "wasters", damaged: false };
+            changeOwner(key(a.c, a.r), a.owner);
+            provinces[key(a.c, a.r)] = { ...provinces[key(a.c, a.r)], owner: a.owner, damaged: false };
             if (victim === g.player) {
-              newLog.push({ turn: g.turn, m: `${on.name} is lost — the Wasters have moved into it.` });
-              notice("loss", `${on.name} has fallen to the Wasters. They hold it now.`, key(a.c, a.r));
+              newLog.push({ turn: g.turn, m: `${on.name} is lost — the ${raiderName} have moved into it.` });
+              notice("loss", `${on.name} has fallen to the ${raiderName}. They hold it now.`, key(a.c, a.r));
             }
           }
+        });
+      }
+
+      /* --- the holdouts ---
+         The three peoples around Albion are not scenery. One of them digs in
+         a little deeper every season it is left alone, one of them is quietly
+         taking the flats, and both of those are happening whether you are
+         looking at them or not. */
+      {
+        SEATED_MINORS.forEach((id) => {
+          const m = MINORS[id];
+          const seatK = key(m.at[0], m.at[1]);
+          const seat = provinces[seatK];
+          if (!seat || seat.owner !== id) return;             // broken; nothing to do
+
+          // Bridgerton, and anybody else who answers a season by building.
+          if (m.fortify && g.turn % (m.fortify.every || 2) === 0) {
+            const now = seat.hard || 0;
+            if (now < m.fortify.cap) {
+              provinces[seatK] = { ...seat, hard: Math.min(m.fortify.cap, now + m.fortify.add) };
+              if (g.met?.[id] && (now + m.fortify.add) >= m.fortify.cap && now < m.fortify.cap) {
+                newLog.push({ turn: g.turn, m: `${m.seatName} is as heavy as it is going to get.` });
+              }
+            }
+            const guard = armies.find((a) => a.id === `m${id}`);
+            if (guard && m.fortify.company && g.turn % m.fortify.companyEvery === 0
+              && guard.units.length < m.garrison.length + m.fortify.companyMax) {
+              guard.units = [...guard.units,
+                makeUnit(m.fortify.company, id, `${id}f${g.turn}`, "iron", "leather")];
+              if (g.met?.[id]) {
+                newLog.push({ turn: g.turn, m: `Another company stands up on the wall at ${m.seatName}.` });
+              }
+            }
+          }
+
+          // Holk, and anybody else who answers a season by ploughing.
+          if (m.grows && g.turn % (m.grows.every || 3) === 0 && Math.random() < (m.grows.chance ?? 0.5)) {
+            const held = Object.values(provinces).filter((q) => q.owner === id);
+            if (held.length < m.grows.max) {
+              const edge = [];
+              held.forEach((q) => neighbours(q.c, q.r).forEach(([x, y]) => {
+                const z = provinces[key(x, y)];
+                if (z && !z.owner && m.grows.on.includes(z.t)) edge.push(z);
+              }));
+              const take = edge[Math.floor(Math.random() * edge.length)];
+              if (take) {
+                changeOwner(key(take.c, take.r), id);
+                provinces[key(take.c, take.r)] = { ...take, owner: id, explored: true };
+                if (g.met?.[id]) {
+                  newLog.push({ turn: g.turn, m: `${m.short} have put ${take.name} under the plough.` });
+                }
+              }
+            }
+          }
+        });
+
+        /* An arrangement that was never yours to break. The Skinless keep the
+           silt empty so that everything crosses the bridge and pays for it;
+           break them and Bridgerton loses the half of its trade it never had
+           to work for, and knows exactly who to thank. */
+        SEATED_MINORS.forEach((id) => {
+          const m = MINORS[id];
+          if (!m.raids || !m.raids.spare) return;
+          const seat = provinces[key(m.at[0], m.at[1])];
+          if (!seat || seat.owner === id) return;
+          if (g.broke?.[id]) return;
+          g = { ...g, broke: { ...(g.broke || {}), [id]: true } };
+          m.raids.spare.forEach((other) => {
+            if (!g.met?.[other]) return;
+            const was = g.regard?.[other] ?? REGARD_START;
+            g = { ...g, regard: { ...(g.regard || {}), [other]: Math.max(0, was - 20) } };
+            if ((g.pacts || {})[other]) {
+              const pacts = { ...g.pacts }; delete pacts[other];
+              g = { ...g, pacts };
+            }
+            newLog.push({ turn: g.turn,
+              m: `${FACTION[other].short}: with ${m.seatName} broken, the mud is open and the gate is quiet. They know whose doing it was.` });
+            notice("raid", `${FACTION[other].short} hold you to blame for what ${m.seatName} was worth to them.`,
+              key(MINORS[other].at[0], MINORS[other].at[1]));
+          });
         });
       }
 
@@ -5307,7 +5547,7 @@ export default function ColdCoast() {
         sight.forEach((k) => { const q = provinces[k]; if (q && q.owner) lay(q.owner); });
         armies.forEach((a) => { if (sight.has(key(a.c, a.r))) lay(a.owner); });
         const regard = { ...(g.regard || {}) };
-        Object.keys(met).forEach((id) => { if (regard[id] === undefined) regard[id] = REGARD_START; });
+        Object.keys(met).forEach((id) => { if (regard[id] === undefined) regard[id] = regardStart(id); });
         const meetings = [...(g.meetings || [])];
         fresh.forEach((id) => {
           const nm = FACTION[id]?.short || id;
@@ -7170,6 +7410,8 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
       knock: () => window.__ccKnock && window.__ccKnock(),
       // Walking to Red-Ruth takes a dozen seasons; a test cannot wait for it.
       meet: (id) => window.__ccMeet && window.__ccMeet(id),
+      // ...and neither can it wait to storm Wight Mountain.
+      break: (id) => window.__ccBreak && window.__ccBreak(id),
     };
     if (typeof window !== "undefined") window.__ccWild = () => {
       const game = gameRef.current;
@@ -7194,6 +7436,20 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           .map((p) => `${p.name}:${p.hard}:${game.armies.filter((a) => a.c === p.c && a.r === p.r)
             .reduce((n, a) => n + a.units.length, 0)}`),
         regard: Object.entries(game.regard || {}).map(([k, v]) => `${k}:${v}`),
+        // Who a holdout's companies actually belong to, and what they are.
+        minorUnits: (() => {
+          const us = game.armies.filter((a) => isMinor(a.owner)).flatMap((a) => a.units);
+          return { owners: [...new Set(us.map((u) => u.owner))], types: [...new Set(us.map((u) => u.type))] };
+        })(),
+        // Every holdout: what it holds, what stands on its seat, how deep it
+        // has dug in, and how many bands it has out.
+        holdouts: SEATED_MINORS.map((id) => {
+          const m = MINORS[id], k = key(m.at[0], m.at[1]), p = game.provinces[k];
+          const guard = game.armies.find((a) => a.id === `m${id}`);
+          const out = game.armies.filter((a) => a.owner === id && a.id !== `m${id}`);
+          return `${id}:${p?.owner === id ? "held" : "broken"}:${Object.values(game.provinces).filter((q) => q.owner === id).length}hex`
+            + `:${guard ? guard.units.length : 0}co:+${p?.hard || 0}:${out.length}bands`;
+        }),
         pacts: Object.entries(game.pacts || {}).map(([k, v]) => `${k}:${v}`),
         storyLairs: Object.keys(STORIES).filter((k) => game.provinces[k]?.lair),
         stories: Object.keys(STORIES).map((k) => `${k}:${game.provinces[k]?.story ? game.provinces[k].story.step : "-"}${game.provinces[k]?.feature || ""}`),
@@ -8198,6 +8454,12 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
 
       {selProv.owner && isMinor(selProv.owner) && (
         <Section title="Holdout">
+          {MINORS[selProv.owner].art && selProv.capital && (
+            <div className="mb-2">
+              <SeatPlate id={MINORS[selProv.owner].art} height={150} caption={MINORS[selProv.owner].seatName} />
+            </div>
+          )}
+          <div className="cc-text-13px cc-text-c6d6de leading-relaxed mb-1.5">{MINORS[selProv.owner].blurb}</div>
           <div className="cc-text-13px cc-text-c6d6de leading-relaxed">{MINORS[selProv.owner].trait}</div>
           <div className="cc-text-12d5px cc-text-e09a8a mt-1.5">
             Defenders here take a further{" "}
@@ -11390,7 +11652,12 @@ function EncounterScene({ enc, game, P, onAnswer }) {
           </div>
         </div>
 
-        <div ref={scroll} className="overflow-y-auto thin px-5 py-4 grid gap-3">
+        <div ref={scroll} className="overflow-y-auto thin grid gap-3 px-5 py-4">
+          {MINORS[enc.who]?.art && (
+            <div style={{ margin: "-16px -20px 2px" }}>
+              <SeatPlate id={MINORS[enc.who].art} height={210} caption={MINORS[enc.who].seatName} />
+            </div>
+          )}
           {enc.scene.map((l, i) => (
             <p key={`s${i}`} className="cc-text-14px leading-relaxed cc-text-dfeaf0">{l}</p>
           ))}
@@ -11421,8 +11688,8 @@ function EncounterScene({ enc, game, P, onAnswer }) {
               </div>
               <div className="cc-text-12d5px cc-text-93a9b5">
                 {fac.short} now regard you as{" "}
-                <span className={regardTone(Math.max(0, Math.min(100, (game.regard?.[enc.who] ?? REGARD_START) + (opt.regard || 0))))}>
-                  {regardBand(Math.max(0, Math.min(100, (game.regard?.[enc.who] ?? REGARD_START) + (opt.regard || 0)))).word}
+                <span className={regardTone(Math.max(0, Math.min(100, (game.regard?.[enc.who] ?? regardStart(enc.who)) + (opt.regard || 0))))}>
+                  {regardBand(Math.max(0, Math.min(100, (game.regard?.[enc.who] ?? regardStart(enc.who)) + (opt.regard || 0)))).word}
                 </span>.{" "}
                 <button type="button" onClick={() => setTaken(null)}
                   className="cc-text-12px cc-text-8399a6 cc-hover-text-e5eef3">say something else instead</button>
