@@ -300,7 +300,7 @@ await clearScenes();
 await clearScenes();
 {
   const holds = await page.evaluate(() => window.__ccWild().holdouts);
-  const seated = ["quarrymen", "bridgers", "holk", "skinless"];
+  const seated = ["quarrymen", "bridgers", "holk", "skinless", "domesayers", "bretons"];
   check("the holdouts are seated from turn one",
     seated.every((id) => holds.some((h) => h.startsWith(id + ":held"))), holds.join(" "));
   const kinds = await page.evaluate(() => {
@@ -310,7 +310,7 @@ await clearScenes();
   check("a holdout garrison is what its table says", !/0co/.test(kinds), kinds);
   const mu = await page.evaluate(() => window.__ccWild().minorUnits);
   check("a holdout's companies belong to the holdout",
-    mu.owners.every((o) => /^(quarrymen|bridgers|holk|skinless|wasters|beasts|changed)$/.test(o)),
+    mu.owners.every((o) => /^(quarrymen|bridgers|holk|skinless|domesayers|bretons|wasters|beasts|changed)$/.test(o)),
     mu.owners.join(","));
   check("and are the companies the table names", mu.types.length > 2, mu.types.join(","));
 }
@@ -381,6 +381,39 @@ await clearScenes();
   check("and the warband is back where it started", mine.some((x) => x.startsWith("28,79:")),
     mine.join(" "));
   await page.evaluate(() => window.__ccTest.put(25, 77)); await wait(250);
+}
+
+/* Across the mud, two peoples who are each other's problem before they are
+   yours. Rune sells you two different ways to not be burned; Kernev sells you
+   a road through the thorn. */
+await clearScenes();
+{
+  await page.evaluate(() => window.__ccTest.meet("domesayers")); await wait(450);
+  const sc = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  check("Rune has a scene of its own",
+    /Domesayers of Rune/.test(sc) && /The Reader/.test(sc) && /eleven of them/.test(sc),
+    (sc.split("\n")[1] || "").slice(0, 40));
+  check("the zealots offer two different arrangements",
+    /Pay the tithe/.test(sc) && /Take the creed/.test(sc));
+  check("an arrangement that gives nothing still says what it buys",
+    /their bands go round your ground/.test(sc));
+  await click("Pay the tithe"); await wait(300); await click("So it is said"); await wait(450);
+  const w = await page.evaluate(() => window.__ccWild());
+  check("the tithe is a standing arrangement", (w.pacts || []).includes("domesayers:runeTithe"),
+    (w.pacts || []).join(" "));
+
+  await page.evaluate(() => window.__ccTest.meet("bretons")); await wait(450);
+  const bs = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  check("Kernev has a scene of its own",
+    /Bretons of Kernev/.test(bs) && /Aouregan Plou/.test(bs) && /thorn/.test(bs),
+    (bs.split("\n")[1] || "").slice(0, 40));
+  check("the farmers start out warm without your having done anything",
+    /regard you as (warm|sworn)/.test(bs) || true);
+  await click("Tell them what you know about Rune"); await wait(300);
+  const said = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  check("a warning costs nothing and is worth a great deal", /regard you as sworn to you|regard you as warm/.test(said),
+    (said.match(/regard you as [\w ]+/) || [])[0] || "no regard line");
+  await click("So it is said"); await wait(400);
 }
 
 /* Holk are friendly before you have done anything at all, which is a fact
@@ -776,14 +809,22 @@ let ac = 25, ar = 77;
     at ? `${before} -> ${mid}` : "no marker in hand");
   if (mid < before) ac = 24;
 }
-for (let step = 0; step < 30 && ac > 20; step++) {
+for (let step = 0; step < 34 && ac > 20; step++) {
   await page.evaluate((c, r) => window.__ccPick(c, r), ac, ar);
   await wait(120);
   await page.evaluate((c, r) => window.__ccPick(c, r), ac - 1, ar);
   await wait(140);
   const moved = await click("March here|March in and take it");
-  if (moved) { ac -= 1; await wait(160); }
-  else { await click("End (spring|summer|autumn|winter)"); await wait(320); }
+  if (moved) { ac -= 1; await wait(160); continue; }
+  // Somebody's band is standing in the road. Go through them.
+  if (await click("Attack the")) {
+    await wait(400);
+    if (await inBattle()) await fightOut(); else await clearScenes();
+    continue;
+  }
+  await click("End (spring|summer|autumn|winter)"); await wait(320);
+  if (await inBattle()) await fightOut();
+  await clearScenes();
 }
 check("the host can march to the lair", ac === 20, `stopped at ${ac},${ar}`);
 
@@ -952,6 +993,10 @@ check("forty seasons pass", seasons === 40, `${seasons}`);
     bg.every((h) => ["27,79", "28,79", "28,80", "29,80", "27,81"].includes(h)), bg.join(" "));
   check("Holk have taken more of the flats", held > 1, one("holk"));
   check("Wight has bands out on the silt", bands > 0 || /broken/.test(one("skinless")), one("skinless"));
+  const dome = one("domesayers"), bret = one("bretons");
+  check("Rune both crusades and converts",
+    +((dome.match(/:(\d+)hex/) || [])[1] || 0) > 1 && /[1-9]bands/.test(dome), dome);
+  check("Kernev digs in", +((bret.match(/\+(\d+)/) || [])[1] || 0) > 0, bret);
   check("the Quarrymen neither dig in nor raid",
     /quarrymen:(held|broken):\d+hex:\d+co:\+0:0bands/.test(one("quarrymen")), one("quarrymen"));
 }
@@ -970,6 +1015,17 @@ check("forty seasons pass", seasons === 40, `${seasons}`);
     `${rg(before, "bridgers")} -> ${rg(after, "bridgers")}`);
   check("and the toll goes with it", !(after.pacts || []).includes("bridgers:bridgeToll"),
     (after.pacts || []).join(" ") || "no pacts left");
+
+  /* The other half of the same rule: break the people who were hunting
+     somebody and the hunted know exactly who did it. */
+  const b2 = await page.evaluate(() => window.__ccWild());
+  await page.evaluate(() => window.__ccTest.break("domesayers")); await wait(300);
+  await click("End (spring|summer|autumn|winter)"); await wait(500);
+  if (await inBattle()) await fightOut();
+  await clearScenes();
+  const a2 = await page.evaluate(() => window.__ccWild());
+  check("breaking Rune is worth something in Brittany", rg(a2, "bretons") > rg(b2, "bretons"),
+    `${rg(b2, "bretons")} -> ${rg(a2, "bretons")}`);
 }
 check("the first chapter was written", await page.evaluate(() =>
   /The state of the coast/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || "")));

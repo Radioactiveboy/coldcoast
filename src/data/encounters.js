@@ -57,6 +57,28 @@ export const PACTS = {
     give: { scrap: 4 },
     take: { food: 2 },
   },
+  runeTithe: {
+    name: "The Rune tithe",
+    note: "Grain and iron to the bells every season. In exchange the preaching companies go the long way round your ground, and they have never once failed to.",
+    give: {},
+    take: { scrap: 5, food: 3 },
+    // Their bands take your ground off the list.
+    spare: true,
+  },
+  runeCreed: {
+    name: "The creed of the bells",
+    note: "You take their word as the word. Converts muster at your seat by the hundred and their powder comes with them — and every other people on this coast now knows exactly what you knelt to.",
+    give: { men: 5, powder: 2 },
+    take: { food: 4 },
+    spare: true,
+  },
+  bretonHedge: {
+    name: "The hedge road",
+    note: "Gates in the thorn, opened to your banner, and a share of what the fields give. They ask for iron and for the gates to be shut behind you.",
+    give: { food: 4 },
+    take: { scrap: 2 },
+    pass: true,
+  },
 };
 
 export const FIRST_MEET = {
@@ -305,6 +327,126 @@ export const FIRST_MEET = {
       },
     ],
   },
+
+  domesayers: {
+    who: "domesayers",
+    kicker: "Bells, from a long way off",
+    title: "The Domesayers of Rune",
+    where: "Rune, the old city on the river",
+    scene: [
+      "Your riders hear it before they see anything: a bell, then eleven of them, ringing an hour that does not exist on any clock anyone has kept for three hundred years. It goes on for a quarter of an hour. Then it stops, and the quiet afterwards is worse.",
+      "Rune is a city with the roof off. The cathedral tower is a stump and the bells are hung in the stump on new timber, and everything for a mile around it has been pulled down to sightlines and burned flat. There are people on every approach and every one of them is facing outward.",
+    ],
+    lore: [
+      "They hold that the water did not simply leave. They hold that it was taken back, that a thing taken back is a judgement, and that a judgement half-finished is the worst condition a world can be left in. Three hundred years of thinking about that has not made them calmer.",
+      "So they finish it. Preaching companies go out of Rune every spring to burn whatever they have decided is unclean, and the ground behind them belongs to the bells afterwards. The Bretons on the peninsula have buried a great many of their own people over this, and are going to bury more.",
+    ],
+    voice: {
+      name: "The Reader",
+      title: "speaks the hours at Rune",
+      said: "\"You have come a long way to stand in front of us with nothing in your hands. That is not a criticism. Everyone arrives empty. The question is only what you are carrying when you leave, and which way you are facing.\"",
+    },
+    options: [
+      {
+        id: "tithe",
+        label: "Pay the tithe and be passed over",
+        note: "Grain and iron to the bells, every season, and their companies take the long way round your ground.",
+        regard: 16,
+        pact: "runeTithe",
+        outcome:
+          "The Reader writes nothing down, which your man finds more alarming than a ledger would have been. But the next spring the smoke is a long way south of anything of yours, and the spring after that, and the one after that.",
+      },
+      {
+        id: "creed",
+        label: "Take the creed and turn them outward",
+        note: "Their word as your word. Converts and powder muster at your seat — and everyone finds out what you knelt to.",
+        regard: 30,
+        pact: "runeCreed",
+        also: { bretons: -22, holk: -10, bridgers: -8 },
+        outcome:
+          "They come up the road to Lunden in their hundreds with their own powder on their backs and a hymn nobody there has ever heard, and they are worth every recruit of it. Colley at Holk sends no more bread. The hedge in Brittany gets another foot of thorn on it, and they are not building it against the Domesayers any more.",
+      },
+      {
+        id: "refuse",
+        label: "Tell the Reader the judgement is finished",
+        note: "Say it to his face. He has heard worse, and he has an answer for worse.",
+        regard: -30,
+        harden: 20,
+        addGarrison: "axemen",
+        anger: 1,
+        outcome:
+          "He asks, quite mildly, who told you that. Your man does not have an answer. By the season's end there are more companies going out of Rune than went out last year, the flattened ground around the tower has been widened by half a mile, and one of the eleven bells is now rung only for you.",
+      },
+      {
+        id: "listen",
+        label: "Stand under the bells and say nothing",
+        note: "An hour of it. Nothing agreed, nothing refused.",
+        regard: 4,
+        outcome:
+          "Your riders stand in the cold and listen to the whole hour out, because leaving in the middle of it seemed unwise. Nobody stops them going. The Reader watches them onto the road and says, to nobody in particular, that they will be back.",
+      },
+    ],
+  },
+
+  bretons: {
+    who: "bretons",
+    kicker: "Eight feet of thorn, and a ditch under it",
+    title: "The Bretons of Kernev",
+    where: "Kernev, on the neck of the peninsula",
+    scene: [
+      "The road west runs out at a hedge. Not a field hedge — eight feet of blackthorn grown into a bank with a ditch cut under it on the near side, running north and south further than anyone can see in either direction, with a gate in it and four people standing on the bank above the gate.",
+      "Behind it the country is fields. Not scrub that used to be fields: worked, hedged, drained fields with stock in them, going away west over the granite as far as the light holds.",
+    ],
+    lore: [
+      "Their great-grandfathers planted the thorn to keep cattle in. Their fathers put the ditch under it when the burnings started coming west out of Rune, and their sons have been lengthening it every year since, one field at a time, because a field you cannot see over the hedge is a field you cannot hold.",
+      "They want nothing that is not already behind the hedge. They have also buried a great many people who wanted something that was, and they will tell you the number if you ask, which suggests they have been asked before.",
+    ],
+    voice: {
+      name: "Aouregan Plou",
+      title: "who speaks for the gate this season",
+      said: "\"You will have seen the burnt ground east of here. That is what comes at us, every spring, and we are still here. So you will understand that we are polite to strangers but we are not soft, and the gate opens outward.\"",
+    },
+    options: [
+      {
+        id: "gate",
+        label: "Ask for the gates to be opened to your banner",
+        note: "40 scrap towards the thorn. Your warbands cross their ground, and their fields feed you.",
+        need: { scrap: 40 },
+        res: { scrap: -40 },
+        regard: 18,
+        pact: "bretonHedge",
+        outcome:
+          "They take the iron and put it into the hedge before your man is off the ground, which tells you what they think about first. The gates are opened to your colours by the end of the season and the first carts of Breton butter reach the seat before the winter.",
+      },
+      {
+        id: "warn",
+        label: "Tell them what you know about Rune",
+        note: "Where the companies muster, and when. It costs you nothing and they cannot buy it.",
+        regard: 28,
+        outcome:
+          "Aouregan listens the whole way through without saying anything, asks two questions, and then sends for three other people so your man can say it again. Whatever else happens on this coast, there is now a stretch of hedge in Brittany that thinks well of you for nothing.",
+      },
+      {
+        id: "harvest",
+        label: "Name a share of the harvest and stand there",
+        note: "They have no walls, only thorn. Take what is stacked.",
+        regard: -34,
+        res: { food: 70, men: 20 },
+        harden: 18,
+        addGarrison: "pikemen",
+        outcome:
+          "They give it up without a fight, because the alternative is losing the hedge crew in spring. Your carts go east heavy. Behind you the ditch gets deeper, the gate gets a second gate, and every Breton alive learns the shape of your banner in one afternoon.",
+      },
+      {
+        id: "road",
+        label: "Turn round at the gate",
+        note: "Nothing owed. The hedge stays shut.",
+        regard: 0,
+        outcome:
+          "Your column turns and goes back east, which the four on the bank watch all the way out of sight. Somebody up there says something in a language your riders do not have, and somebody else laughs, and the gate does not open.",
+      },
+    ],
+  },
 };
 
 export const encounterFor = (id) => FIRST_MEET[id] || null;
@@ -323,6 +465,10 @@ export function pactTerms(id) {
     gives: gives.join(", "),
     takes: takes.join(", "),
     line: [gives.join(", "), takes.join(", ")].filter(Boolean).join(" against ") + " a season",
+    // Not everything an arrangement is worth arrives as a resource. A road
+    // through somebody's ground, or their bands leaving yours alone, is the
+    // whole of what some of them buy.
     pass: !!p.pass,
+    spare: !!p.spare,
   };
 }

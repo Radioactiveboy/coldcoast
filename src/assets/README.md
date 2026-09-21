@@ -33,7 +33,7 @@ node -e 'require("sharp")("in.png").resize({width:1280}).webp({quality:72,effort
 
 ## Where it came from
 
-`ward-lundentrench`, the three `seat-*` plates and the unit, terrain and
-warlord plates are the project's own art. The line icons in `data/gameicons.js` are a different thing — they are
+`ward-lundentrench`, the `seat-*` plates and the unit, terrain and warlord
+plates are the project's own art. The line icons in `data/gameicons.js` are a different thing — they are
 CC BY 3.0 from game-icons.net and are credited in the Codex, which reads the
 author off each icon rather than keeping a list by hand.

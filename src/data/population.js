@@ -68,6 +68,8 @@ export const POP_LANDMARK = {
   "14,81": 900,   // Red-Ruth — the Quarrymen, three hundred years down the shafts
   "27,79": 1400,  // Bridgerton — a town living on the deck of its own bridge
   "24,80": 400,   // Wight Mountain — the Skinless, and what they have taken
+  "24,87": 1100,  // Rune — the old city on the river, and everyone the bells called in
+  "20,90": 800,   // Kernev — farms all the way to the hedge
 
   "23,67": 620,   // York Minster — the stone kept people around it
   "20,68": 560,   // Manchester Pit

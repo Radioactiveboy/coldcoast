@@ -60,6 +60,38 @@ export const WARLORDS = {
       { n: "Sun-court", d: "Scholars are fed before soldiers.", research: 0.9 },
     ],
   },
+  domesayers: {
+    name: "The Reader", title: "speaks the hours at Rune",
+    blurb: "Nobody has seen his face and nobody has asked to. He reads the hours from the tower stump every day of the year and has not left the city in the lifetime of anyone now living in it.",
+    traits: [
+      { n: "The hours", d: "Eleven bells, rung at hours no clock keeps. People walk a hundred miles to stand under them.", mul: { men: 1.3 } },
+      { n: "Unfinished judgement", d: "There is always more to burn, and they are never tired.", upkeep: 0.85 },
+    ],
+  },
+  bretons: {
+    name: "Aouregan Plou", title: "who speaks for the gate this season",
+    blurb: "Elected to the gate for a year at a time, which is how long anybody wants the job. Can tell you how many people are buried under the hedge and in which stretch, and will, if you ask.",
+    traits: [
+      { n: "Eight feet of thorn", d: "Grown, not built, and a ditch cut under it on the near side.", taken: 0.8 },
+      { n: "Field by field", d: "They lengthen it every year, because a field you cannot see over is a field you cannot hold.", mul: { food: 1.2 } },
+    ],
+  },
+  bridgers: {
+    name: "The Gatemaster", title: "sixth of that title, Bridgerton customs",
+    blurb: "Nobody remembers his given name and he has not used it since he took the ledger. He has spent his whole life on a deck four hundred feet above a dry seabed, and he has never once been rushed by anybody.",
+    traits: [
+      { n: "The board", d: "Everyone crosses. What everyone does not do is cross free.", mul: { scrap: 1.25 } },
+      { n: "One span a decade", d: "They have not stopped building it in three hundred years and they are not going to.", taken: 0.85 },
+    ],
+  },
+  skinless: {
+    name: "Cull", title: "speaks for Wight Mountain",
+    blurb: "Rides down off the mountain to look at whoever has come onto the mud, and does not dismount to do it. He has said perhaps two hundred words in front of a stranger in his life and every one of them was a price.",
+    traits: [
+      { n: "The poles", d: "Nine of them on the silt and room for nine hundred. Most carts go the long way round now.", mul: { scrap: 1.15 } },
+      { n: "Never on foot", d: "His people move at the pace of a horse and they do not carry anything they cannot eat.", move: 1 },
+    ],
+  },
   quarrymen: {
     name: "Gorran Black", title: "Pit-King of Red-Ruth",
     blurb: "Wears a crown beaten from shaft-lining and a pick he has never put down. The shifts elected his grandfather and have never seen cause to hold another vote. He has not left Kernow in forty years and regards everyone who arrives at the pit rim as weather.",
