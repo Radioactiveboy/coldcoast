@@ -13,7 +13,10 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 11: the floor of the old Channel is its own terrain — a bogged warzone with
+/* 12: two more peoples across the mud — the Domesayers on the river at Rune
+   and the Bretons behind the hedge at Kernev — hold ground a version 11 save
+   has nobody on.
+   11: the floor of the old Channel is its own terrain — a bogged warzone with
    people already standing on it — and Bridgerton holds the clay behind the
    gate. A version 10 save has silt there and nobody on it.
    10: three peoples around Albion — Bridgerton on the crossing, Holk out on
@@ -42,7 +45,7 @@ export const SAVE_KEY = "coldcoast.save";
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 11;
+export const SAVE_VERSION = 12;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight

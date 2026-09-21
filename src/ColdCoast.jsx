@@ -1,3 +1,7 @@
+import lordCullBust from "./assets/lord-cull-bust.webp";
+import lordCullHead from "./assets/lord-cull-head.webp";
+import lordGatemasterBust from "./assets/lord-gatemaster-bust.webp";
+import lordGatemasterHead from "./assets/lord-gatemaster-head.webp";
 import lordGorranBust from "./assets/lord-gorran-bust.webp";
 import lordGorranHead from "./assets/lord-gorran-head.webp";
 import lordGrimhandBust from "./assets/lord-grimhand-bust.webp";
@@ -707,6 +711,8 @@ const TERRAIN = {
 
 // Places worth naming. Everything else gets a regional name.
 const LANDMARKS = {
+  "24,87": "Rune",
+  "20,90": "Kernev",
   "27,79": "Bridgerton",
   "24,80": "Wight Mountain",
   "58,28": "Skjoldhall",
@@ -1683,6 +1689,50 @@ const MINORS = {
        after that the poles start appearing. */
     raids: { bands: 3, reach: 9, after: 8, units: ["hunters", "axemen", "axemen"], spare: ["bridgers"], chance: 0.42 },
   },
+  /* Across the mud in what was Normandy and Brittany: one people who believe
+     the water going out was a judgement and act accordingly, and one who
+     would very much like to be left to their fields and have built eight feet
+     of thorn around the idea. They are each other's problem before they are
+     yours, which is the point of putting them next to one another. */
+  domesayers: {
+    name: "The Domesayers of Rune", short: "Domesayers", color: "#ddd2bb",
+    at: [24, 87], seatName: "Rune", defBonus: 30, regard: 34,
+    feature: "bells", building: "muster", art: "rune",
+    blurb:
+      "The old city on the river, and eleven bells still hung in a tower with no roof. They hold that the water went out as a judgement, that the judgement is not finished, and that it falls to them to finish it.",
+    trait:
+      "They do not trade, they do not settle and they do not stop. Preaching companies go out of Rune every year to burn what is unclean, and the ground behind them belongs to the bells.",
+    guardName: "The Bell Watch of Rune",
+    garrison: [
+      ["axemen", "iron", "leather"],
+      ["axemen", "iron", "leather"],
+      ["spearmen", "iron", "leather"],
+      ["hunters", "iron", "hide"],
+    ],
+    /* A crusade goes out, and the faith follows it. They come at the Bretons
+       first because the Bretons are there. */
+    raids: { bands: 3, reach: 8, after: 10, chance: 0.44,
+             units: ["axemen", "axemen", "spearmen"], hunt: ["bretons"] },
+    grows: { on: ["p", "f"], every: 4, max: 9, chance: 0.5 },
+  },
+  bretons: {
+    name: "The Bretons of Kernev", short: "Bretons", color: "#7d9e57",
+    at: [20, 90], seatName: "Kernev", defBonus: 26, regard: 62,
+    feature: "hedgerow", building: "siltfarm", art: "kernev",
+    blurb:
+      "Farmers on the granite neck of the peninsula, behind a hedge their great-grandfathers planted and their fathers put a ditch under. They have buried a great many people who came over that hedge.",
+    trait:
+      "They want the fields and nothing else, and they have made the fields expensive. The hedge is longer every year, and so is the ground behind it — not because they are hungry for it, but because a field you cannot see is a field you cannot hold.",
+    guardName: "The Kernev Hedgemen",
+    garrison: [
+      ["pikemen", "iron", "leather"],
+      ["pikemen", "iron", "leather"],
+      ["bowmen", "iron", "leather"],
+      "spearmen",
+    ],
+    fortify: { add: 3, cap: 28, every: 3, company: "pikemen", companyEvery: 11, companyMax: 2 },
+    grows: { on: ["h", "p", "f"], every: 4, max: 8, chance: 0.5 },
+  },
   wasters: {
     name: "The Wasters", short: "Wasters", color: "#b5793f", defBonus: 10, roaming: true,
     blurb: "Nobody's people. They hold a ruin until it is emptied and then they walk to the next one.",
@@ -1724,6 +1774,10 @@ const FEATURES = {
               desc: "Sixteen piers of ship plate across the dry Channel, lit end to end, with a customs gate on the near arch. Everything that crosses, crosses here." },
   hulks:    { name: "The Holk hulls",    yield: { food: 4, scrap: 2 },
               desc: "A hundred trawlers dragged into a ring and cut into halls, with a mile of ploughed seabed round them." },
+  bells:    { name: "The bells of Rune", yield: { men: 4, powder: 1 }, sight: 1, def: 10,
+              desc: "A cathedral with its roof off and eleven bells still hung in the stump of the tower. They ring at every hour anyone has ever heard of, and people walk a hundred miles to stand under them." },
+  hedgerow: { name: "The Breton hedge",  yield: { food: 4, men: 1 }, def: 22,
+              desc: "Eight feet of thorn on a bank with a ditch under it, running field to field to field across the whole neck of the peninsula. It was built to keep cattle in. It does other things now." },
   eyrie:    { name: "The Wight watch",   yield: { scrap: 2 }, sight: 2, def: 10,
               desc: "Eight hundred feet of old island standing out of the mud. From the top you can see everything crossing, days before it arrives." },
   /* What a place's story leaves behind. These do more than yield: `sight`
@@ -5409,7 +5463,12 @@ export default function ColdCoast() {
             if (!opts.length) break;
             const home = MINORS[a.owner] && MINORS[a.owner].at;
             const cfg = MINORS[a.owner] && MINORS[a.owner].raids;
-            const spare = (cfg && cfg.spare) || [];
+            const spare = [...((cfg && cfg.spare) || [])];
+            const hunt = (cfg && cfg.hunt) || [];
+            /* An arrangement can buy you off the list the same way Bridgerton
+               is off the Skinless list: the bands go round your ground. */
+            const bought = PACTS[(g.pacts || {})[a.owner]];
+            if (bought && bought.spare) spare.push(g.player);
             const score = (q) => {
               const k = key(q.c, q.r);
               let v = (q.owner && !isMinor(q.owner) ? 34 : 0)
@@ -5423,6 +5482,8 @@ export default function ColdCoast() {
               // out than its reach, and it will not set foot on the ground of
               // whoever it has an arrangement with.
               if (spare.includes(q.owner)) return -1000;
+              // Whoever they are actually out to hurt is worth crossing ground for.
+              if (hunt.includes(q.owner)) v += 60;
               if (home && cfg) {
                 const d = hexDist(q.c, q.r, home[0], home[1]);
                 if (d > (cfg.reach || 8)) v -= (d - (cfg.reach || 8)) * 25;
@@ -5571,30 +5632,35 @@ export default function ColdCoast() {
           });
         }
 
-        /* An arrangement that was never yours to break. The Skinless keep the
-           silt empty so that everything crosses the bridge and pays for it;
-           break them and Bridgerton loses the half of its trade it never had
-           to work for, and knows exactly who to thank. */
+        /* Breaking a raider is never only about the raider. Whoever they were
+           sparing loses something they never had to work for — the Skinless
+           keep the silt empty so that everything crosses Bridgerton's bridge
+           and pays for it — and whoever they were hunting has just been let
+           off. Both sides know who did it. */
         SEATED_MINORS.forEach((id) => {
           const m = MINORS[id];
-          if (!m.raids || !m.raids.spare) return;
+          if (!m.raids || !(m.raids.spare || m.raids.hunt)) return;
           const seat = provinces[key(m.at[0], m.at[1])];
           if (!seat || seat.owner === id) return;
           if (g.broke?.[id]) return;
           g = { ...g, broke: { ...(g.broke || {}), [id]: true } };
-          m.raids.spare.forEach((other) => {
-            if (!g.met?.[other]) return;
-            const was = g.regard?.[other] ?? REGARD_START;
-            g = { ...g, regard: { ...(g.regard || {}), [other]: Math.max(0, was - 20) } };
-            if ((g.pacts || {})[other]) {
+          const shift = (other, d, line, note) => {
+            if (!g.met?.[other] || !MINORS[other]?.at) return;
+            const was = g.regard?.[other] ?? regardStart(other);
+            g = { ...g, regard: { ...(g.regard || {}), [other]: Math.max(0, Math.min(100, was + d)) } };
+            if (d < 0 && (g.pacts || {})[other]) {
               const pacts = { ...g.pacts }; delete pacts[other];
               g = { ...g, pacts };
             }
-            newLog.push({ turn: g.turn,
-              m: `${FACTION[other].short}: with ${m.seatName} broken, the mud is open and the gate is quiet. They know whose doing it was.` });
-            notice("raid", `${FACTION[other].short} hold you to blame for what ${m.seatName} was worth to them.`,
-              key(MINORS[other].at[0], MINORS[other].at[1]));
-          });
+            newLog.push({ turn: g.turn, m: `${FACTION[other].short}: ${line}` });
+            notice(d < 0 ? "raid" : "lord", note, key(MINORS[other].at[0], MINORS[other].at[1]));
+          };
+          (m.raids.spare || []).forEach((other) => shift(other, -20,
+            `with ${m.seatName} broken, the mud is open and the gate is quiet. They know whose doing it was.`,
+            `${FACTION[other].short} hold you to blame for what ${m.seatName} was worth to them.`));
+          (m.raids.hunt || []).forEach((other) => shift(other, 24,
+            `${m.seatName} is broken and nobody is coming over the hedge this spring. They know who did that too.`,
+            `${FACTION[other].short} will not forget who broke ${m.seatName}.`));
         });
       }
 
@@ -8613,7 +8679,7 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
 
       {selProv.owner && isMinor(selProv.owner) && (
         <Section title="Holdout">
-          {MINORS[selProv.owner].art && selProv.capital && (
+          {SEAT_ART[MINORS[selProv.owner].art] && selProv.capital && (
             <div className="mb-2">
               <SeatPlate id={MINORS[selProv.owner].art} height={150} caption={MINORS[selProv.owner].seatName} />
             </div>
@@ -9381,12 +9447,13 @@ function WorldPanel({ game, P, atWar, onWar }) {
                     return (
                       <>
                         <div className="flex flex-wrap gap-1 mt-1">
-                          <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">{t.gives} a season</span>
-                          <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-5a3230 cc-text-e09a8a">{t.takes} a season</span>
+                          {t.gives && <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">{t.gives} a season</span>}
+                          {t.takes && <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-5a3230 cc-text-e09a8a">{t.takes} a season</span>}
                         </div>
                         <div className="cc-text-11px cc-text-6f8794 mt-1">
                           Every season, for as long as you leave them alone.
                           {t.pass && <span className="cc-text-8fe3d6"> Your warbands may cross their ground.</span>}
+                          {t.spare && <span className="cc-text-8fe3d6"> Their bands go round your ground.</span>}
                         </div>
                       </>
                     );
@@ -11155,6 +11222,14 @@ function SeatScreen({ game, P, prov, onClose, onEdict, onUpgrade, onWork, onRecr
 /* Painted portraits, carried as data URIs because an artifact cannot fetch
    files. Anything not listed here falls back to the drawn bust below. */
 const LORD_ART = {
+  bridgers: {
+    bust: lordGatemasterBust,
+    head: lordGatemasterHead,
+  },
+  skinless: {
+    bust: lordCullBust,
+    head: lordCullHead,
+  },
   quarrymen: {
     bust: lordGorranBust,
     head: lordGorranHead,
@@ -11820,7 +11895,7 @@ function EncounterScene({ enc, game, P, onAnswer }) {
         </div>
 
         <div ref={scroll} className="overflow-y-auto thin grid gap-3 px-5 py-4">
-          {MINORS[enc.who]?.art && (
+          {SEAT_ART[MINORS[enc.who]?.art] && (
             <div style={{ margin: "-16px -20px 2px" }}>
               <SeatPlate id={MINORS[enc.who].art} height={210} caption={MINORS[enc.who].seatName} />
             </div>
@@ -11887,15 +11962,24 @@ function EncounterScene({ enc, game, P, onAnswer }) {
                           const t = pactTerms(o.pact);
                           return (
                             <>
-                              <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">
-                                {t.gives} a season
-                              </span>
-                              <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-8a6f36 cc-text-f2c97a">
-                                {t.takes} a season
-                              </span>
+                              {t.gives && (
+                                <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">
+                                  {t.gives} a season
+                                </span>
+                              )}
+                              {t.takes && (
+                                <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-8a6f36 cc-text-f2c97a">
+                                  {t.takes} a season
+                                </span>
+                              )}
                               {t.pass && (
                                 <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-4d7488 cc-text-8fe3d6">
                                   their ground opens to you
+                                </span>
+                              )}
+                              {t.spare && (
+                                <span className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-4d7488 cc-text-8fe3d6">
+                                  their bands go round your ground
                                 </span>
                               )}
                             </>
