@@ -192,17 +192,50 @@ const purse = () => page.evaluate(() => {
   return { scrap: g("Scrap"), food: g("Rations"), men: g("Recruits") };
 });
 /* A battle now opens on the deployment screen — the line has to be drawn
-   before anybody swings — so taking the field is step one of fighting one. */
-const inBattle = () => page.evaluate(() =>
-  /Take the field|Give the order/.test(document.body.innerText));
+   before anybody swings — so taking the field is step one of fighting one.
+   Asking the field itself, rather than reading the page for "take the field":
+   the opening objective says those words too, so the words are no test. */
+const inBattle = () => page.evaluate(() => !!(window.__ccField && window.__ccField()));
+/* Every band on the map with what is left of it, keyed by owner and id, so a
+   field can be weighed by what it actually took off the enemy. */
+const bandMen = () => page.evaluate(() => {
+  const o = {};
+  window.__ccWild().bands.forEach((row) => {
+    const p = row.split(":");
+    o[`${p[0]}:${p[1]}`] = +p[p.length - 1];
+  });
+  return o;
+});
 let sawAftermath = false;
-const fightOut = async (rounds = 14) => {
+/* What the rounds claimed against what came off the companies, and what the
+   broken took home with them. Both were wrong in ways you could only see by
+   counting: a round reported the blow it aimed rather than the men it took,
+   and a beaten warband walked away whole. */
+let roundsSeen = 0, roundGap = 0;
+let pursuit = null;
+const fightOut = async (rounds = 14, choice = null) => {
   await click("Take the field"); await wait(300);
   for (let i = 0; i < rounds; i++) {
     const t = await page.evaluate(() => document.body.innerText);
     if (!/Give the order/.test(t)) break;
+    const was = await page.evaluate(() => window.__ccField && window.__ccField());
     await click("Give the order"); await wait(320);
-    if (await page.evaluate(() => /Let them go/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || ""))) sawAftermath = true;
+    const now = await page.evaluate(() => window.__ccField && window.__ccField());
+    if (was && now && now.said && now.round > was.round) {
+      roundsSeen++;
+      roundGap += Math.abs((was.a.men - now.a.men) - now.said.a)
+                + Math.abs((was.d.men - now.d.men) - now.said.d);
+    }
+    if (await page.evaluate(() => /Let them go/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || ""))) {
+      sawAftermath = true;
+      if (choice === "ride" && !pursuit && now && now.winner) {
+        const lost = now.winner === "a" ? "d" : "a";
+        const before = await bandMen();
+        await click("Ride them down"); await wait(700);
+        pursuit = { nat: now[`${lost}Nat`], broke: now[lost].broken,
+                    standing: now[lost].standing, before, after: await bandMen() };
+      }
+    }
     await click("Count the cost"); await wait(260);
   }
   await page.evaluate(() => {
@@ -219,9 +252,32 @@ for (let i = 0; i < 6 && !metHost; i++) {
   metHost = await inBattle();
 }
 check("the opening host comes for the seat", metHost);
-await fightOut();
+await fightOut(14, "ride");
 const afterHost = await purse();
 check("a won field asks what to do with the broken", sawAftermath);
+/* The two things a battle was lying about. The round line said what the blow
+   was worth rather than what it took off the line, so a field could report
+   three hundred dead and leave three hundred standing. And the broken walked
+   off the field with all their men, so the same host was in front of the seat
+   again next season. */
+check("a round reports the men it actually took off",
+  roundsSeen > 0 && roundGap === 0,
+  `${roundsSeen} rounds, ${roundGap} men unaccounted for`);
+if (pursuit) {
+  /* The band that fought is the loser's band whose strength moved. What it has
+     on the map afterwards is what was still standing plus whatever ran and got
+     home, so the difference is what the pursuit actually settled. */
+  const moved = Object.keys(pursuit.before)
+    .filter((k) => k.startsWith(`${pursuit.nat}:`))
+    .filter((k) => pursuit.before[k] !== (pursuit.after[k] || 0));
+  const left = moved.reduce((n, k) => n + (pursuit.after[k] || 0), 0);
+  const home = Math.max(0, left - pursuit.standing);
+  check("a host ridden down does not walk away whole",
+    pursuit.broke > 0 && home <= pursuit.broke * 0.6,
+    `${pursuit.broke} broke, ${home} of them got home`);
+} else {
+  check("a host ridden down does not walk away whole", false, "the field was never won");
+}
 check("breaking a band gives up what it was carrying",
   afterHost.men > beforeHost.men || afterHost.scrap > beforeHost.scrap,
   `men ${beforeHost.men} -> ${afterHost.men}, scrap ${beforeHost.scrap} -> ${afterHost.scrap}`);

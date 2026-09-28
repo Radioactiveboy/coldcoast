@@ -96,6 +96,37 @@ export const FLANK_MORALE = 11;
 export const SHAKEN_NEAR = 8;
 export const SHAKEN_SECTOR = 14;
 
+/* ------------------------------- THE ROUT ----------------------------------
+   A company breaks on nerve, not on numbers, so it leaves the field with most
+   of its men still on their feet. What happens to them afterwards is the whole
+   difference between winning a field and settling a question.
+
+   Three things happen to a company that has broken. Some of it is caught and
+   never re-forms — that is `chase`, and it is what horse is for. What is not
+   caught still sheds men on the road: stragglers, wounded left in ditches, and
+   men who keep running past the muster. And riding them down deliberately
+   costs you a season of your horse and turns the whole thing decisive.
+
+   Before this, a broken company walked off at full strength and a tenth
+   chance of being caught, so a beaten warband was standing in front of you
+   again the next season with the same men in it.
+   ------------------------------------------------------------------------ */
+export const PURSUE = {
+  // Chance a broken company is ridden down and never re-forms.
+  base: 0.22,            // on foot, following them off the field
+  perHorse: 1.6,         // times the winner's mounted share
+  cap: 0.85,
+  // What "ride them down" does to that, at the price of a spent season.
+  rideMul: 1.7,
+  rideAdd: 0.18,
+  rideCap: 0.97,
+};
+/* What a company that got away has lost by the time it stops running: a share
+   of it outright, plus more the harder it was chased. */
+export const ROUT_LOSS = 0.3;
+export const ROUT_CHASED = 0.45;
+export const ROUT_MAX = 0.85;
+
 /* -------------------------------- SIEGES -----------------------------------
    A walled place is not taken by walking at it. Sitting in front of one stops
    it paying anything, starves the people inside and wears the garrison down —
