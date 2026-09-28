@@ -22,7 +22,7 @@ import { ICONS, ICON_AUTHORS, unitIcon, techIcon } from "./data/gameicons.js";
 import { MAP_NAMES } from "./data/places.js";
 import { SECTORS, SECTOR_NAME, ADJACENT, POSTURES, POSTURE_IDS, GROUND, groundFor,
          FORMATIONS, FORMATION_IDS, FLANK_DEAL, FLANK_MORALE, SHAKEN_NEAR, SHAKEN_SECTOR,
-         SIEGE, BREACH_ORDER }
+         PURSUE, ROUT_LOSS, ROUT_CHASED, ROUT_MAX, SIEGE, BREACH_ORDER }
   from "./data/battle.js";
 import { UNIT_TIERS, UNITS, UNIT_IDS } from "./data/units.js";
 import { GOALS } from "./data/goals.js";
@@ -3086,29 +3086,39 @@ function resolveRound(bt) {
 
     const K = 3.4;
     const rng = () => 0.85 + Math.random() * 0.3;
-    const aCas = Math.round((dOut * K * rng() * aS.take * aL.taken) / (1 + A.avgDef / 5));
-    const dCas = Math.round((aOut * K * rng() * dS.take * dL.taken) / (1 + D.avgDef / 5));
-    aTotal += aCas; dTotal += dCas;
+    /* What the exchange was worth is not the same as what it took off the
+       line: a company cannot lose more men than it has, and the share each
+       one takes is rolled. The figure aimed at is only the input — `hit`
+       hands back what actually came off, and that is the number the round is
+       reported with, because a field that says "300 lost" and leaves 300
+       standing is a field nobody can read. */
+    const aAim = Math.round((dOut * K * rng() * aS.take * aL.taken) / (1 + A.avgDef / 5));
+    const dAim = Math.round((aOut * K * rng() * dS.take * dL.taken) / (1 + D.avgDef / 5));
 
     const hit = (units, total, moraleMul, flank) => {
       const strTotal = units.reduce((n, u) => n + u.str, 0) || 1;
       const gone = [];
+      let real = 0;
       units.forEach((u) => {
         const loss = Math.min(u.str, Math.round(total * (u.str / strTotal) * (0.7 + Math.random() * 0.6)));
         u.str -= loss;
         u.lastLoss = loss;
+        real += loss;
         u.morale -= ((loss / u.max) * 70 * moraleMul + 2 + flank * FLANK_MORALE) * rankOf(u.xp).morale;
         if (u.str <= 0) { u.str = 0; gone.push({ u, dead: true }); }
         else if (u.morale <= 0) gone.push({ u, dead: false });
       });
       // The company beside you going is felt by everyone still in the sector.
       if (gone.length) units.forEach((u) => { if (u.str > 0 && u.morale > 0) u.morale -= gone.length * SHAKEN_NEAR; });
-      return gone;
+      return { gone, real };
     };
 
     // The side whose own neighbours are gone is the one that feels it.
-    const aGone = hit(aU, aCas, aS.morale * (aL.morale || 1), aFlank);
-    const dGone = hit(dU, dCas, dS.morale * (dL.morale || 1), dFlank);
+    const aHit = hit(aU, aAim, aS.morale * (aL.morale || 1), aFlank);
+    const dHit = hit(dU, dAim, dS.morale * (dL.morale || 1), dFlank);
+    const aGone = aHit.gone, dGone = dHit.gone;
+    const aCas = aHit.real, dCas = dHit.real;
+    aTotal += aCas; dTotal += dCas;
     sectors.push({
       sec, ground: ground[sec],
       a: { cas: aCas, post: aPost[sec], volley: aS === POSTURES.volley && A.ranged >= A.melee,
@@ -3779,9 +3789,9 @@ export default function ColdCoast() {
         const win = b[b.winner].units;
         const str = win.reduce((n, u) => n + u.str, 0) || 1;
         const horse = win.filter((u) => unitStats(u).cav).reduce((n, u) => n + u.str, 0);
-        let c = Math.min(0.8, 0.1 + (horse / str) * 1.5);
+        let c = Math.min(PURSUE.cap, PURSUE.base + (horse / str) * PURSUE.perHorse);
         if (pSideB && side === foeSide) {
-          if (choice === "ride") c = Math.min(0.95, c * 1.6 + 0.1);
+          if (choice === "ride") c = Math.min(PURSUE.rideCap, c * PURSUE.rideMul + PURSUE.rideAdd);
           if (choice === "spare") c = 0;
         }
         return c;
@@ -3789,11 +3799,24 @@ export default function ColdCoast() {
       const caught = { a: chase("a"), d: chase("d") };
       const ridDown = { a: 0, d: 0 };
       const caughtStr = { a: 0, d: 0 };
+      const scattered = { a: 0, d: 0 };
       const survivors = (side) => {
-        const ran = b[side].routed.filter((u) => u.str > 0).filter((u) => {
-          if (Math.random() < caught[side]) { ridDown[side] += 1; caughtStr[side] += u.str; return false; }
-          return true;
-        });
+        /* A company that broke is running. Some of it is caught and never
+           re-forms; the rest sheds men all the way to wherever it stops, and
+           sheds more the harder it was chased. Standing companies walk away
+           whole — they did not break. */
+        const keep = 1 - Math.min(ROUT_MAX, ROUT_LOSS + ROUT_CHASED * caught[side]);
+        const ran = b[side].routed
+          .filter((u) => u.str > 0)
+          .filter((u) => {
+            if (Math.random() < caught[side]) { ridDown[side] += 1; caughtStr[side] += u.str; return false; }
+            return true;
+          })
+          .map((u) => {
+            const now = Math.max(1, Math.round(u.str * keep));
+            scattered[side] += u.str - now;
+            return { ...u, str: now };
+          });
         return [...b[side].units, ...ran]
           .map((u) => ({ ...u, morale: Math.max(20, u.maxMorale * 0.7),
                          xp: (u.xp || 0) + XP_FIELD + (b.winner === side ? XP_WON : 0),
@@ -4040,8 +4063,13 @@ export default function ColdCoast() {
         if (built) { next = q.sally ? withSally(built, q.sally, provinces) : built; rest = queue.slice(i + 1); break; }
       }
 
-      const chased = rode
-        ? ` ${rode} broken ${rode === 1 ? "company is" : "companies are"} ridden down in the pursuit.`
+      /* What the pursuit was actually worth, in companies and in men, because
+         "they were beaten" and "they are not coming back" are two different
+         afternoons and the log should say which one this was. */
+      const scatt = scattered.a + scattered.d;
+      const chased = rode || scatt
+        ? ` ${rode ? `${rode} broken ${rode === 1 ? "company is" : "companies are"} ridden down` : "Nobody is run down"}`
+          + `${scatt ? `, and ${scatt} ${rode ? "more" : "men"} never stop running` : ""}.`
         : "";
       const entries = [{ turn: g.turn, m: msg + chased + afterMsg + spoilMsg }];
       people.forEach((m) => entries.push({ turn: g.turn, m }));
@@ -7614,6 +7642,27 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
         raw: sup.raw, d: sup.d, draw: sup.band.draw, band: sup.band.name,
       };
     };
+    /* The field as it stands, because the one thing a battle cannot be checked
+       on by reading the screen is whether the number it reports is the number
+       that came off the companies. Standing and broken are counted separately:
+       a company that breaks leaves the line with its men, and what happens to
+       those men afterwards is the pursuit's business, not the round's. */
+    if (typeof window !== "undefined") window.__ccField = () => {
+      const b = gameRef.current.battle;
+      if (!b) return null;
+      const str = (list) => list.reduce((n, u) => n + u.str, 0);
+      const side = (s) => ({
+        standing: str(b[s].units), broken: str(b[s].routed),
+        men: str(b[s].units) + str(b[s].routed),
+        co: b[s].units.length, brokeCo: b[s].routed.length,
+      });
+      return {
+        round: b.round, over: !!b.over, winner: b.winner || null, stalemate: !!b.stalemate,
+        said: b.lastExchange ? { a: b.lastExchange.aCas, d: b.lastExchange.dCas } : null,
+        a: side("a"), d: side("d"),
+        aNat: b.aNat, dNat: b.dNat,
+      };
+    };
     /* For the smoke test only: the warlord falls. There is no other way to
        reach the succession without a long and unlucky campaign. */
     if (typeof window !== "undefined") window.__ccTest = {
@@ -7649,6 +7698,9 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           .map((p) => `${p.name}:${p.hard}:${game.armies.filter((a) => a.c === p.c && a.r === p.r)
             .reduce((n, a) => n + a.units.length, 0)}`),
         regard: Object.entries(game.regard || {}).map(([k, v]) => `${k}:${v}`),
+        // Every band on the map with what is left of it, so a test can say
+        // whether a field settled anything.
+        bands: game.armies.map((a) => `${a.owner}:${a.id}:${a.c},${a.r}:${a.units.length}co:${a.units.reduce((n, u) => n + u.str, 0)}`),
         // Who a holdout's companies actually belong to, and what they are.
         minorUnits: (() => {
           const us = game.armies.filter((a) => isMinor(a.owner)).flatMap((a) => a.units);
@@ -10745,19 +10797,30 @@ function BattleScreen({ b, nations, P, onStep, onAuto, onClose, onDeploy, onPost
                 if (!ran || foeNat === "beasts") {
                   return <button type="button" onClick={() => onClose()} className="cc-bigbtn cc-bigfight">Count the cost</button>;
                 }
-                const horse = mine.some((u) => unitStats(u).cav);
+                /* Say what the pursuit is actually worth before it is chosen:
+                   the share of the broken that never re-forms, which is what
+                   horse buys and what mercy gives away. */
+                const myStr = mine.reduce((n, u) => n + u.str, 0) || 1;
+                const horseStr = mine.filter((u) => unitStats(u).cav).reduce((n, u) => n + u.str, 0);
+                const horse = horseStr > 0;
+                const base = Math.min(PURSUE.cap, PURSUE.base + (horseStr / myStr) * PURSUE.perHorse);
+                const ride = Math.min(PURSUE.rideCap, base * PURSUE.rideMul + PURSUE.rideAdd);
+                const pc = (v) => `${Math.round(v * 100)}%`;
                 return (
                   <>
                     <button type="button" onClick={() => onClose("ride")} className="cc-bigbtn cc-bigoff"
-                      title={horse ? "Your horse goes after the broken. More are caught; the horse is spent for a season." : "Without horse you catch almost nobody, and the men are spent for a season anyway."}>
+                      title={`About ${pc(ride)} of the broken never re-form, against ${pc(base)} if you simply let the field end. `
+                        + `The rest leave most of their men on the road. ${horse ? "Your horse" : "The men who do the chasing"} are spent for a season.`}>
                       Ride them down
                     </button>
                     <button type="button" onClick={() => onClose("captives")} className="cc-bigbtn cc-bigoff"
-                      title="Whoever is caught goes on your muster roll. They eat while they are on it.">
+                      title={`About ${pc(base)} of the broken are caught, and go on your muster roll instead of into a ditch. They eat while they are on it.`}>
                       Take captives
                     </button>
                     <button type="button" onClick={() => onClose("spare")} className="cc-bigbtn cc-bigfight"
-                      title={isMinor(foeNat) ? "Nobody is caught. The Wasters do not remember kindness." : `Nobody is caught. ${theirN.short} will remember it, and be slower to come at you.`}>
+                      title={isMinor(foeNat)
+                        ? "Nobody is caught, and the broken keep most of their men. The Wasters do not remember kindness."
+                        : `Nobody is caught, and the broken keep most of their men. ${theirN.short} will remember it, and be slower to come at you.`}>
                       Let them go
                     </button>
                   </>
