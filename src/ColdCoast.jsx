@@ -33,6 +33,8 @@ import { RANKS, rankOf, nextRank, XP_FIELD, XP_WON } from "./data/ranks.js";
 import { DISTRICT_POOL, SEAT_DISTRICTS, DISTRICT_COUNT } from "./data/districts.js";
 import { PETITIONS, PETITION_WAIT, PETITION_CHANCE, OATH_MEMORY } from "./data/petitions.js";
 import { FIRST_MEET, PACTS, REGARD_START, regardBand, pactTerms } from "./data/encounters.js";
+import { ACCORDS, ACCORD_IDS, GIFT, ACCORD_OATH, ACCORD_BREAK_REGARD, PEACE,
+         COALITION, standing, accordTerms } from "./data/accords.js";
 import { STORIES } from "./data/stories.js";
 import { SUPPLY_MAX, SUPPLY_BANDS, bandAt, HARD_GROUND, WINTER_WASTE,
          CART_RELIEF_CAP, QUARTER_RELIEF, QUARTER_EASE } from "./data/supply.js";
@@ -267,6 +269,14 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-reserverow>div{min-width:132px}
 .cc-formbtn{font-size:11.5px;padding:3px 9px;border:1px solid #31454f;border-radius:4px;color:#c3d5de;background:#131f27;transition:border-color .12s,background .12s}
 .cc-formbtn:hover{border-color:#4d9aa6;background:#18262e}
+/* The envoy screen. A rung on the ladder reads as a thing you could sign, and
+   a rung you cannot reach yet still has to be legible — greyed, not hidden,
+   because what is out of reach is half of what the screen is telling you. */
+.cc-envoybtn{width:100%;text-align:left;font-size:12.5px;padding:5px 8px;border:1px solid #31454f;border-radius:5px;color:#dbe7ee;background:#16242c;transition:border-color .12s,background .12s}
+.cc-envoybtn:hover:enabled{border-color:#4d9aa6;background:#1b2f38}
+.cc-envoybtn:disabled{opacity:.45;cursor:not-allowed}
+.cc-accord{box-shadow:inset 0 0 0 1px rgba(159,214,180,.08)}
+.cc-coalition{box-shadow:inset 0 0 0 1px rgba(224,160,74,.12)}
 .cc-bigbtn{padding:9px 18px;border-radius:6px;border:1px solid;font-family:inherit;font-size:14.5px;transition:background .12s,border-color .12s}
 .cc-bigfight{border-color:#8a4636;background:#3a2018;color:#f0d6c2}
 .cc-bigfight:hover{background:#4a2a1f}
@@ -1319,6 +1329,125 @@ const regardTone = (n) => {
   return t === "good" ? "cc-text-9fd6b4" : t === "mid" ? "cc-text-c6d6de"
     : t === "warn" ? "cc-text-e8b98a" : "cc-text-e08a6a";
 };
+
+/* ------------------------------- THE ENVOYS --------------------------------
+   Everything the rival realms need in order to be somebody you can deal with
+   rather than a switch you throw. All of it reads the position and none of it
+   writes it, so the screen can ask the same questions the AI answers with and
+   tell the player the answer before they commit.
+   ------------------------------------------------------------------------ */
+const holdingsOf = (g, id) => Object.values(g.provinces).filter((p) => p.owner === id).length;
+/* Regard moved and clamped, in one place, because it is moved from nine. */
+function withRegard(g, id, d) {
+  if (!id || !d) return g;
+  const was = g.regard?.[id] ?? regardStart(id);
+  return { ...g, regard: { ...(g.regard || {}), [id]: Math.max(0, Math.min(100, Math.round(was + d))) } };
+}
+/* An accord that is still running. A lapsed one is left in the table until the
+   season tick sweeps it, so the card can say it has just run out. */
+const accordOf = (g, id) => (g.accords || {})[id] || null;
+const accordLive = (g, id) => {
+  const a = accordOf(g, id);
+  return a && a.until > g.turn ? a : null;
+};
+/* Whether you have torn one up recently, which everybody is still annoyed
+   about. Separate from a broken promise to your own people; both bite. */
+const accordTorn = (g) => !!g.torn && g.turn - g.torn < ACCORD_OATH;
+
+/* Whoever is running away with the coast, or null while it is still anybody's.
+   Deliberately blind to who is asking — the player is in this list. */
+function runawayLeader(g) {
+  const held = NATION_IDS.map((id) => [id, holdingsOf(g, id)]).sort((a, b) => b[1] - a[1]);
+  if (!held.length || held[0][1] < COALITION.minHold) return null;
+  const second = held[1] ? held[1][1] : 0;
+  return held[0][1] >= Math.max(1, second) * COALITION.ahead ? held[0][0] : null;
+}
+
+/* What a rival would say to being asked for something, and why. The `why` is
+   written to be shown to the player on the button, so it says what would move
+   the answer rather than only that the answer is no. */
+function wouldHear(g, P, id, aid, target) {
+  const a = ACCORDS[aid];
+  if (!a) return { ok: false, why: "Nothing to ask for." };
+  if (isMinor(id)) return { ok: false, why: "They are not a realm." };
+  const nat = g.nations[id];
+  if (!nat || holdingsOf(g, id) === 0) return { ok: false, why: "There is nobody left to ask." };
+  const live = accordLive(g, id);
+  if (live) return { ok: false, why: `${ACCORDS[live.id]?.name || "An accord"} already stands between you.` };
+  if (a.needsTarget && !target) return { ok: false, why: "Name who the league is against." };
+
+  const leader = runawayLeader(g);
+  let regard = g.regard?.[id] ?? regardStart(id);
+  if (leader === P) regard += COALITION.accord;     // the biggest realm is trusted least
+  if (accordTorn(g)) regard -= ACCORD_BREAK_REGARD;
+  const mine = holdingsOf(g, P), theirs = holdingsOf(g, id);
+  const st = standing(mine, theirs);
+
+  /* With a war already on, the only things anybody signs are the two ways out
+     of it. A truce is the negotiated one and tribute is the bought one. */
+  if (g.war[warKey(P, id)]) {
+    if (!a.inWar) {
+      return { ok: false, why: "There is a war on. Nothing gets signed but a truce or a tribute until it stops." };
+    }
+    if (aid === "truce" && st.ratio < 0.8 && regard < 52) {
+      return { ok: false, why: `They are winning, they are ${standing(theirs, mine).word.replace("them", "you")}, and they know exactly what a truce would be worth to you.` };
+    }
+  }
+
+  if (regard < a.need) {
+    return { ok: false,
+      why: leader === P
+        ? `They think you are already too big to be owed anything. ${regardBand(g.regard?.[id]).word} is not enough for this, and holding the most ground on the coast costs you the benefit of the doubt.`
+        : accordTorn(g)
+          ? "Nobody is signing anything with you while the last accord you tore up is still being talked about."
+          : `They would have to think better of you than ${regardBand(g.regard?.[id]).word} before this is worth their ink.` };
+  }
+  if (a.ratio != null && st.ratio < a.ratio) {
+    return { ok: false, why: aid === "tributeFrom"
+      ? `You are ${st.word}. They would laugh, and then they would remember being asked.`
+      : `The numbers do not put you in a position to ask.` };
+  }
+  if (aid === "tributeTo" && st.ratio > 1.6) {
+    return { ok: false, why: "They can see the map as well as you can. Offering them tribute from up there reads as a trap." };
+  }
+  if (aid === "league") {
+    if (target === P || target === id) return { ok: false, why: "A league has to be against somebody else." };
+    if (holdingsOf(g, target) === 0) return { ok: false, why: `${g.nations[target]?.short || "They"} are already off the map.` };
+    if (g.war[warKey(id, target)]) {
+      return { ok: true, why: `They are already fighting ${g.nations[target].short} and would rather not do it alone.` };
+    }
+    const heat = (holdingsOf(g, target) >= holdingsOf(g, id) ? 12 : 0)
+      + (runawayLeader(g) === target ? COALITION.league : 0);
+    if (regard + heat < a.need + 14) {
+      return { ok: false, why: `They have no quarrel with ${g.nations[target].short} worth a war, and you are not yet somebody they would start one for.` };
+    }
+    return { ok: true, why: runawayLeader(g) === target
+      ? `They think ${g.nations[target].short} has got too big as well, and would rather it were two of you.`
+      : `They would come in, and they would expect the fighting to be shared.` };
+  }
+  return { ok: true, why: aid === "tributeFrom"
+    ? `You are ${st.word}. They will pay, and they will hate it.`
+    : `They would sign. ${st.word.charAt(0).toUpperCase()}${st.word.slice(1)}, and neither of you wants it settled this year.` };
+}
+
+/* What suing for peace costs and whether it is taken. Priced by how the war is
+   actually running rather than a flat fee and a coin. */
+function peaceOffer(g, P, id) {
+  const mine = holdingsOf(g, P), theirs = holdingsOf(g, id);
+  const st = standing(mine, theirs);
+  const cost = Math.min(PEACE.max,
+    Math.round(PEACE.base + Math.max(0, theirs - mine) * PEACE.perHolding * 2 + theirs * PEACE.perHolding * 0.5));
+  const regard = g.regard?.[id] ?? regardStart(id);
+  // Somebody winning a war wants to keep winning it. Somebody losing one, or
+  // who thinks well of you, will take the scrap and the excuse.
+  const ok = st.ratio >= 1.1 || regard >= 52 || st.ratio >= 0.85;
+  return { cost, ok, word: st.word,
+    why: ok
+      ? st.ratio >= 1.1
+        ? "They are not winning this and they know it. The tribute gives them a way to say so."
+        : "It is costing both of you more than either of you is getting. They will take it."
+      : `They are ${standing(theirs, mine).word.replace("them", "you")} and in no hurry. The scrap will be pocketed and the war will go on.` };
+}
 const lordTitle = (nat) => nat?.lord?.title || WARLORDS[nat?.id]?.title || "";
 /* What reaches every warband from the seat: the habits of a captain who rose
    to it, and the one the warlord was born with. */
@@ -1426,13 +1555,38 @@ function applyPetition(d, g, eff, pt) {
   if (eff.grudge && c.rival && d.nations[c.rival]) {
     d.nations[c.rival] = { ...d.nations[c.rival], grudge: { ...(d.nations[c.rival].grudge || {}), [P]: g.turn } };
   }
+  /* What the rival courts made of the answer. A petition is the one place a
+     realm asks you for something without an envoy screen in front of it, so
+     the answer moves regard exactly as a gift or a demand would. */
+  const moveRegard = (who, d2) => {
+    if (!who || !d2 || !d.regard) return;
+    d.regard[who] = Math.max(0, Math.min(100, (d.regard[who] ?? regardStart(who)) + d2));
+  };
+  if (eff.regardWith) moveRegard(c.rival, eff.regardWith);
+  if (eff.regardAll && d.regard) {
+    Object.keys(d.regard).forEach((who) => { if (!isMinor(who)) moveRegard(who, eff.regardAll); });
+  }
+  if (eff.accord && c.rival && d.accords && ACCORDS[eff.accord]) {
+    const acc = ACCORDS[eff.accord];
+    const against = acc.needsTarget ? (c.leaderId || null) : null;
+    d.accords[c.rival] = { id: eff.accord, until: g.turn + acc.term, since: g.turn, against };
+    /* Every accord holds the peace while it runs, and a league puts you into
+       somebody else's war on top of that. */
+    if (d.war) {
+      delete d.war[warKey(P, c.rival)];
+      if (against) { d.war[warKey(c.rival, against)] = true; d.war[warKey(P, against)] = true; }
+    }
+  }
   if (eff.ransom) {
     const held = (pn().captives || []).find((x) => x.captain.id === c.captainId) || (pn().captives || [])[0];
     if (held) {
       const price = ransomFor(held);
       const rest = (pn().captives || []).filter((x) => x !== held);
       let home = false;
-      if (eff.ransom === "full" && pn().res.scrap >= price) { bump({ scrap: -price }); home = true; }
+      /* Paying for a captain is a thing rival courts notice. It says you buy
+         your people back, which is the cheapest reputation on the coast and
+         the one that makes every later envoy easier. */
+      if (eff.ransom === "full" && pn().res.scrap >= price) { bump({ scrap: -price }); home = true; moveRegard(c.rival, 10); }
       else if (eff.ransom === "half" && pn().res.scrap >= Math.ceil(price / 2)) {
         bump({ scrap: -Math.ceil(price / 2) });
         home = Math.random() < 0.5;
@@ -1484,10 +1638,25 @@ function petitionContext(g, P) {
   const warPair = NATION_IDS.flatMap((a) => NATION_IDS.map((b) => [a, b]))
     .find(([a, b]) => a < b && a !== P && b !== P && g.war[warKey(a, b)]) || null;
   const busiest = mine.filter((p) => !p.capital).sort((x, y) => (y.pop || 0) - (x.pop || 0))[0] || seat;
+  /* Who has a reason to send somebody to your hall. A realm that can count and
+     likes the numbers sends a herald; one that is frightened of whoever is
+     winning sends an envoy; one with your companies in sight of their fields
+     sends a rider. None of them needs a warband to reach you. */
+  const free = (id) => id !== P && !isMinor(id) && g.met?.[id]
+    && !g.war[warKey(P, id)] && !((g.accords || {})[id]?.until > g.turn)
+    && Object.values(g.provinces).some((p) => p.owner === id);
+  const bigRival = NATION_IDS.find((id) => free(id) && holdingsOf(g, id) > Math.max(2, mine.length) * 1.3) || null;
+  const lead = runawayLeader(g);
+  const leaguer = lead && lead !== P
+    ? NATION_IDS.find((id) => free(id) && id !== lead && (g.regard?.[id] ?? REGARD_START) >= 46) || null
+    : null;
+  const onTheirBorder = rival && g.armies.some((a) => a.owner === P && a.units.length
+    && neighbours(a.c, a.r).some(([x, y]) => g.provinces[key(x, y)]?.owner === rival));
   return {
     nat, seat, herdNear, hungryCaptain, sourCaptain, besieging, rival, captive,
     food: nat.res.food, scrap: nat.res.scrap, research: nat.research,
     warElsewhere: warPair, place: busiest,
+    bigRival, leaguer, leader: lead, onTheirBorder,
   };
 }
 const ransomFor = (captive) => 40 + (captive?.captain?.fields || 0) * 10;
@@ -1512,6 +1681,7 @@ function fillPetition(text, pt, g) {
     .replace(/\{rival\}/g, c.rivalShort || "")
     .replace(/\{ransom\}/g, c.ransom ?? "")
     .replace(/\{seat\}/g, c.seat || "")
+    .replace(/\{leader\}/g, c.leaderShort || "")
     .replace(/\{warNames\}/g, c.warNames || "");
 }
 
@@ -2775,7 +2945,12 @@ function opened(game, prov) {
   if (!prov || !prov.owner) return null;
   const pid = (game.pacts || {})[prov.owner];
   const pact = pid && PACTS[pid];
-  return pact && pact.pass ? { pact, id: pid, who: prov.owner } : null;
+  if (pact && pact.pass) return { pact, id: pid, who: prov.owner };
+  /* A road agreed with a rival realm does the same thing, and for as long as
+     the term on it runs. */
+  const rec = (game.accords || {})[prov.owner];
+  const acc = rec && rec.until > game.turn && ACCORDS[rec.id];
+  return acc && acc.pass ? { pact: acc, id: rec.id, who: prov.owner, accord: true } : null;
 }
 
 function moveInfo(game, army, prov, P, atWar) {
@@ -2898,6 +3073,15 @@ function nationIncome(state, natId, turn) {
     // Ground taken off them is the end of it — see `breakPact`.
     Object.entries(pact.give || {}).forEach(([k, v]) => { gross[k] = (gross[k] || 0) + v; });
     Object.entries(pact.take || {}).forEach(([k, v]) => { gross[k] = (gross[k] || 0) - v; });
+  });
+  /* An accord with a rival realm reads into the ledger the same way, and stops
+     reading into it the season its term runs out. */
+  Object.entries(state.accords || {}).forEach(([rid, rec]) => {
+    if (natId !== state.player) return;
+    const acc = ACCORDS[rec?.id];
+    if (!acc || !(rec.until > state.turn)) return;
+    Object.entries(acc.give || {}).forEach(([k, v]) => { gross[k] = (gross[k] || 0) + v; });
+    Object.entries(acc.take || {}).forEach(([k, v]) => { gross[k] = (gross[k] || 0) - v; });
   });
   return gross;
 }
@@ -3357,7 +3541,8 @@ function initialState() {
   return {
     turn: 1, player: null, ...w, war, armies, uid,
     sel: null, battle: null, log: [], recruit: null, over: null,
-    showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, regard: {}, pacts: {}, meetings: [], notices: [], focus: null, sound: { music: true, sfx: true },
+    showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, regard: {}, pacts: {}, accords: {}, torn: 0, coalition: null,
+    meetings: [], notices: [], focus: null, sound: { music: true, sfx: true },
     goals: { done: {}, hidden: false }, summary: null, roster: false,
     petitions: [], promises: [], hearing: null, chapter: null, hall: null,
   };
@@ -3661,6 +3846,7 @@ export default function ColdCoast() {
       const tp = { ...provinces[tk] };
       let logMsg = null;
       const nations = { ...g.nations };
+      let regard = g.regard;
       if (tp.owner !== P && tp.owner !== null && atWar(P, tp.owner)) {
         const prev = tp.owner;
         tp.owner = P;
@@ -3670,9 +3856,20 @@ export default function ColdCoast() {
           nations[P] = { ...nations[P], res: { ...nations[P].res, scrap: nations[P].res.scrap + 25, food: nations[P].res.food + 20 } };
           logMsg += " The clans strip it bare.";
         }
+        /* Ground taken off somebody is the loudest thing you can say to them,
+           and they are not the only ones listening. */
+        if (prev && !isMinor(prev)) {
+          const r = { ...(g.regard || {}) };
+          r[prev] = Math.max(0, (r[prev] ?? regardStart(prev)) - 6);
+          NATION_IDS.forEach((id) => {
+            if (id === P || id === prev || !g.met?.[id]) return;
+            r[id] = Math.max(0, (r[id] ?? regardStart(id)) - 1);
+          });
+          regard = r;
+        }
       }
       return {
-        ...g, armies, provinces, nations,
+        ...g, armies, provinces, nations, regard,
         sel: g.sel?.armyId === army.id ? { ...g.sel, k: key(target.c, target.r) } : g.sel,
         log: logMsg ? [{ turn: g.turn, m: logMsg }, ...g.log].slice(0, 60) : g.log,
       };
@@ -3685,6 +3882,7 @@ export default function ColdCoast() {
          ground. The carts stop the day the first shot is fired, and they do
          not forget who fired it. */
       let pacts = g.pacts, regard = g.regard, log = g.log;
+      let accords = g.accords, torn = g.torn;
       const foe = attacker.owner === g.player ? defender.owner : null;
       if (foe && (g.pacts || {})[foe]) {
         pacts = { ...g.pacts }; delete pacts[foe];
@@ -3692,8 +3890,24 @@ export default function ColdCoast() {
         log = [{ turn: g.turn, m: `${PACTS[g.pacts[foe]].name} ends — you came at them with companies.` },
           ...g.log].slice(0, 60);
       }
+      /* An accord with a realm is a signed thing with a term on it, so going at
+         them while it runs is not a change of policy, it is an oath broken —
+         and every court on the coast keeps a copy. */
+      if (foe && accordLive(g, foe)) {
+        const acc = ACCORDS[g.accords[foe].id];
+        accords = { ...g.accords }; delete accords[foe];
+        torn = g.turn;
+        const r = { ...(regard || {}) };
+        NATION_IDS.forEach((id) => {
+          if (id === g.player || !g.met?.[id]) return;
+          r[id] = Math.max(0, (r[id] ?? regardStart(id)) - (id === foe ? ACCORD_BREAK_REGARD * 2 : ACCORD_BREAK_REGARD));
+        });
+        regard = r;
+        log = [{ turn: g.turn, m: `${acc?.name || "The accord"} with ${g.nations[foe].short} is torn up by your own companies. `
+          + "Every court on the coast will have heard inside the season." }, ...log].slice(0, 60);
+      }
       return {
-        ...g, pacts, regard, log,
+        ...g, pacts, regard, log, accords, torn,
         battle: { ...makeBattle(g.provinces, g.nations, g.armies, attacker.id, defender.id, key(prov.c, prov.r)), ...(extra || {}) },
       };
     });
@@ -3827,6 +4041,7 @@ export default function ColdCoast() {
       const dUnits = survivors("d");
       const rode = ridDown.a + ridDown.d;
       let afterMsg = "";
+      let spared = null;
       if (pSideB && b.winner === pSideB && !b.stalemate) {
         const loserNat = pSideB === "a" ? b.dNat : b.aNat;
         if (choice === "captives" && caughtStr[foeSide] > 0) {
@@ -3837,7 +4052,10 @@ export default function ColdCoast() {
           afterMsg = ` ${men} of the caught are put on your muster roll, and eat while they are.`;
         } else if (choice === "spare" && !isMinor(loserNat)) {
           nations[loserNat] = { ...nations[loserNat], mercy: { ...(nations[loserNat].mercy || {}), [g.player]: g.turn } };
-          afterMsg = ` You let them go. ${nations[loserNat].short} will remember it.`;
+          /* Letting a rival's broken walk off a field you won is the cheapest
+             regard in the game, and the only kind you buy with restraint. */
+          spared = loserNat;
+          afterMsg = ` You let them go. ${nations[loserNat].short} will remember it, and so will their court.`;
         } else if (choice === "ride") {
           const mine = pSideB === "a" ? b.aArmy : b.dArmy;
           armies = armies.map((a) => (a.id === mine ? { ...a, tired: true } : a));
@@ -4077,6 +4295,9 @@ export default function ColdCoast() {
       return {
         ...g, armies: armies.filter((a) => !a.wardGuard || a.id === next?.dArmy), nations, provinces,
         battle: next, sel: null, pending: rest,
+        regard: spared
+          ? { ...(g.regard || {}), [spared]: Math.min(100, (g.regard?.[spared] ?? regardStart(spared)) + 9) }
+          : g.regard,
         log: [...entries, ...g.log].slice(0, 60),
       };
     });
@@ -4405,7 +4626,11 @@ export default function ColdCoast() {
     ...g,
     met: { ...(g.met || {}), [id]: true },
     regard: { ...(g.regard || {}), [id]: g.regard?.[id] ?? regardStart(id) },
-    meetings: (g.meetings || []).includes(id) ? g.meetings : [...(g.meetings || []), id],
+    /* Only somebody with a scene written for them joins the queue. A realm has
+       no first-contact scene, and one sitting at the head of the queue would
+       show nothing and hold up everybody behind it. */
+    meetings: !FIRST_MEET[id] || (g.meetings || []).includes(id)
+      ? g.meetings : [...(g.meetings || []), id],
   }));
   if (typeof window !== "undefined") window.__ccFall = () => setGame((g) => ({
     ...g, nations: { ...g.nations, [P]: { ...g.nations[P], lordDead: true, lordTransit: null, succession: true } },
@@ -4422,12 +4647,15 @@ export default function ColdCoast() {
       const def = pt && PETITIONS.find((d) => d.id === pt.kind);
       const opt = def?.options?.[idx];
       if (!pt || !opt) return { ...g, hearing: null };
-      const draft = { provinces: { ...g.provinces }, nations: { ...g.nations }, armies: g.armies, promises: (g.promises || []).slice() };
+      const draft = { provinces: { ...g.provinces }, nations: { ...g.nations }, armies: g.armies,
+        promises: (g.promises || []).slice(), regard: { ...(g.regard || {}) },
+        accords: { ...(g.accords || {}) }, war: { ...g.war } };
       const out = applyPetition(draft, g, opt.effect || {}, pt);
       Sound.play("tick");
       const line = out.result || (opt.result ? fillPetition(opt.result, pt, g) : "");
       return {
         ...g, provinces: draft.provinces, nations: draft.nations, armies: out.armies, promises: out.promises,
+        regard: draft.regard, accords: draft.accords, war: draft.war,
         petitions: g.petitions.filter((x) => x.id !== pid), hearing: null,
         log: line ? [{ turn: g.turn, m: line }, ...g.log].slice(0, 60) : g.log,
       };
@@ -4948,26 +5176,123 @@ export default function ColdCoast() {
     });
   }
 
+  /* Peace is priced now, not flipped: what it costs depends on how the war is
+     actually running, and whether it is taken depends on that and on what they
+     think of you. Refusing still costs you the scrap, because the offer was
+     made in public. */
   function toggleWar(other) {
     setGame((g) => {
       const wk = warKey(P, other);
       const war = { ...g.war };
-      let msg;
       if (war[wk]) {
-        // suing for peace costs scrap; AI accepts if it is losing or neutral
-        const mine = Object.values(g.provinces).filter((p) => p.owner === P).length;
-        const theirs = Object.values(g.provinces).filter((p) => p.owner === other).length;
-        if (g.nations[P].res.scrap < 40) return { ...g, log: [{ turn: g.turn, m: "No scrap left for tribute. Peace refused." }, ...g.log] };
-        const accept = theirs <= mine * 1.15 || Math.random() < 0.4;
+        const off = peaceOffer(g, P, other);
+        if (g.nations[P].res.scrap < off.cost) {
+          return { ...g, log: [{ turn: g.turn,
+            m: `${off.cost} scrap is what it would take to open that conversation, and you have ${g.nations[P].res.scrap}.` },
+            ...g.log].slice(0, 60) };
+        }
         const nations = { ...g.nations };
-        nations[P] = { ...nations[P], res: { ...nations[P].res, scrap: nations[P].res.scrap - 40 } };
-        if (accept) { delete war[wk]; msg = `Peace agreed with ${g.nations[other].short}.`; }
-        else msg = `${g.nations[other].short} pockets the tribute and fights on.`;
-        return { ...g, war, nations, log: [{ turn: g.turn, m: msg }, ...g.log].slice(0, 60) };
+        nations[P] = { ...nations[P], res: { ...nations[P].res, scrap: nations[P].res.scrap - off.cost } };
+        let out = { ...g, war, nations };
+        let msg;
+        if (off.ok) {
+          delete war[wk];
+          out = withRegard({ ...out, war }, other, 6);
+          msg = `Peace agreed with ${g.nations[other].short}. ${off.cost} scrap goes with the envoy.`;
+        } else {
+          out = withRegard(out, other, -2);
+          msg = `${g.nations[other].short} pockets the ${off.cost} scrap and fights on.`;
+        }
+        return { ...out, log: [{ turn: g.turn, m: msg }, ...out.log].slice(0, 60) };
       }
+      /* Declaring war on somebody you have signed something with is the same
+         oath broken as marching on them — you just said so first. */
       war[wk] = true;
-      msg = `War declared on ${g.nations[other].short}.`;
-      return { ...g, war, log: [{ turn: g.turn, m: msg }, ...g.log].slice(0, 60) };
+      const live = accordLive(g, other);
+      let out = { ...g, war };
+      let msg = `War declared on ${g.nations[other].short}.`;
+      if (live) {
+        const acc = ACCORDS[live.id];
+        const accords = { ...(g.accords || {}) }; delete accords[other];
+        out = { ...out, accords, torn: g.turn };
+        NATION_IDS.forEach((id) => {
+          if (id === P || !g.met?.[id]) return;
+          out = withRegard(out, id, id === other ? -ACCORD_BREAK_REGARD * 2 : -ACCORD_BREAK_REGARD);
+        });
+        msg = `War declared on ${g.nations[other].short}, with ${acc?.name?.toLowerCase() || "an accord"} still running. `
+          + "You are the realm that tears things up now, and every court will say so.";
+      } else {
+        out = withRegard(out, other, -10);
+      }
+      return { ...out, log: [{ turn: g.turn, m: msg }, ...out.log].slice(0, 60) };
+    });
+  }
+
+  /* An envoy with a gift. The only move always open to you, and deliberately
+     poor value: it buys a little regard and nothing else. */
+  function sendGift(other) {
+    setGame((g) => {
+      const cost = GIFT.cost.scrap;
+      if ((g.nations[P].res.scrap || 0) < cost) {
+        return { ...g, log: [{ turn: g.turn, m: `A gift worth carrying costs ${cost} scrap. You do not have it.` }, ...g.log].slice(0, 60) };
+      }
+      const nations = { ...g.nations };
+      nations[P] = { ...nations[P], res: { ...nations[P].res, scrap: nations[P].res.scrap - cost } };
+      const out = withRegard({ ...g, nations }, other, GIFT.regard);
+      Sound.play("tick");
+      return { ...out, log: [{ turn: g.turn,
+        m: `An envoy goes to ${g.nations[other].short} with ${cost} scrap of worked iron and comes back with nothing but a better welcome next time. `
+          + `They regard you as ${regardBand(out.regard[other]).word}.` }, ...out.log].slice(0, 60) };
+    });
+  }
+
+  /* Asking for one of the rungs on the ladder. The answer is the same one the
+     screen has already shown on the button, so nothing here surprises. */
+  function askAccord(other, aid, target) {
+    setGame((g) => {
+      const acc = ACCORDS[aid];
+      const say = wouldHear(g, P, other, aid, target);
+      if (!acc) return g;
+      const cost = acc.cost?.scrap || 0;
+      if (cost && (g.nations[P].res.scrap || 0) < cost) {
+        return { ...g, log: [{ turn: g.turn, m: `${acc.name} would cost ${cost} scrap to put in front of them.` }, ...g.log].slice(0, 60) };
+      }
+      const nations = { ...g.nations };
+      if (cost) nations[P] = { ...nations[P], res: { ...nations[P].res, scrap: nations[P].res.scrap - cost } };
+      let out = { ...g, nations };
+      if (!say.ok) {
+        // Being told no still cost you the sending, and being asked in the
+        // first place is remembered by the kind of realm that says no.
+        out = withRegard(out, other, -2);
+        return { ...out, log: [{ turn: g.turn, m: `${g.nations[other].short} will not hear it. ${say.why}` }, ...out.log].slice(0, 60) };
+      }
+      const accords = { ...(g.accords || {}) };
+      accords[other] = { id: aid, until: g.turn + acc.term, since: g.turn, against: target || null };
+      /* Every accord holds the peace while it runs — that is what they are all
+         for. A league also puts both of you into somebody else's war. */
+      const war = { ...g.war };
+      delete war[warKey(P, other)];
+      let extra = "";
+      if (aid === "league" && target) {
+        war[warKey(other, target)] = true;
+        war[warKey(P, target)] = true;
+        extra = ` ${g.nations[other].short} is at war with ${g.nations[target].short}, and so are you.`;
+      }
+      out = { ...out, accords, war };
+      out = withRegard(out, other, acc.regard || 0);
+      if (aid === "league" && target) out = withRegard(out, target, -18);
+      if (acc.resented) {
+        // A demand is remembered by everybody who might be next.
+        NATION_IDS.forEach((id) => {
+          if (id === P || id === other || !g.met?.[id]) return;
+          out = withRegard(out, id, -4);
+        });
+      }
+      Sound.play("tick");
+      const t = accordTerms(aid);
+      return { ...out, log: [{ turn: g.turn,
+        m: `${acc.name} with ${g.nations[other].short}, ${acc.term} seasons.${t.line ? ` ${t.line}.` : ""}${extra}` },
+        ...out.log].slice(0, 60) };
     });
   }
 
@@ -4978,6 +5303,7 @@ export default function ColdCoast() {
       let { provinces, nations, armies, war } = { ...g };
       provinces = { ...provinces };
       nations = { ...nations };
+      const accords = { ...(g.accords || {}) };
       armies = armies.map((a) => ({ ...a, units: a.units.map((u) => ({ ...u })) }));
       // A single ownership tally for the whole winter, updated as ground
       // changes hands. Every realm used to re-count the entire map, repeatedly.
@@ -4995,6 +5321,15 @@ export default function ColdCoast() {
       const notices = [];
       const notice = (kind, text, k) => notices.push({ id: `n${g.turn}${notices.length}`, kind, text, k });
       const pending = [];
+
+      /* Who the rest of the coast has started to worry about, worked out once
+         before anybody acts on it. Null while it is still anybody's game. */
+      const leader = (() => {
+        const held = NATION_IDS.map((id) => [id, heldNow[id] || 0]).sort((a, b) => b[1] - a[1]);
+        if (!held.length || held[0][1] < COALITION.minHold) return null;
+        const second = held[1] ? held[1][1] : 0;
+        return held[0][1] >= Math.max(1, second) * COALITION.ahead ? held[0][0] : null;
+      })();
 
       // --- AI turns ---
       NATION_IDS.forEach((id) => {
@@ -5272,7 +5607,11 @@ export default function ColdCoast() {
           if (a.route.length > 1) a.seq = (a.seq || 0) + 1; else a.route = null;
         });
 
-        // AI diplomacy: occasionally declare war on a weaker neighbour
+        /* AI diplomacy: occasionally declare war on a weaker neighbour — but
+           not on somebody it has signed something with, and much more readily
+           on whoever is running away with the coast. A realm that is far clear
+           of second place is worth going at together even when it is stronger
+           than you, which is the whole point of the coalition. */
         if (Math.random() < 0.12 * style.war) {
           const neigh = new Set();
           Object.values(provinces).filter((p) => p.owner === id).forEach((p) =>
@@ -5281,14 +5620,23 @@ export default function ColdCoast() {
               if (q && q.owner && q.owner !== id) neigh.add(q.owner);
             })
           );
-          const cands = [...neigh].filter((n) => !war[warKey(id, n)]);
+          const cands = [...neigh].filter((n) => !war[warKey(id, n)] && !isMinor(n)
+            && !(n === g.player && accords[id] && accords[id].until > g.turn));
           if (cands.length) {
             const t = cands[Math.floor(Math.random() * cands.length)];
             const mine = heldNow[id] || 0;
             const theirs = heldNow[t] || 0;
-            if (mine > theirs * (1.35 - 0.15 * style.war)) {
+            const gang = leader === t;
+            const bar = (1.35 - 0.15 * style.war) / (gang ? COALITION.war : 1);
+            if (mine > theirs * bar) {
               war[warKey(id, t)] = true;
-              if (t === g.player) newLog.push({ turn: g.turn, m: `${nations[id].short} declares war on you.` });
+              if (t === g.player) {
+                newLog.push({ turn: g.turn, m: gang
+                  ? `${nations[id].short} declares war on you. You are the biggest thing on this coast and everybody can see it.`
+                  : `${nations[id].short} declares war on you.` });
+              } else if (gang && t === leader) {
+                newLog.push({ turn: g.turn, m: `${nations[id].short} declares war on ${nations[t].short}.` });
+              }
             }
           }
         }
@@ -5774,6 +6122,44 @@ export default function ColdCoast() {
         g = { ...g, met, regard, meetings };
       }
 
+      /* --- what the envoys agreed, and what the coast thinks of you ---
+         An accord has a term on it. When it runs out it is said so, once, and
+         then it is simply gone: the ledger stops paying it and the road shuts.
+         Nobody renews anything on your behalf. */
+      {
+        const regard = { ...(g.regard || {}) };
+        Object.entries(accords).forEach(([rid, rec]) => {
+          if (!rec || rec.until > g.turn) return;
+          const acc = ACCORDS[rec.id];
+          delete accords[rid];
+          newLog.push({ turn: g.turn, m: `${acc?.name || "The accord"} with ${nations[rid]?.short || rid} runs out.`
+            + (acc?.pass ? " The road is shut." : "") });
+        });
+        /* Being the biggest thing on the coast is not free. Every season you
+           are clear of the field, everybody who can see a map thinks a little
+           less of you — which is what eventually brings them for you. */
+        if (leader === g.player && g.turn % 2 === 0) {
+          NATION_IDS.forEach((id) => {
+            if (id === g.player || !g.met?.[id]) return;
+            regard[id] = Math.max(0, (regard[id] ?? regardStart(id)) - 1);
+          });
+        }
+        const said = g.coalition || null;
+        let coalition = said;
+        if (leader && leader !== said) {
+          coalition = leader;
+          newLog.push({ turn: g.turn, m: leader === g.player
+            ? "Word comes back from three courts at once: you are the thing on this coast that needs settling. They are not wrong."
+            : `${nations[leader].short} is further ahead than anyone is comfortable with, and the courts have started saying so out loud.` });
+        } else if (!leader && said) {
+          coalition = null;
+          newLog.push({ turn: g.turn, m: said === g.player
+            ? "The coast stops talking about you. Somebody else is closer than they were."
+            : `${nations[said].short} is not so far ahead any more, and the talk moves on.` });
+        }
+        g = { ...g, regard, coalition };
+      }
+
       // --- the workshops turn out arms ---
       NATION_IDS.forEach((id) => {
         const n = nations[id];
@@ -6087,8 +6473,10 @@ export default function ColdCoast() {
         expired.forEach((pt) => {
           const def = PETITIONS.find((d) => d.id === pt.kind);
           if (!def) return;
-          const out = applyPetition({ provinces, nations, armies, promises }, g, def.ignore || {}, pt);
+          const reg = { ...(g.regard || {}) };
+          const out = applyPetition({ provinces, nations, armies, promises, regard: reg, accords, war }, g, def.ignore || {}, pt);
           armies = out.armies; promises = out.promises;
+          g = { ...g, regard: reg };
           if (def.ignore?.result) newLog.push({ turn: g.turn, m: fillPetition(def.ignore.result, pt, g) });
         });
         /* Promises kept, and promises broken. A word given costs nothing at
@@ -6142,15 +6530,24 @@ export default function ColdCoast() {
           const open = PETITIONS.filter((d) => { try { return !!d.need(ctx); } catch { return false; } });
           const pick = open.find((d) => d.id === "ransom") || (Math.random() < PETITION_CHANCE ? pickOne(open) : null);
           if (pick) {
+            /* Which realm this one is about. Most petitions mean the neighbour
+               you are not yet fighting; the ones that came from a court mean
+               the court that sent them. */
+            const who = pick.id === "ransom" ? ctx.captive?.by
+              : pick.id === "rival_tribute" ? ctx.bigRival
+              : pick.id === "rival_league" ? ctx.leaguer
+              : ctx.rival;
             const c = {
               place: ctx.herdNear?.place?.name || ctx.place?.name || ctx.seat?.name, placeK: ctx.herdNear?.place ? key(ctx.herdNear.place.c, ctx.herdNear.place.r) : ctx.place ? key(ctx.place.c, ctx.place.r) : null,
               seat: ctx.seat?.name,
               captainId: (pick.id === "captain_wall" ? ctx.hungryCaptain : pick.id === "captain_heard" ? ctx.sourCaptain : null)?.c.id
                 || (pick.id === "ransom" ? ctx.captive?.captain?.id : null),
               captainName: (pick.id === "captain_wall" ? ctx.hungryCaptain?.c.name : pick.id === "captain_heard" ? ctx.sourCaptain?.c.name : pick.id === "ransom" ? ctx.captive?.captain?.name : null),
-              rival: pick.id === "ransom" ? ctx.captive?.by : ctx.rival,
-              rivalName: nations[pick.id === "ransom" ? ctx.captive?.by : ctx.rival]?.name,
-              rivalShort: nations[pick.id === "ransom" ? ctx.captive?.by : ctx.rival]?.short,
+              rival: who,
+              rivalName: nations[who]?.name,
+              rivalShort: nations[who]?.short,
+              leaderShort: nations[ctx.leader]?.short,
+              leaderId: ctx.leader || null,
               ransom: pick.id === "ransom" ? ransomFor(ctx.captive) : null,
               warNames: ctx.warElsewhere ? `${nations[ctx.warElsewhere[0]]?.short}–${nations[ctx.warElsewhere[1]]?.short}` : "",
             };
@@ -6177,7 +6574,7 @@ export default function ColdCoast() {
       };
 
       return {
-        ...g, provinces, nations, armies, war, turn: g.turn + 1,
+        ...g, provinces, nations, armies, war, accords, turn: g.turn + 1,
         log: [...newLog, ...g.log].slice(0, 60), sel: null, over,
         notices: [...notices, ...g.notices].slice(0, 6),
         battle, pending: battle ? live.slice(1) : [],
@@ -6367,7 +6764,8 @@ export default function ColdCoast() {
           </RealmScreen>);
         if (game.screen === "world") return (
           <RealmScreen title="Rivals" onClose={shut}>
-            <WorldPanel game={game} P={P} atWar={atWar} onWar={toggleWar} />
+            <WorldPanel game={game} P={P} atWar={atWar} onWar={toggleWar}
+              onGift={sendGift} onAsk={askAccord} />
           </RealmScreen>);
         return null;
       })()}
@@ -7698,6 +8096,20 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           .map((p) => `${p.name}:${p.hard}:${game.armies.filter((a) => a.c === p.c && a.r === p.r)
             .reduce((n, a) => n + a.units.length, 0)}`),
         regard: Object.entries(game.regard || {}).map(([k, v]) => `${k}:${v}`),
+        /* The diplomatic position, which is otherwise only legible by opening
+           the envoy screen and reading six cards. */
+        diplo: {
+          coalition: game.coalition || null,
+          leader: runawayLeader(game) || null,
+          torn: game.torn || 0,
+          accords: Object.entries(game.accords || {})
+            .map(([k, v]) => `${k}:${v.id}:${Math.max(0, v.until - game.turn)}left${v.against ? `:vs${v.against}` : ""}`),
+          wars: NATION_IDS.filter((id) => id !== game.player && game.war[warKey(game.player, id)]),
+          // What each rung would be answered with right now, so a test can see
+          // the ladder is a ladder and not six buttons that all do nothing.
+          hear: NATION_IDS.filter((id) => id !== game.player && game.met?.[id]).map((id) =>
+            `${id}:` + ACCORD_IDS.map((aid) => `${aid}${wouldHear(game, game.player, id, aid, null).ok ? "+" : "-"}`).join("")),
+        },
         // Every band on the map with what is left of it, so a test can say
         // whether a field settled anything.
         bands: game.armies.map((a) => `${a.owner}:${a.id}:${a.c},${a.r}:${a.units.length}co:${a.units.reduce((n, u) => n + u.str, 0)}`),
@@ -9454,14 +9866,167 @@ function RealmPanel({ game, P, nat }) {
   );
 }
 
-function WorldPanel({ game, P, atWar, onWar }) {
+/* ------------------------------ THE ENVOY CARD -----------------------------
+   One rival realm, and everything you can do about them. The ladder is laid
+   out in order with the reason beside each rung, because a diplomacy screen
+   that only says no teaches the player nothing: it has to say what would make
+   the answer yes, and the answer here is the same one the game will give.
+   ------------------------------------------------------------------------ */
+function RivalCard({ game, P, id, war, leader, onWar, onGift, onAsk }) {
+  const [league, setLeague] = useState(null);
+  const n = game.nations[id];
+  const mine = Object.values(game.provinces).filter((p) => p.owner === P).length;
+  const theirs = Object.values(game.provinces).filter((p) => p.owner === id).length;
+  const st = standing(mine, theirs);
+  const gone = theirs === 0;
+  const live = accordLive(game, id);
+  const acc = live && ACCORDS[live.id];
+  const terms = live && accordTerms(live.id);
+  const scrap = game.nations[P].res.scrap || 0;
+  const peace = war ? peaceOffer(game, P, id) : null;
+  const others = NATION_IDS.filter((x) => x !== P && x !== id && game.met?.[x]
+    && Object.values(game.provinces).some((p) => p.owner === x));
+  return (
+    <div className="rounded border cc-border-31454f cc-bg-131f27 px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <LordPortrait id={id} className="cc-lordthumb" small />
+        <span className="flex-1 min-w-0">
+          <span className="disp cc-text-14d5px cc-block">{n.short}</span>
+          <span className="cc-text-11d5px cc-text-93a9b5 cc-block">{lordName(game.nations[id]) || "no one speaks for them"}</span>
+        </span>
+        <span className="num cc-text-12d5px cc-text-a0b6c1">{theirs} holdings</span>
+      </div>
+      <div className="cc-text-12px cc-text-93a9b5 mt-1 leading-snug">{n.trait}</div>
+      <div className="cc-text-12d5px cc-text-93a9b5 mt-1">
+        They regard you as{" "}
+        <span className={regardTone(game.regard?.[id])}>{regardBand(game.regard?.[id]).word}</span>
+        {!gone && <>, and on the map you are <span className="cc-text-c6d6de">{st.word}</span></>}.
+        {leader === id && <span className="cc-text-e8b98a"> Every court on the coast is talking about how much ground they hold.</span>}
+      </div>
+
+      {live && (
+        <div className="rounded border cc-border-3d5a4a cc-bg-131f27 px-2.5 py-1.5 mt-1.5 cc-accord">
+          <div className="cc-text-12d5px cc-text-9fd6b4">
+            {acc.name}{live.against && game.nations[live.against] ? ` against ${game.nations[live.against].short}` : ""}
+          </div>
+          <div className="cc-text-11d5px cc-text-93a9b5 mt-0.5 leading-snug">{acc.note}</div>
+          {terms.line && <div className="cc-text-11px cc-text-c6d6de mt-1 num">{terms.line}</div>}
+          <div className="cc-text-11px cc-text-6f8794 mt-1">
+            <span className="num">{live.until - game.turn}</span> seasons left on it.
+            {acc.pass && <span className="cc-text-8fe3d6"> The road is open both ways.</span>}
+          </div>
+        </div>
+      )}
+
+      {gone ? (
+        <div className="mt-2 cc-text-12d5px cc-text-8399a6 flex items-center gap-1.5"><Skull size={12} /> Wiped from the map</div>
+      ) : (
+        <div className="grid gap-1.5 mt-2">
+          <button type="button" onClick={() => onGift(id)} disabled={scrap < GIFT.cost.scrap}
+            title={`${GIFT.cost.scrap} scrap of worked iron. It buys nothing but a better hearing next time — which is the only thing that opens the rungs below.`}
+            className="cc-envoybtn">
+            Send an envoy with a gift · <span className="num">{GIFT.cost.scrap}</span> scrap
+          </button>
+
+          {ACCORD_IDS.filter((aid) => !war || ACCORDS[aid].inWar).map((aid) => {
+            const a = ACCORDS[aid];
+            const target = a.needsTarget ? league : null;
+            const say = wouldHear(game, P, id, aid, target);
+            const cost = a.cost?.scrap || 0;
+            const poor = cost > scrap;
+            const t = accordTerms(aid);
+            if (a.needsTarget) {
+              return (
+                <div key={aid} className="rounded border cc-border-31454f px-2.5 py-1.5">
+                  <div className="cc-text-12d5px cc-text-c6d6de">{a.ask}</div>
+                  <div className="cc-text-11d5px cc-text-93a9b5 mt-0.5 leading-snug">{a.note}</div>
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {others.map((x) => (
+                      <button key={x} type="button" onClick={() => setLeague(x)}
+                        className={`cc-formbtn ${league === x ? "cc-poston" : ""}`}>
+                        {game.nations[x].short}
+                      </button>
+                    ))}
+                    {!others.length && <span className="cc-text-11d5px cc-text-6f8794">Nobody else to name yet.</span>}
+                  </div>
+                  <button type="button" disabled={!say.ok || poor} onClick={() => onAsk(id, aid, target)}
+                    title={say.why} className="cc-envoybtn mt-1.5">
+                    {target ? `A league against ${game.nations[target].short}` : "Name who it is against"}
+                    {cost ? <> · <span className="num">{cost}</span> scrap</> : null}
+                  </button>
+                  <div className={`cc-text-11px mt-1 leading-snug ${say.ok ? "cc-text-9fd6b4" : "cc-text-8399a6"}`}>
+                    {poor ? `You have ${scrap} scrap.` : say.why}
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div key={aid} className="rounded border cc-border-31454f px-2.5 py-1.5">
+                <button type="button" disabled={!say.ok || poor} onClick={() => onAsk(id, aid, null)}
+                  title={a.why} className="cc-envoybtn">
+                  {a.ask}{cost ? <> · <span className="num">{cost}</span> scrap</> : null}
+                </button>
+                <div className="cc-text-11d5px cc-text-93a9b5 mt-1 leading-snug">{a.note}</div>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  <span className="cc-text-11px cc-text-6f8794 num">{a.term} seasons</span>
+                  {t.line && <span className="cc-text-11px cc-text-c6d6de num">{t.line}</span>}
+                </div>
+                <div className={`cc-text-11px mt-1 leading-snug ${say.ok ? "cc-text-9fd6b4" : "cc-text-8399a6"}`}>
+                  {poor ? `You have ${scrap} scrap.` : say.why}
+                </div>
+              </div>
+            );
+          })}
+
+          <button onClick={() => onWar(id)}
+            title={war
+              ? `${peace.cost} scrap to put it to them. ${peace.why}`
+              : live
+                ? `${acc.name} is still running. Going to war now is an oath broken, and every court on the coast will hear about it.`
+                : "Nothing stops you. They will remember who started it, and so will everybody watching."}
+            className={`py-1.5 w-full rounded cc-text-13px border transition-colors flex items-center justify-center gap-1.5 ${war
+              ? "cc-border-3d5a4a cc-text-9fd6b4 cc-hover-bg-1a2c22"
+              : "cc-border-5a3230 cc-text-e09a8a cc-hover-bg-2a1a18"}`}>
+            {war
+              ? <><Handshake size={13} /> Sue for peace · <span className="num">{peace.cost}</span> scrap</>
+              : <><Ban size={13} /> Declare war{live ? " and tear up the accord" : ""}</>}
+          </button>
+          {war && (
+            <div className={`cc-text-11px leading-snug ${peace.ok ? "cc-text-9fd6b4" : "cc-text-8399a6"}`}>{peace.why}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WorldPanel({ game, P, atWar, onWar, onGift, onAsk }) {
   const counts = {};
   NATION_IDS.forEach((id) => { counts[id] = Object.values(game.provinces).filter((p) => p.owner === id).length; });
+  const leader = runawayLeader(game);
+  const torn = accordTorn(game);
   return (
     <div>
       <div className="cc-text-13px cc-text-93a9b5 mb-3 leading-relaxed">
-        You can only take ground from someone you are at war with. Suing for peace costs 40 scrap and they may just keep it.
+        You can only take ground from somebody you are at war with. Everything else on this screen is a way of not
+        having to. What a realm will sign depends on what they think of you, and what they think of you depends on
+        how you have behaved — gifts, captains bought back, broken companies you let walk off a field you had won.
       </div>
+      {leader && (
+        <div className="rounded border cc-border-8a6f36 cc-bg-1a1410 px-3 py-2 mb-3 cc-text-12d5px leading-snug cc-coalition">
+          {leader === P
+            ? <>You hold more of this coast than anybody, and the courts have noticed. Expect to be declared on, and expect
+              to be trusted less at every table you sit down at.</>
+            : <>{game.nations[leader].short} holds more of this coast than anybody. Everybody else is readier than usual to
+              come into a league against them — including realms with no love for you.</>}
+        </div>
+      )}
+      {torn && (
+        <div className="rounded border cc-border-5a3230 cc-bg-1a1410 px-3 py-2 mb-3 cc-text-12d5px cc-text-e09a8a leading-snug">
+          You tore up an accord that was still running. Nobody is signing anything with you for another{" "}
+          <span className="num">{ACCORD_OATH - (game.turn - game.torn)}</span> seasons without thinking hard about it.
+        </div>
+      )}
       {!NATION_IDS.some((id) => id !== P && game.met?.[id]) && !MINOR_IDS.some((id) => game.met?.[id]) && (
         <div className="cc-text-13px cc-text-93a9b5 leading-relaxed mb-4">
           You have met nobody yet. Send warbands out; what you have not laid eyes on,
@@ -9526,37 +10091,10 @@ function WorldPanel({ game, P, atWar, onWar }) {
       </div>
 
       <div className="grid gap-2">
-        {NATION_IDS.filter((id) => id !== P && game.met?.[id]).map((id) => {
-          const n = game.nations[id];
-          const war = atWar(P, id);
-          const gone = counts[id] === 0;
-          return (
-            <div key={id} className="rounded border cc-border-31454f cc-bg-131f27 px-3 py-2.5">
-              <div className="flex items-center gap-2">
-                <LordPortrait id={id} className="cc-lordthumb" small />
-                <span className="flex-1 min-w-0">
-                  <span className="disp cc-text-14d5px cc-block">{n.short}</span>
-                  <span className="cc-text-11d5px cc-text-93a9b5 cc-block">{lordName(game.nations[id]) || "no one speaks for them"}</span>
-                </span>
-                <span className="num cc-text-12d5px cc-text-a0b6c1">{counts[id]} holdings</span>
-              </div>
-              <div className="cc-text-12px cc-text-93a9b5 mt-1 leading-snug">{n.trait}</div>
-              <div className="cc-text-12d5px cc-text-93a9b5 mt-1">
-                They regard you as{" "}
-                <span className={regardTone(game.regard?.[id])}>{regardBand(game.regard?.[id]).word}</span>.
-              </div>
-              {!gone && (
-                <button onClick={() => onWar(id)}
-                  className={`mt-2 w-full py-1.5 rounded cc-text-13px border transition-colors flex items-center justify-center gap-1.5 ${war
-                    ? "cc-border-3d5a4a cc-text-9fd6b4 cc-hover-bg-1a2c22"
-                    : "cc-border-5a3230 cc-text-e09a8a cc-hover-bg-2a1a18"}`}>
-                  {war ? <><Handshake size={13} /> Sue for peace</> : <><Ban size={13} /> Declare war</>}
-                </button>
-              )}
-              {gone && <div className="mt-2 cc-text-12d5px cc-text-8399a6 flex items-center gap-1.5"><Skull size={12} /> Wiped from the map</div>}
-            </div>
-          );
-        })}
+        {NATION_IDS.filter((id) => id !== P && game.met?.[id]).map((id) => (
+          <RivalCard key={id} game={game} P={P} id={id} war={atWar(P, id)} leader={leader}
+            onWar={onWar} onGift={onGift} onAsk={onAsk} />
+        ))}
       </div>
     </div>
   );
@@ -12817,6 +13355,12 @@ function Codex({ onClose }) {
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Meeting people</div>
             <p>What you have not laid eyes on, you know nothing about. The season your riders first come within sight of somebody, you get the meeting itself: where they are, what they are, why they are still here after three hundred years, and three or four things you might say to them. Every answer costs or pays something on the spot and every answer is remembered — each people carries a regard for you, said in a word, in the Rivals panel.</p>
             <p className="mt-2">Regard is not decoration. A people who think well of you will sell you what they dig out of the ground, season after season, and that arrangement sits in your ledger like any other income. A people you came at with a demand will cut the face back and range it, and the place costs more to take for the rest of the game. Marching companies onto their ground ends any arrangement the same day.</p>
+          </div>
+          <div>
+            <div className="disp cc-text-16px cc-text-e5eef3 mb-1">The rival realms</div>
+            <p>The six realms carry a regard for you the same way the peoples on the road do, and it moves on how you behave rather than on what you say: a gift, a captain bought back out of captivity, broken companies you let walk off a field you had already won. Taking ground costs you regard with the realm you took it from and a little with everybody watching.</p>
+            <p className="mt-2">What that regard buys is a ladder of accords, each with a term in seasons and a peace that holds while it runs — a bare truce, the road open both ways, a standing trade, tribute in either direction, and at the top a league against a third realm. Every rung says on the card what they would answer and why, so a refusal tells you what would change it. Tearing one up before its term is out is an oath broken, and every court on the coast holds it against you for eighteen seasons.</p>
+            <p className="mt-2">And nothing on this coast likes a realm that is running away with it. Once somebody is far enough clear of second place, the others are markedly keener to declare on them and readier to come into a league against them. That includes you.</p>
           </div>
           <div>
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Winning</div>

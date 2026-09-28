@@ -17,7 +17,10 @@
 export const REGARD_WORDS = [
   { at: 84, word: "sworn to you", tone: "good" },
   { at: 68, word: "warm", tone: "good" },
-  { at: 52, word: "civil", tone: "mid" },
+  /* Fifty has to fall inside "civil", because fifty is where everybody starts
+     and a shrug should not read as suspicion. It was 52, so every realm you
+     had never done anything to regarded you as wary. */
+  { at: 50, word: "civil", tone: "mid" },
   { at: 38, word: "wary", tone: "mid" },
   { at: 22, word: "cold", tone: "warn" },
   { at: 10, word: "hostile", tone: "bad" },
