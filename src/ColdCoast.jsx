@@ -6718,7 +6718,14 @@ export default function ColdCoast() {
       // --- income for everyone ---
       let playerInc = null;
       NATION_IDS.forEach((id) => {
-        const inc = nationIncome({ provinces, armies, nations }, id, g.turn);
+        /* The whole position, not three pieces of it. This was called with only
+           { provinces, armies, nations } — no `player`, no `pacts`, no
+           `accords` — and nationIncome's arrangement block starts with
+           `if (natId !== state.player) return`, so with no player on the object
+           every pact and every accord was skipped. Standing arrangements have
+           been showing in the header and never being paid in: the Dover toll's
+           metal, the Holk grain, a trade signed with a rival. All of it. */
+        const inc = nationIncome({ ...g, provinces, armies, nations }, id, g.turn);
         if (id === g.player) playerInc = inc;
         const res = { ...nations[id].res };
         res.food = res.food + inc.food;
