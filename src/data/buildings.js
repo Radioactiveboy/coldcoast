@@ -130,6 +130,53 @@ export const BUILDINGS = {
         desc: "Embrasures, a magazine under the rampart, and guns that stay laid." },
     ],
   },
+
+  /* ------------------------ WHAT A TRIBE CAN RAISE ------------------------
+     Everything above wants a cart of scrap and somebody who knows what a
+     sluice is. These three are what a people three hundred years into the cold
+     can put up with hands, spades and thorn — and they are the works that make
+     ground feel held rather than merely owned.
+
+     `move` makes the hex a road, `sight` carries your eyes, `garrison` opens
+     slots for companies that stand on the wall and do not march. All three keys
+     were already read off a story's reward; they are read off a building now
+     as well, which is the only reason these can exist as buildings at all. */
+  track: {
+    name: "Cleared track", scrap: 18, turns: 1, yield: {}, on: null, move: 1,
+    desc: "Stumps out, ruts filled, hurdles over the soft places. A cart can get through in a wet spring.",
+    up: [{ name: "Metalled road", scrap: 40, turns: 2, yield: {}, move: 1, supply: 1,
+           desc: "Rubble bottom, gravel top, ditches either side. It survives the winter and the carts go further." }],
+    fork: [
+      { id: "droveroad", name: "Drove road", scrap: 85, turns: 3, yield: { food: 2 }, move: 1, supply: 1,
+        desc: "Wide, walled and grazed on the hoof. Beasts come to market fat instead of thin." },
+      { id: "postroad", name: "Post road", scrap: 85, turns: 3, yield: {}, move: 1, supply: 2, sight: 1,
+        desc: "Riders in relay and a hut at every stage. Word travels, and so do rations." },
+    ],
+  },
+  watchfire: {
+    name: "Watch fire", scrap: 22, turns: 1, yield: {}, on: null, sight: 1,
+    desc: "A cage of iron on a pole and somebody whose whole job is to be cold and awake.",
+    up: [{ name: "Smoke tower", scrap: 45, turns: 2, yield: {}, sight: 2,
+           desc: "Green wood by day, fire by night, and a column you can see from the next valley." }],
+    fork: [
+      { id: "beacons", name: "Beacon chain", scrap: 95, turns: 3, yield: {}, sight: 3,
+        desc: "Stations all the way to the horizon. Nothing crosses this ground unremarked." },
+      { id: "smokeworks", name: "Signal works", scrap: 95, turns: 3, yield: {}, sight: 2, supply: 1,
+        desc: "Smoke that means things — numbers, directions, and come at once. The carts stop guessing." },
+    ],
+  },
+  wall: {
+    name: "Palisade", scrap: 35, turns: 2, yield: {}, on: null, def: 10, garrison: 1,
+    desc: "Split trunks in a trench, a walkway behind, and one gate. It will not stop a realm. It will stop a band.",
+    up: [{ name: "Ditch and bank", scrap: 70, turns: 3, yield: {}, def: 22, garrison: 2,
+           desc: "The spoil thrown inward and revetted, the ditch left wet. Somebody has to come down into it to reach you." }],
+    fork: [
+      { id: "stonecurtain", name: "Stone curtain", scrap: 150, turns: 4, yield: {}, def: 40, garrison: 4,
+        desc: "Coursed, capped and thick enough at the base to ignore. This has to be starved or breached." },
+      { id: "thornworks", name: "Thorn and ditchworks", scrap: 115, turns: 4, yield: { food: 1 }, def: 30, garrison: 3, deter: 2,
+        desc: "Three belts of blackthorn, a flooded ditch and no gate worth the name. Raiders look at it and go somewhere else." },
+    ],
+  },
 };
 
 /* The three steps of a chain, flattened. Level 1 is the entry itself, level 2

@@ -17,7 +17,7 @@ export const TECHS = {
   carting: {
     name: "Carts and drovers", short: "Carting", turns: 4, scrap: 30, needs: ["foraging"],
     desc: "Axles that survive a winter, harness that fits, and men who know how to keep four hundred head moving in the same direction. It is the least glorious thing a realm ever learns and it decides how far its warbands can go.",
-    gives: ["Baggage trains"], unlocks: ["baggage"],
+    gives: ["Baggage trains", "Cleared tracks"], unlocks: ["baggage", "track"],
   },
   bowyery: {
     name: "Recurve bowyery", short: "Bowyery", turns: 3, scrap: 25, needs: ["foraging"],
@@ -28,6 +28,11 @@ export const TECHS = {
     name: "Horse breaking", short: "Horse breaking", turns: 4, scrap: 35, needs: ["foraging"],
     desc: "The herds out on the grass will carry a rider, if you have the patience.",
     gives: ["Mounted companies"], unlocks: ["horse"],
+  },
+  earthworks: {
+    name: "Ditch, bank and hurdle", short: "Earthworks", turns: 3, scrap: 25, needs: ["scavenging"],
+    desc: "Nothing here that a people with spades and a winter cannot do. You throw the spoil inward, you revet it with hurdle, you leave the ditch wet, and you put somebody on top of it who is awake. It is the oldest answer to a band on the horizon and it is still the right one.",
+    gives: ["Palisades", "Watch fires"], unlocks: ["wall", "watchfire"],
   },
   coastworks: {
     name: "Piers and weirs", short: "Coastal works", turns: 3, scrap: 30, needs: [],
@@ -119,7 +124,7 @@ export const TECH_IDS = Object.keys(TECHS);
 export const TECH_TIERS = [
   { id: "tribal", name: "Tribal",
     desc: "What anyone can work out with horn, hide and a long winter.",
-    techs: ["foraging", "hosting", "carting", "bowyery", "horsemanship", "coastworks", "scavenging"] },
+    techs: ["foraging", "hosting", "carting", "bowyery", "horsemanship", "coastworks", "scavenging", "earthworks"] },
   { id: "forged", name: "Forged",
     desc: "Ore out of the ground, and a fire hot enough to change it.",
     techs: ["smelting", "toolcraft", "dyking"] },
