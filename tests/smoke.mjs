@@ -79,9 +79,24 @@ const closeOverlay = async () => {
    stops the game until you have said something back. Say the neutral thing and
    carry on, the way a player would when they are busy with something else. */
 const clearScenes = async () => {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 6; i++) {
+    /* A habit hardening is modal the same way a first meeting is, and it has to
+       be answered rather than dismissed — so a test that does not answer it
+       plays the rest of the game behind it. */
+    const habit = await page.evaluate(() => {
+      /* More than one full-screen panel can be in the document at once and the
+         stale one comes first, so find the one that actually holds the scene
+         rather than trusting the first match. */
+      const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")]
+        .find((x) => /A habit hardens/.test(x.innerText));
+      if (!ov) return false;
+      const b = [...ov.querySelectorAll("button")].filter((x) => !x.getAttribute("aria-label"));
+      if (b.length) { b[0].click(); return true; }
+      return false;
+    });
+    if (habit) { await wait(350); continue; }
     const open = await page.evaluate(() => {
-      const t = document.querySelector(".fixed.inset-0.z-50")?.innerText || "";
+      const t = [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n");
       return /What do you say to them\?|Choose what you say|So it is said/.test(t);
     });
     if (!open) return;
@@ -782,6 +797,12 @@ const oneBand = await page.evaluate(() =>
   !/Merge .* into this warband/.test(document.querySelector(".cc-warbar")?.innerText || ""));
 check("the two warbands become one", oneBand);
 
+/* A habit can harden at the end of any season, and it is modal — so clear
+   anything standing before a run of map gestures, or every one of them lands
+   on an overlay instead of the map. */
+await clearScenes();
+await closeOverlay();
+
 // A warband keeps the name you give it, and a company can be peeled off into
 // one of its own — which is the only way out of a warband sitting at the
 // eight-company limit. Split and then merge back, so the rest of this test
@@ -909,6 +930,7 @@ check("the host can march to the lair", ac === 20, `stopped at ${ac},${ar}`);
     `${base} at home, ${eats} out here`);
 }
 
+await clearScenes();
 // Investigate it — that is what puts a waster warband in the ruin.
 for (let i = 0; i < 8; i++) {
   await page.evaluate((c, r) => window.__ccPick(c, r), 20, 77);
@@ -1021,6 +1043,80 @@ check("the game survives the battle", await page.evaluate(() =>
   check("a cleared place starts its story", !ours || /Bristol Weir · 1 of 3/.test(t), ours ? "" : "the lair was not taken, so no story to start");
 }
 
+/* -------------------------------- THE COURT --------------------------------
+   Four systems behind one face at the top left. The thing worth checking is
+   not that each button works but that each of them actually reaches the numbers
+   the rest of the game multiplies by — a tradition or a piece of armour that
+   changes nothing is a card, not a system.
+   ------------------------------------------------------------------------ */
+const court = () => page.evaluate(() => window.__ccWild().court);
+const courtTab = async (name) => {
+  await page.evaluate((n) => {
+    const t = [...document.querySelectorAll(".cc-courttab")].find((x) => new RegExp(n).test(x.textContent));
+    if (t) t.click();
+  }, name);
+  await wait(350);
+};
+{
+  await closeOverlay();
+  const opened = await page.evaluate(() => {
+    const x = document.querySelector('[aria-label="Court"]');
+    if (x) { x.click(); return true; }
+    return false;
+  });
+  await wait(450);
+  const tabs = await page.evaluate(() => [...document.querySelectorAll(".cc-courttab")].map((x) => x.textContent.trim()));
+  check("the court opens from the top left", opened && tabs.length === 4, tabs.join(" · ") || "no tabs");
+
+  // The armoury. A bought piece goes on, and it moves what the banner is worth.
+  const before = await court();
+  const scrapWas = (await purse()).scrap;
+  // Whichever of the yards' pieces is offered — the slots a won piece already
+  // fills do not offer one, and which slots those are depends on the campaign.
+  const boughtIt = await page.evaluate(() => {
+    const b = [...document.querySelectorAll(".cc-envoybtn, .cc-formbtn")]
+      .find((x) => /cutting-yard helm|dredger's coat|boarding axe|silt pony|bund colours/.test(x.textContent) && !x.disabled);
+    if (b) { b.click(); return b.textContent.trim(); }
+    return null;
+  });
+  await wait(450);
+  const after = await court();
+  check("a piece of armour is worn and counts for something",
+    !!boughtIt && after.worn.length > before.worn.length && after.command !== before.command
+      && (await purse()).scrap < scrapWas,
+    `${boughtIt || "nothing on offer"} → ${after.worn.join(",") || "nothing"} — ${after.command}`);
+
+  // An office takes somebody out of the hall and pays for itself.
+  await courtTab("The court");
+  const hallWas = (await court()).hall;
+  const who = await page.evaluate(() => {
+    const card = [...document.querySelectorAll(".rounded.border")].find((c) => /Quartermaster of the stores/.test(c.textContent));
+    const b = card && [...card.querySelectorAll("button")].find((x) => !/Release/.test(x.textContent));
+    if (b) { b.click(); return b.textContent.trim(); }
+    return null;
+  });
+  await wait(400);
+  const held = await court();
+  check("a post takes somebody out of the hall",
+    !!who && held.offices.some((x) => x.startsWith("quartermaster:")) && held.hall === hallWas - 1,
+    held.offices.join(" · ") || "nobody holds anything");
+
+  // A decision is made once and stays made.
+  const tookWas = (await court()).taken.length;
+  await click("^60 scrap$"); await wait(450);
+  const decided = await court();
+  check("a realm can settle something once and for good",
+    decided.taken.length > tookWas, decided.taken.join(",") || "nothing settled");
+
+  // A tradition goes into an empty slot and reaches the ledger.
+  await courtTab("The way");
+  await click("Take it up"); await wait(400);
+  const way = await court();
+  check("a tradition is taken and the people hold it",
+    way.traditions.length === 1, way.traditions.join(",") || "no tradition held");
+  await closeOverlay();
+}
+
 /* ------------------------------ THE ENVOYS --------------------------------
    The rival realms used to be a single switch: declare war, or pay forty scrap
    and hope. There is a ladder now, and the whole point of it is that each rung
@@ -1100,12 +1196,22 @@ let stoppedBecause = "the two hundred tries ran out";
 for (let i = 0; i < 200 && seasons < 40; i++) {
   const text = await page.evaluate(() => document.body.innerText);
   if (text.includes("Give the order")) {
-    await click("Fight it out"); await wait(120);
-    await click("Count the cost"); await wait(120);
+    await click("Fight it out"); await wait(140);
+    /* A won field with broken companies opposite offers the three pursuit
+       orders INSTEAD of "Count the cost", so a loop that only knows the latter
+       sits in front of the same battle until it runs out of tries. Take
+       whatever the last button on the overlay is, which is the mildest of them. */
+    if (!(await click("Count the cost"))) {
+      await page.evaluate(() => {
+        const ov = document.querySelector(".fixed.inset-0.z-50");
+        if (ov) [...ov.querySelectorAll("button")].pop()?.click();
+      });
+    }
+    await wait(140);
     continue;
   }
   if (text.includes("Start again")) { stoppedBecause = "the game ended"; break; }
-  if (/What do you say to them\?|Choose what you say/.test(text)) { await clearScenes(); continue; }
+  if (/What do you say to them\?|Choose what you say|A habit hardens/.test(text)) { await clearScenes(); continue; }
   if (!(await click("End (spring|summer|autumn|winter)"))) { stoppedBecause = "no end-of-season order was offered"; break; }
   await wait(50);
   seasons++;
@@ -1126,6 +1232,20 @@ check("forty seasons pass", seasons === 40, `${seasons}${seasons < 40 ? ` — ${
      paying it. */
   check("a term on an accord actually runs out",
     !d.accords.some((x) => x.startsWith("lyon:")), d.accords.join(" ") || "nothing standing");
+}
+
+/* Forty seasons of fighting is several fields and at least one wall, so the
+   warlord should have been asked what it made of them — and whether the answer
+   was given or the scene is still standing, the milestone machinery has run. */
+{
+  const c = await court();
+  const fired = c.earned.length > 0 || c.answered.length > 0 || !!c.pending;
+  check("the warlord hardens into something over forty seasons", fired,
+    c.earned.length ? `${c.earned.join(", ")}` : c.pending ? `${c.pending} is being asked` : "nothing yet");
+  /* And whatever was won along the way is on the rack. Storming a wall, clearing
+     a wood and finishing a story all hand something over. */
+  check("what was won along the way is in the armoury",
+    c.worn.length + c.rack.length > 0, [...c.worn, ...c.rack].join(" · ") || "empty");
 }
 
 
@@ -1180,8 +1300,11 @@ check("forty seasons pass", seasons === 40, `${seasons}${seasons < 40 ? ` — ${
   check("breaking Rune is worth something in Brittany", rg(a2, "bretons") > rg(b2, "bretons"),
     `${rg(b2, "bretons")} -> ${rg(a2, "bretons")}`);
 }
+/* Read every full-screen panel, not the first one: several can be in the
+   document at once and the stale one comes first in document order. */
 check("the first chapter was written", await page.evaluate(() =>
-  /The state of the coast/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || "")));
+  [...document.querySelectorAll(".fixed.inset-0.z-50")]
+    .some((x) => /The state of the coast/.test(x.innerText))));
 await click("Read on"); await wait(300);
 
 /* Sieges. Walls have to appear on their own for a siege to ever be offered, and

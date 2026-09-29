@@ -159,11 +159,13 @@ export function popCeiling(k, terrain) {
   return Math.max(POP_CEILING_FLOOR, Math.round(base * POP_CEILING_MULT));
 }
 
-/* One season of natural change for one tile. Returns the new head count. */
-export function popGrow(pop, ceiling, season) {
+/* One season of natural change for one tile. Returns the new head count.
+   `bend` is what the realm's own customs do to it — an open gate draws people
+   in, a standing muster and a shut gate send them elsewhere. */
+export function popGrow(pop, ceiling, season, bend = 1) {
   const n = Math.max(0, Math.floor(pop || 0));
   if (n <= 0 || ceiling <= 0 || n >= ceiling) return n;
-  const rate = POP_GROWTH * (POP_GROWTH_SEASON[season] ?? 1);
+  const rate = POP_GROWTH * (POP_GROWTH_SEASON[season] ?? 1) * (bend ?? 1);
   if (rate <= 0) return n;
   // Always at least one when anything is growing at all, or a hamlet of 20
   // rounds to nothing every season and never moves.

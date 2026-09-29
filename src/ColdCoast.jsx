@@ -35,6 +35,11 @@ import { PETITIONS, PETITION_WAIT, PETITION_CHANCE, OATH_MEMORY } from "./data/p
 import { FIRST_MEET, PACTS, REGARD_START, regardBand, pactTerms } from "./data/encounters.js";
 import { ACCORDS, ACCORD_IDS, GIFT, ACCORD_OATH, ACCORD_BREAK_REGARD, PEACE,
          COALITION, standing, accordTerms } from "./data/accords.js";
+import { SLOTS, SLOT_KEYS, REGALIA, REGALIA_IDS, regaliaMods, regaliaChips,
+         seatPiece, wildPieces, storyPiece, buyable } from "./data/regalia.js";
+import { TRADITIONS, TRADITION_IDS, CULTURE_SLOTS, REFORM, cultureMods, traditionChips } from "./data/culture.js";
+import { OFFICES, OFFICE_IDS, officeShare, officeMods,
+         DECISIONS, DECISION_IDS, decisionMods, MILESTONES, MILESTONE_IDS } from "./data/court.js";
 import { STORIES } from "./data/stories.js";
 import { SUPPLY_MAX, SUPPLY_BANDS, bandAt, HARD_GROUND, WINTER_WASTE,
          CART_RELIEF_CAP, QUARTER_RELIEF, QUARTER_EASE } from "./data/supply.js";
@@ -344,6 +349,16 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-lordicon{width:100%;height:100%;object-fit:cover}
 .cc-lorddead{border-color:#8a4a38}
 .cc-lorddead .cc-lordicon{filter:grayscale(1) brightness(.55)}
+/* The court button: a face at the top left with the realm's mark on the corner
+   of it, which is the one place a strategy player looks without being told. */
+.cc-courtbtn{position:relative;width:38px;height:38px;border:1px solid #4d7488;border-radius:6px;overflow:visible;padding:0;display:flex;flex-shrink:0;transition:border-color .12s,box-shadow .12s}
+.cc-courtbtn:hover{border-color:#8fe3d6;box-shadow:0 0 0 2px rgba(143,227,214,.13)}
+.cc-courtface{width:100%;height:100%;object-fit:cover;border-radius:5px}
+.cc-courtsigil{position:absolute;right:-5px;bottom:-5px;width:19px;height:19px;border-radius:4px;display:flex;align-items:center;justify-content:center}
+.cc-lorddead .cc-courtface{filter:grayscale(1) brightness(.55)}
+.cc-courttab{position:relative;font-size:13px;padding:5px 12px 7px;border:1px solid #31454f;border-bottom:none;border-radius:6px 6px 0 0;color:#a0b6c1;background:#111b22;transition:color .12s,background .12s,border-color .12s}
+.cc-courttab:hover{color:#dfeaf0;border-color:#4d7488}
+.cc-courttabon{color:#f0e2b8;background:#18262e;border-color:#8a6f36}
 .cc-lordthumb{width:34px;height:41px;border-radius:3px;flex-shrink:0}
 .cc-lordbig{width:150px;height:180px;border-radius:5px;flex-shrink:0}
 .cc-bg-0d141af2{background-color:rgba(13,20,26,.97)}
@@ -522,6 +537,11 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-w-1060px{width:1060px}
 .cc-text-26px{font-size:26px}
 .cc-w-200px{width:200px}
+.cc-w-72px{width:72px}
+.cc-w-320px{width:320px}
+.cc-w-340px{width:340px}
+.cc-w-660px{width:660px}
+@media(min-width:768px){.cc-md-grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .cc-w-980px{width:980px}
 .cc-text-9db8c4{color:#9db8c4}
 .cc-text-c3cf7a{color:#c3cf7a}
@@ -1341,7 +1361,10 @@ const holdingsOf = (g, id) => Object.values(g.provinces).filter((p) => p.owner =
 function withRegard(g, id, d) {
   if (!id || !d) return g;
   const was = g.regard?.[id] ?? regardStart(id);
-  return { ...g, regard: { ...(g.regard || {}), [id]: Math.max(0, Math.min(100, Math.round(was + d))) } };
+  /* Goodwill is easier to earn for a realm that has somebody good carrying it.
+     Losing it is not: nobody is talked out of a grudge by a polite letter. */
+  const gain = d > 0 ? d * (realmCommand(g.nations?.[g.player]).regardGain || 1) : d;
+  return { ...g, regard: { ...(g.regard || {}), [id]: Math.max(0, Math.min(100, Math.round(was + gain))) } };
 }
 /* An accord that is still running. A lapsed one is left in the table until the
    season tick sweeps it, so the card can say it has just run out. */
@@ -1380,6 +1403,8 @@ function wouldHear(g, P, id, aid, target) {
   let regard = g.regard?.[id] ?? regardStart(id);
   if (leader === P) regard += COALITION.accord;     // the biggest realm is trusted least
   if (accordTorn(g)) regard -= ACCORD_BREAK_REGARD;
+  // Somebody good on the road makes a hard conversation easier.
+  regard += courtLedger(g.nations?.[P]).accordEase;
   const mine = holdingsOf(g, P), theirs = holdingsOf(g, id);
   const st = standing(mine, theirs);
 
@@ -1451,6 +1476,98 @@ function peaceOffer(g, P, id) {
 const lordTitle = (nat) => nat?.lord?.title || WARLORDS[nat?.id]?.title || "";
 /* What reaches every warband from the seat: the habits of a captain who rose
    to it, and the one the warlord was born with. */
+/* ------------------------------- THE COURT --------------------------------
+   Four systems hang off the seat now — what the warlord carries, the habits
+   they have hardened into, the traditions the realm holds, and who is sitting
+   in which office — and all four want to reach the same places every other
+   bonus in the game already reaches.
+
+   So they are gathered once, in the two shapes the game already multiplies by:
+   `courtCommand` for the field and the road, `courtLedger` for what the land
+   brings in and what the realm can do. Both are folded into realmCommand and
+   lordMul below, which means every call site that already asked about the
+   warlord picks all of this up without being touched.
+   ------------------------------------------------------------------------ */
+const COURT_KEYS = ["dealt", "taken", "morale", "storm", "ranged", "flank", "waste", "draw"];
+/* An office holds the person, not a reference to them: taking a post is a job,
+   so the captain leaves the hall and is not available for a warband until you
+   let them go. That also means everything below is a pure read of the realm —
+   no lookup, no game object threaded through twenty call sites. */
+function courtCommand(nat) {
+  const out = { ...NO_CAPTAIN, chase: 1, siege: 1, garrison: 1, regardGain: 1, raidOff: 1, xp: 0 };
+  if (!nat) return out;
+  const fold = (src) => {
+    COURT_KEYS.forEach((k) => { if (src[k]) out[k] *= src[k]; });
+    if (src.scout) out.scout += src.scout;
+    if (src.relief) out.relief += src.relief;
+    if (src.loyalGain) out.loyalGain *= src.loyalGain;
+    if (src.xp) out.xp += src.xp;
+    ["chase", "siege", "garrison", "regardGain", "raidOff"].forEach((k) => { if (src[k]) out[k] *= src[k]; });
+  };
+  // What is on the rack, and the habits the warlord hardened into.
+  if (!nat.lordDead) {
+    fold(regaliaMods(SLOT_KEYS.map((k) => nat.regalia?.[k]).filter(Boolean)));
+    (nat.earned || []).forEach((id) => { if (TRAITS[id]) fold(TRAITS[id]); });
+  }
+  // The traditions and the decisions reach everybody whether or not the seat
+  // is filled — that is the difference between a custom and an order.
+  fold(cultureMods(nat.traditions));
+  fold(decisionMods(nat.taken));
+  fold(officeMods(nat.offices));
+  return out;
+}
+/* And what it is worth to the ledger: resource multipliers, plus the handful
+   of realm-wide numbers that are not multipliers of anything. */
+function courtLedger(nat) {
+  const out = { mul: {}, research: 1, growth: 1, hall: 0, regardDrift: 0, accordEase: 0 };
+  if (!nat) return out;
+  const fold = (src) => {
+    Object.entries(src.mul || {}).forEach(([k, v]) => { out.mul[k] = (out.mul[k] || 1) * v; });
+    if (src.research) out.research *= src.research;
+    if (src.growth) out.growth *= src.growth;
+    if (src.hall) out.hall += src.hall;
+    if (src.regardDrift) out.regardDrift += src.regardDrift;
+    if (src.accordEase) out.accordEase += src.accordEase;
+  };
+  if (!nat.lordDead) {
+    fold(regaliaMods(SLOT_KEYS.map((k) => nat.regalia?.[k]).filter(Boolean)));
+    (nat.earned || []).forEach((id) => { if (TRAITS[id]) fold(TRAITS[id]); });
+  }
+  fold(cultureMods(nat.traditions));
+  fold(decisionMods(nat.taken));
+  fold(officeMods(nat.offices));
+  return out;
+}
+
+/* Something for the rack. Called from the four places on the map where a piece
+   can be taken — a seat stormed, a wood cleared, a story finished, a rival
+   warlord beaten in the field — and it refuses politely if the realm already
+   has that piece, because the point of a piece is that there is one of it.
+
+   Returns the new nations table and a line for the log, or null for nothing
+   doing, so a caller that was not going to say anything stays quiet. */
+function awardPiece(nations, natId, pieceId, how) {
+  const nat = nations[natId];
+  if (!nat || !pieceId || !REGALIA[pieceId]) return null;
+  const has = [...(nat.armoury || []), ...SLOT_KEYS.map((k) => nat.regalia?.[k])].filter(Boolean);
+  if (has.includes(pieceId)) return null;
+  const p = REGALIA[pieceId];
+  // An empty slot is filled straight away; a full one leaves the new piece on
+  // the rack for you to decide about, because the one being worn may be better.
+  const slotFree = !nat.regalia?.[p.slot];
+  const next = {
+    ...nat,
+    armoury: slotFree ? (nat.armoury || []) : [...(nat.armoury || []), pieceId],
+    regalia: slotFree ? { ...(nat.regalia || {}), [p.slot]: pieceId } : (nat.regalia || {}),
+    found: { ...(nat.found || {}), [pieceId]: how },
+  };
+  return {
+    nations: { ...nations, [natId]: next },
+    line: `${p.name} — ${how}.${slotFree ? " It goes straight on." : " It goes on the rack."}`,
+    piece: p,
+  };
+}
+
 function realmCommand(nat) {
   const out = { ...NO_CAPTAIN };
   const ids = [...(nat?.lord?.traits || []), ORIGINS[nat?.origin]?.trait].filter(Boolean);
@@ -1463,6 +1580,13 @@ function realmCommand(nat) {
     if (t.scout) out.scout += t.scout;
     if (t.relief) out.relief += t.relief;
   });
+  // ...and everything the court adds on top of the person in the chair.
+  const court = courtCommand(nat);
+  COURT_KEYS.forEach((k) => { out[k] *= court[k]; });
+  out.scout += court.scout;
+  out.relief += court.relief;
+  out.loyalGain *= court.loyalGain;
+  ["chase", "siege", "garrison", "regardGain", "raidOff", "xp"].forEach((k) => { out[k] = court[k]; });
   return out;
 }
 /* -------------------------------- CHAPTERS --------------------------------
@@ -2836,6 +2960,16 @@ function buildWorld() {
       // Two fighting men at the seat, waiting to be given something to lead.
       hall: (() => { const a = makeCaptain(id, `h${id}a`); return [a, makeCaptain(id, `h${id}b`, [a.name])]; })(),
       arms: { spearmen: 150, axemen: 120, hunters: 0 },
+      /* The court. Everything here starts empty on purpose: a realm three
+         hundred years into the cold has habits, but it has not yet decided
+         what it is, and that is the game. */
+      regalia: {},        // what the warlord is wearing, by slot
+      armoury: [],        // what is on the rack and not being worn
+      earned: [],         // habits the warlord hardened into at a milestone
+      met_milestones: [], // ...and which milestones have already been answered
+      traditions: [],     // how the people live, up to CULTURE_SLOTS of them
+      taken: [],          // the decisions this realm has made, once each
+      offices: {},        // who holds which post, as the captain themselves
       dead: false,
     };
     if (provinces[ck]) {
@@ -3541,7 +3675,7 @@ function initialState() {
   return {
     turn: 1, player: null, ...w, war, armies, uid,
     sel: null, battle: null, log: [], recruit: null, over: null,
-    showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, regard: {}, pacts: {}, accords: {}, torn: 0, coalition: null,
+    showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, regard: {}, pacts: {}, accords: {}, torn: 0, coalition: null, milestone: null,
     meetings: [], notices: [], focus: null, sound: { music: true, sfx: true },
     goals: { done: {}, hidden: false }, summary: null, roster: false,
     petitions: [], promises: [], hearing: null, chapter: null, hall: null,
@@ -3653,7 +3787,7 @@ export default function ColdCoast() {
       if (p.owner !== P) return;
       const now = p.pop || 0;
       total += now;
-      let then = popGrow(now, popCeiling(key(p.c, p.r), p.t), season);
+      let then = popGrow(now, popCeiling(key(p.c, p.r), p.t), season, courtLedger(game.nations[P]).growth);
       if (p.grow && p.grow.left > 0) then += p.grow.per;
       after += then;
     });
@@ -3985,7 +4119,7 @@ export default function ColdCoast() {
       const b = g.battle;
       if (!b) return { ...g, battle: null };
       let armies = [...g.armies];
-      const nations = { ...g.nations };
+      let nations = { ...g.nations };
       const provinces = { ...g.provinces };
       const pSideB = b.aNat === g.player ? "a" : b.dNat === g.player ? "d" : null;
       const foeSide = pSideB === "a" ? "d" : "a";
@@ -4004,6 +4138,8 @@ export default function ColdCoast() {
         const str = win.reduce((n, u) => n + u.str, 0) || 1;
         const horse = win.filter((u) => unitStats(u).cav).reduce((n, u) => n + u.str, 0);
         let c = Math.min(PURSUE.cap, PURSUE.base + (horse / str) * PURSUE.perHorse);
+        // A warlord who has learned what a beaten army is worth catches more.
+        c *= realmCommand(nations[b.winner === "a" ? b.aNat : b.dNat]).chase || 1;
         if (pSideB && side === foeSide) {
           if (choice === "ride") c = Math.min(PURSUE.rideCap, c * PURSUE.rideMul + PURSUE.rideAdd);
           if (choice === "spare") c = 0;
@@ -4033,7 +4169,8 @@ export default function ColdCoast() {
           });
         return [...b[side].units, ...ran]
           .map((u) => ({ ...u, morale: Math.max(20, u.maxMorale * 0.7),
-                         xp: (u.xp || 0) + XP_FIELD + (b.winner === side ? XP_WON : 0),
+                         xp: (u.xp || 0) + XP_FIELD + (b.winner === side ? XP_WON : 0)
+                           + (side === pSideB ? Math.round(realmCommand(nations[g.player]).xp || 0) : 0),
                          fields: (u.fields || 0) + 1 }));
       };
 
@@ -4096,6 +4233,27 @@ export default function ColdCoast() {
         if (b.storming && pSideB === "a") t.walls = (t.walls || 0) + 1;
         t.fields = (t.fields || 0) + 1;
         nations[g.player] = { ...nations[g.player], tally: t };
+        /* And what came off the field. A wood gives up whatever the thing in
+           it was wearing; a wall gives up something of whoever held it; and a
+           warlord who loses the ground he was standing on loses more. */
+        let took = null;
+        if (loser?.owner === "beasts" || loser?.mob) {
+          const pool = wildPieces().filter((id) => {
+            const nt = nations[g.player];
+            return ![...(nt.armoury || []), ...SLOT_KEYS.map((k) => nt.regalia?.[k])].includes(id);
+          });
+          if (pool.length && Math.random() < 0.45) took = awardPiece(nations, g.player, pickOne(pool), `cut out of the fighting at ${b.provName}`);
+        }
+        if (!took && b.storming && pSideB === "a") {
+          const bk = b.hex ? key(b.hex.c, b.hex.r) : null;
+          const held = (bk && provinces[bk]?.seat) || (pSideB === "a" ? b.dNat : b.aNat);
+          took = awardPiece(nations, g.player, seatPiece(held), `taken when ${b.provName} was stormed`);
+        }
+        if (!took && (pSideB === "a" ? b.dCommander : b.aCommander)) {
+          const foeNat = pSideB === "a" ? b.dNat : b.aNat;
+          took = awardPiece(nations, g.player, seatPiece(foeNat), `taken off ${WARLORDS[foeNat]?.name || FACTION[foeNat]?.short} at ${b.provName}`);
+        }
+        if (took) { nations = took.nations; afterMsg += ` ${took.line}`; }
       }
 
       armies = armies.map((a) => {
@@ -4637,6 +4795,24 @@ export default function ColdCoast() {
     armies: g.armies.map((a) => (a.owner === P ? { ...a, lord: false } : a)),
   }));
 
+  /* Which of the two the milestone hardened into. Written on the warlord, and
+     the milestone marked answered whichever way it went. */
+  function chooseHabit(id, trait) {
+    setGame((g) => {
+      const n = g.nations[P];
+      if (!n || !MILESTONES[id] || (n.met_milestones || []).includes(id)) return { ...g, milestone: null };
+      Sound.play("tick");
+      return {
+        ...g, milestone: null,
+        nations: { ...g.nations, [P]: { ...n,
+          earned: [...(n.earned || []), trait],
+          met_milestones: [...(n.met_milestones || []), id] } },
+        log: [{ turn: g.turn, m: `${lordName(n)} is ${(TRAITS[trait]?.name || trait).toLowerCase()} now. ${TRAITS[trait]?.desc || ""}` },
+          ...g.log].slice(0, 60),
+      };
+    });
+  }
+
   /* Answering a petition. The effect is data; this is the one place it is
      read. Works on a draft of the state so the end of the turn can use it
      for whatever nobody answered. */
@@ -4917,8 +5093,15 @@ export default function ColdCoast() {
     } };
     const log = [{ turn: g.turn, m: `${pr.name}: ${step.done}` }];
     if (finished) log.unshift({ turn: g.turn, m: `${st.title} — ${st.reward.text}` });
+    /* A place that has given up its whole story gives up something you can
+       carry, and it is the only one of its kind on the coast. */
+    let nations = g.nations;
+    if (finished && pr.owner === g.player) {
+      const took = awardPiece(nations, g.player, storyPiece(`${pr.name} ${st.title}`), `out of ${pr.name}, at the end of it`);
+      if (took) { nations = took.nations; log.unshift({ turn: g.turn, m: took.line }); }
+    }
     return {
-      ...g, provinces,
+      ...g, provinces, nations,
       log: [...log, ...g.log].slice(0, 60),
       notices: finished ? [{ id: `n${g.turn}st`, kind: "built", text: `${st.title}: ${st.reward.text}`, k }, ...g.notices].slice(0, 6) : g.notices,
     };
@@ -5225,6 +5408,161 @@ export default function ColdCoast() {
         out = withRegard(out, other, -10);
       }
       return { ...out, log: [{ turn: g.turn, m: msg }, ...out.log].slice(0, 60) };
+    });
+  }
+
+  /* ------------------------------- THE COURT -----------------------------
+     Everything the Court screen can actually do. Each of these is small,
+     because the interesting part is the tables they read, not the doing. */
+
+  /* Put a piece on, taking off whatever was in that slot. */
+  function wearPiece(pieceId) {
+    setGame((g) => {
+      const n = g.nations[P];
+      const p = REGALIA[pieceId];
+      if (!n || !p || !(n.armoury || []).includes(pieceId)) return g;
+      const was = n.regalia?.[p.slot] || null;
+      Sound.play("tick");
+      return { ...g, nations: { ...g.nations, [P]: { ...n,
+        regalia: { ...(n.regalia || {}), [p.slot]: pieceId },
+        armoury: [...(n.armoury || []).filter((x) => x !== pieceId), ...(was ? [was] : [])] } } };
+    });
+  }
+  function stowPiece(slot) {
+    setGame((g) => {
+      const n = g.nations[P];
+      const was = n?.regalia?.[slot];
+      if (!was) return g;
+      const regalia = { ...(n.regalia || {}) }; delete regalia[slot];
+      return { ...g, nations: { ...g.nations, [P]: { ...n,
+        regalia, armoury: [...(n.armoury || []), was] } } };
+    });
+  }
+  /* The yards will make you a serviceable version of anything. It is never the
+     good version — that has to be taken off somebody. */
+  function buyPiece(pieceId) {
+    setGame((g) => {
+      const n = g.nations[P];
+      const p = REGALIA[pieceId];
+      if (!n || !p || !p.buy) return g;
+      const short = Object.entries(p.buy).find(([k, v]) => (n.res[k] || 0) < v);
+      if (short) return { ...g, log: [{ turn: g.turn,
+        m: `${p.name} would take ${p.buy[short[0]]} ${short[0] === "food" ? "rations" : short[0]}, and you have ${Math.round(n.res[short[0]] || 0)}.` },
+        ...g.log].slice(0, 60) };
+      const res = { ...n.res };
+      Object.entries(p.buy).forEach(([k, v]) => { res[k] = Math.max(0, res[k] - v); });
+      const slotFree = !n.regalia?.[p.slot];
+      Sound.play("tick");
+      return { ...g, nations: { ...g.nations, [P]: { ...n, res,
+        regalia: slotFree ? { ...(n.regalia || {}), [p.slot]: pieceId } : (n.regalia || {}),
+        armoury: slotFree ? (n.armoury || []) : [...(n.armoury || []), pieceId],
+        found: { ...(n.found || {}), [pieceId]: "made at the cutting yards" } } },
+        log: [{ turn: g.turn, m: `${p.name}, out of the yards.` }, ...g.log].slice(0, 60) };
+    });
+  }
+
+  /* A post takes the person: they leave the hall and are not available for a
+     warband until you let them go. */
+  function holdOffice(officeId, captainId) {
+    setGame((g) => {
+      const n = g.nations[P];
+      if (!n || !OFFICES[officeId]) return g;
+      const c = (n.hall || []).find((x) => x.id === captainId);
+      if (!c) return g;
+      const out = n.offices?.[officeId] || null;
+      Sound.play("tick");
+      return { ...g, nations: { ...g.nations, [P]: { ...n,
+        hall: [...(n.hall || []).filter((x) => x.id !== captainId), ...(out ? [out] : [])],
+        offices: { ...(n.offices || {}), [officeId]: c } } },
+        log: [{ turn: g.turn, m: `${c.name} is ${OFFICES[officeId].name.toLowerCase()} of ${OFFICES[officeId].of}.` },
+          ...g.log].slice(0, 60) };
+    });
+  }
+  function leaveOffice(officeId) {
+    setGame((g) => {
+      const n = g.nations[P];
+      const c = n?.offices?.[officeId];
+      if (!c) return g;
+      const offices = { ...(n.offices || {}) }; delete offices[officeId];
+      return { ...g, nations: { ...g.nations, [P]: { ...n, offices,
+        hall: [...(n.hall || []), c] } },
+        log: [{ turn: g.turn, m: `${c.name} gives up the ${OFFICES[officeId].name.toLowerCase()}'s post and goes back to the hall.` },
+          ...g.log].slice(0, 60) };
+    });
+  }
+
+  /* Taking a tradition into an empty slot costs nothing but the saying of it.
+     Putting one where another already stood is a reform, and reforms are
+     remembered. */
+  function takeTradition(id, replacing) {
+    setGame((g) => {
+      const n = g.nations[P];
+      if (!n || !TRADITIONS[id] || (n.traditions || []).includes(id)) return g;
+      const held = n.traditions || [];
+      if (!replacing && held.length >= CULTURE_SLOTS) return g;
+      if (replacing && n.res.scrap < REFORM.scrap) {
+        return { ...g, log: [{ turn: g.turn, m: `A reform costs ${REFORM.scrap} scrap and a great deal of talking.` }, ...g.log].slice(0, 60) };
+      }
+      const res = { ...n.res };
+      if (replacing) res.scrap -= REFORM.scrap;
+      const traditions = replacing ? held.map((x) => (x === replacing ? id : x)) : [...held, id];
+      let out = { ...g, nations: { ...g.nations, [P]: { ...n, res, traditions } },
+        log: [{ turn: g.turn, m: replacing
+          ? `${TRADITIONS[replacing].name} gives way to ${TRADITIONS[id].name.toLowerCase()}. It will be talked about for years.`
+          : `${TRADITIONS[id].name}: ${TRADITIONS[id].line}` }, ...g.log].slice(0, 60) };
+      // A people who liked the old way, or the new one, says so.
+      Object.entries(TRADITIONS[id].regard || {}).forEach(([who, v]) => {
+        if (who === "all") NATION_IDS.concat(MINOR_IDS).forEach((x) => {
+          if (x !== P && g.met?.[x]) out = withRegard(out, x, v);
+        });
+        else if (g.met?.[who]) out = withRegard(out, who, v);
+      });
+      if (replacing) {
+        NATION_IDS.concat(MINOR_IDS).forEach((x) => { if (x !== P && g.met?.[x]) out = withRegard(out, x, REFORM.regard); });
+      }
+      Sound.play("tick");
+      return out;
+    });
+  }
+
+  /* A decision is made once and stays made. */
+  function decide(id) {
+    setGame((g) => {
+      const n = g.nations[P];
+      const d = DECISIONS[id];
+      if (!n || !d || (n.taken || []).includes(id)) return g;
+      const short = Object.entries(d.cost || {}).find(([k, v]) => (n.res[k] || 0) < v);
+      if (short) return { ...g, log: [{ turn: g.turn,
+        m: `${d.name} needs ${d.cost[short[0]]} ${short[0] === "food" ? "rations" : short[0] === "men" ? "recruits" : short[0]}, and you have ${Math.round(n.res[short[0]] || 0)}.` },
+        ...g.log].slice(0, 60) };
+      const res = { ...n.res };
+      Object.entries(d.cost || {}).forEach(([k, v]) => { res[k] = Math.max(0, res[k] - v); });
+      const gives = d.gives || {};
+      let hall = n.hall || [];
+      for (let i = 0; i < (gives.hall || 0); i++) {
+        hall = [...hall, makeCaptain(P, `d${id}${i}${g.turn}`, hall.map((c) => c.name))];
+      }
+      const provinces = { ...g.provinces };
+      // People arrive at the seat, and the chroniclers come back with ground.
+      const seatK = Object.keys(provinces).find((k) => provinces[k].capital && provinces[k].seat === P);
+      if (gives.pop && seatK) provinces[seatK] = { ...provinces[seatK], pop: (provinces[seatK].pop || 0) + gives.pop };
+      if (gives.reveal && seatK) {
+        const seat = provinces[seatK];
+        Object.keys(provinces)
+          .filter((k) => !provinces[k].explored)
+          .sort((a, b) => hexDist(provinces[a].c, provinces[a].r, seat.c, seat.r)
+                        - hexDist(provinces[b].c, provinces[b].r, seat.c, seat.r))
+          .slice(0, gives.reveal * 6)
+          .forEach((k) => { provinces[k] = { ...provinces[k], explored: true }; });
+      }
+      let out = { ...g, provinces,
+        nations: { ...g.nations, [P]: { ...n, res, hall, taken: [...(n.taken || []), id] } },
+        log: [{ turn: g.turn, m: `${d.name}. ${d.done}` }, ...g.log].slice(0, 60) };
+      if (gives.regardAll) NATION_IDS.concat(MINOR_IDS).forEach((x) => {
+        if (x !== P && g.met?.[x]) out = withRegard(out, x, gives.regardAll);
+      });
+      Sound.play("claim");
+      return out;
     });
   }
 
@@ -5751,11 +6089,13 @@ export default function ColdCoast() {
         // The garrison thins on short rations as surely as the town does.
         armies.forEach((a) => {
           if (a.c !== pv.c || a.r !== pv.r || a.owner !== pv.owner) return;
-          a.units = a.units.map((u) => ({ ...u, str: Math.max(1, Math.round(u.str * (1 - SIEGE.garrison))) }));
+          const wear = SIEGE.garrison * (realmCommand(nations[sg.by]).garrison || 1);
+          a.units = a.units.map((u) => ({ ...u, str: Math.max(1, Math.round(u.str * (1 - Math.min(0.5, wear)))) }));
         });
         // Sitting still in the mud costs the besieger rations.
         const bn = nations[sg.by];
-        if (bn) nations[sg.by] = { ...bn, res: { ...bn.res, food: Math.max(0, bn.res.food - SIEGE.upkeep) } };
+        const sit = Math.round(SIEGE.upkeep * (realmCommand(nations[sg.by]).siege || 1));
+        if (bn) nations[sg.by] = { ...bn, res: { ...bn.res, food: Math.max(0, bn.res.food - sit) } };
         // A garrison with a breach in its wall and the numbers to use it does
         // not wait to be stormed.
         if (pv.owner !== g.player && sg.by === g.player && now >= 1 && Math.random() < 0.5) {
@@ -5860,6 +6200,9 @@ export default function ColdCoast() {
               if (spare.includes(q.owner)) return -1000;
               // Whoever they are actually out to hurt is worth crossing ground for.
               if (hunt.includes(q.owner)) v += 60;
+              /* And a realm whose warlord has a name with iron in it is ground
+                 they would rather strip somewhere else. */
+              if (q.owner === g.player) v *= realmCommand(nations[g.player]).raidOff || 1;
               if (home && cfg) {
                 const d = hexDist(q.c, q.r, home[0], home[1]);
                 if (d > (cfg.reach || 8)) v -= (d - (cfg.reach || 8)) * 25;
@@ -6122,6 +6465,27 @@ export default function ColdCoast() {
         g = { ...g, met, regard, meetings };
       }
 
+      /* --- what the warlord has become ---
+         A milestone is a fact about a person, not a bar filling up: five
+         fields, a wall taken, a people sworn to you, thirty seasons in the
+         chair. When one comes true you are asked which of two habits it
+         hardened into, once, and the answer is written on them for good. */
+      if (!g.milestone && lordAlive(nations[g.player])) {
+        const t = nations[g.player]?.tally || {};
+        const ctx = {
+          ...t,
+          sworn: NATION_IDS.concat(MINOR_IDS)
+            .filter((id) => id !== g.player && (g.regard?.[id] ?? 0) >= 84).length,
+          seasons: g.turn - (nations[g.player]?.lord?.succeeded || 1),
+        };
+        const answered = nations[g.player]?.met_milestones || [];
+        const due = MILESTONE_IDS.find((id) => {
+          if (answered.includes(id)) return false;
+          try { return !!MILESTONES[id].need(ctx); } catch { return false; }
+        });
+        if (due) g = { ...g, milestone: due };
+      }
+
       /* --- what the envoys agreed, and what the coast thinks of you ---
          An accord has a term on it. When it runs out it is said so, once, and
          then it is simply gone: the ledger stops paying it and the road shuts.
@@ -6181,7 +6545,10 @@ export default function ColdCoast() {
           const q = provinces[pk];
           if (!q.owner || isMinor(q.owner)) return;      // only realms tend their ground
           const ceil = popCeiling(pk, q.t);
-          let pop = popGrow(q.pop, ceil, sea);
+          /* How a realm lives decides whether anybody moves there. An open
+             gate fills a ward; a general muster empties one. */
+          const bent = courtLedger(nations[q.owner]).growth;
+          let pop = popGrow(q.pop, ceil, sea, bent);
           let grow = q.grow;
           if (grow && grow.left > 0) {
             // Rations already paid for. This lands whatever the season does,
@@ -6680,12 +7047,22 @@ export default function ColdCoast() {
           onBegin={beginBattle} />
       )}
       {game.lords && (
-        <WarlordScreen game={game} P={P} onClose={() => setGame((g) => ({ ...g, lords: false }))}
+        <CourtScreen game={game} P={P}
+          tab={game.courtTab || "lord"}
+          onTab={(k) => setGame((g) => ({ ...g, courtTab: k }))}
+          onClose={() => setGame((g) => ({ ...g, lords: false }))}
           onSuccession={() => setGame((g) => ({ ...g, lords: false, nations: { ...g.nations, [P]: { ...g.nations[P], succession: true } } }))}
-          onHall={() => setGame((g) => ({ ...g, lords: false, hall: "open" }))} />
+          onHall={() => setGame((g) => ({ ...g, lords: false, hall: "open" }))}
+          onHear={(pid) => setGame((g) => ({ ...g, lords: false, hearing: pid }))}
+          onWear={wearPiece} onStow={stowPiece} onBuy={buyPiece}
+          onHold={holdOffice} onLeave={leaveOffice}
+          onTake={takeTradition} onDecide={decide} />
       )}
       {game.chapter && !game.battle && (
         <ChapterScene chapter={game.chapter} onClose={() => setGame((g) => ({ ...g, chapter: null }))} />
+      )}
+      {game.milestone && !game.battle && MILESTONES[game.milestone] && (
+        <MilestoneScene id={game.milestone} game={game} P={P} onChoose={chooseHabit} />
       )}
       {!game.battle && (game.meetings || []).length > 0 && FIRST_MEET[game.meetings[0]] && (
         <EncounterScene enc={FIRST_MEET[game.meetings[0]]} game={game} P={P} onAnswer={answerEncounter} />
@@ -6789,11 +7166,17 @@ function TopBar({ nat, income, turn, owned, armies, idle, pop, missions, onEnd, 
   return (
     <header className="shrink-0 border-b cc-border-28363f cc-bg-0a1015a90 backdrop-blur px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
       <div className="flex items-center gap-2.5 pr-5 border-r cc-border-28363f">
-        <span className="shrink-0 flex items-center justify-center rounded"
-          style={{ width: 30, height: 30, background: mix(nat.color, "#0b1116", 0.82),
-                   border: `1px solid ${mix(nat.color, "#0b1116", 0.5)}` }}>
-          <Sigil id={nat.id} size={19} color={nat.color} />
-        </span>
+        {/* The court, at the top left, because that is where three decades of
+            strategy games have taught everybody to look for their own face. */}
+        <button type="button" onClick={onLords} aria-label="Court"
+          title={nat.lordDead ? "Your realm has no warlord" : "Your court — the warlord, the hall, the offices and the way your people live"}
+          className={`cc-courtbtn ${nat.lordDead ? "cc-lorddead" : ""}`}>
+          <LordPortrait id={nat.id} className="cc-courtface" small />
+          <span className="cc-courtsigil" style={{ background: mix(nat.color, "#0b1116", 0.82),
+                 border: `1px solid ${mix(nat.color, "#0b1116", 0.45)}` }}>
+            <Sigil id={nat.id} size={13} color={nat.color} />
+          </span>
+        </button>
         <div className="leading-tight">
           <div className="disp cc-text-17px">{nat.name}</div>
           <div className="cc-text-12px cc-text-93a9b5">
@@ -6864,11 +7247,6 @@ function TopBar({ nat, income, turn, owned, armies, idle, pop, missions, onEnd, 
           </button>
         ))}
       </div>
-      <button type="button" onClick={onLords}
-        title={nat.lordDead ? "Your realm has no warlord" : "Your warlord"}
-        className={`cc-lordbtn ${nat.lordDead ? "cc-lorddead" : ""}`} aria-label="Warlord">
-        <LordPortrait id={nat.id} className="cc-lordicon" small />
-      </button>
       <button type="button" onClick={() => onSound("music")} title="Background music"
         className={`cc-sndbtn ${sound.music ? "cc-sndon" : ""}`} aria-pressed={sound.music}>
         <Music size={15} />
@@ -8096,6 +8474,29 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           .map((p) => `${p.name}:${p.hard}:${game.armies.filter((a) => a.c === p.c && a.r === p.r)
             .reduce((n, a) => n + a.units.length, 0)}`),
         regard: Object.entries(game.regard || {}).map(([k, v]) => `${k}:${v}`),
+        /* What is around the seat: what the warlord carries, what they have
+           hardened into, how the people live, what the realm has settled once
+           and for good, and who is sitting in which chair. */
+        court: (() => {
+          const n = game.nations[game.player] || {};
+          return {
+            worn: SLOT_KEYS.map((k) => (n.regalia?.[k] ? `${k}:${n.regalia[k]}` : null)).filter(Boolean),
+            rack: n.armoury || [],
+            earned: n.earned || [],
+            answered: n.met_milestones || [],
+            traditions: n.traditions || [],
+            taken: n.taken || [],
+            offices: Object.entries(n.offices || {}).map(([k, c]) => `${k}:${c?.name || "?"}`),
+            hall: (n.hall || []).length,
+            // What all of it comes to, which is the only thing that matters.
+            command: (() => {
+              const c = realmCommand(n);
+              return ["dealt", "taken", "morale", "storm", "draw"]
+                .map((k) => `${k}:${c[k].toFixed(3)}`).join(" ");
+            })(),
+            pending: game.milestone || null,
+          };
+        })(),
         /* The diplomatic position, which is otherwise only legible by opening
            the envoy screen and reading six cards. */
         diplo: {
@@ -11848,13 +12249,23 @@ function commandMul(natId) {
 }
 function lordMul(natId, nat) {
   const out = { mul: {}, upkeep: 1, research: 1, move: 0, dealt: 1, taken: 1, recruitCost: 1 };
-  if (nat && nat.lordDead) return { ...out, ...LEADERLESS };
+  /* The court first, and whatever happens to the seat. A dyke does not stop
+     holding the water back because the warlord died, and a tradition is not a
+     thing one person was doing. */
+  const court = courtLedger(nat);
+  const withCourt = (o) => {
+    const m = { ...o, mul: { ...o.mul } };
+    Object.entries(court.mul).forEach(([k, v]) => { m.mul[k] = (m.mul[k] || 1) * v; });
+    m.research *= court.research;
+    return m;
+  };
+  if (nat && nat.lordDead) return withCourt({ ...out, ...LEADERLESS });
   const born = ORIGINS[nat?.origin]?.trait && TRAITS[ORIGINS[nat.origin].trait];
   if (born?.mul) Object.entries(born.mul).forEach(([k, v]) => { out.mul[k] = (out.mul[k] || 1) * v; });
   // A captain who took the seat brings their own habits, not the founder's.
-  if (nat?.lord?.succeeded) return out;
+  if (nat?.lord?.succeeded) return withCourt(out);
   const w = WARLORDS[natId];
-  if (!w) return out;
+  if (!w) return withCourt(out);
   w.traits.forEach((t) => {
     Object.entries(t.mul || {}).forEach(([k, v]) => { out.mul[k] = (out.mul[k] || 1) * v; });
     if (t.upkeep) out.upkeep *= t.upkeep;
@@ -11862,7 +12273,7 @@ function lordMul(natId, nat) {
     if (t.move) out.move += t.move;
     if (t.recruitCost) out.recruitCost *= t.recruitCost;
   });
-  return out;
+  return withCourt(out);
 }
 function lordChips(natId) {
   const w = WARLORDS[natId];
@@ -11981,7 +12392,195 @@ function LordPortrait({ id, className, small }) {
   );
 }
 
-function WarlordScreen({ game, P, onClose, onSuccession, onHall }) {
+/* The Court, top left, where a Crusader Kings player would look for it. Four
+   tabs over one frame; the fourth is the screen that was already here. */
+const COURT_TABS = [
+  { k: "lord", name: "The warlord", note: "Who holds the seat, and what they carry" },
+  { k: "court", name: "The court", note: "Who is waiting, who holds a post, and what a realm does once" },
+  { k: "way", name: "The way", note: "How your people live" },
+  { k: "lords", name: "Those who lead", note: "Everybody else's warlord" },
+];
+function CourtScreen({ game, P, tab, onTab, onClose, onSuccession, onHall, onHear,
+                       onWear, onStow, onBuy, onHold, onLeave, onTake, onDecide }) {
+  const nat = game.nations[P];
+  const waiting = (game.petitions || []).length;
+  return (
+    <Overlay onClose={onClose}>
+      <div className="cc-w-1060px cc-max-w-96vw cc-max-h-93vh rounded-lg border cc-border-31454f cc-bg-0d141a flex flex-col overflow-hidden">
+        <div className="px-5 py-3 border-b cc-border-28363f flex items-center gap-3"
+          style={{ background: "linear-gradient(90deg,#14202a,#0d141a)" }}>
+          <LordPortrait id={P} className="cc-lordthumb" small />
+          <div className="flex-1 min-w-0">
+            <div className="disp cc-text-21px">The court of {nat.short}</div>
+            <div className="cc-text-12px cc-text-93a9b5">
+              {nat.lordDead ? "The seat is empty" : `${lordName(nat)} · ${lordTitle(nat)}`}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="cc-seatclose cc-static" aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="px-5 pt-3 flex gap-1.5 flex-wrap border-b cc-border-28363f">
+          {COURT_TABS.map((t) => (
+            <button key={t.k} type="button" onClick={() => onTab(t.k)} title={t.note}
+              className={`cc-courttab ${tab === t.k ? "cc-courttabon" : ""}`}>
+              {t.name}
+              {t.k === "court" && waiting > 0 && <span className="cc-badge num">{waiting}</span>}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto thin p-5">
+          {tab === "lord" && (
+            <div className="flex flex-col cc-lg-flex-row gap-5">
+              <div className="cc-w-320px shrink-0">
+                <LordSummary game={game} P={P} onSuccession={onSuccession} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <ArmouryPanel game={game} P={P} onWear={onWear} onStow={onStow} onBuy={onBuy} />
+              </div>
+            </div>
+          )}
+          {tab === "court" && (
+            <div className="flex flex-col cc-lg-flex-row gap-5">
+              <div className="cc-w-340px shrink-0 grid gap-4">
+                <div>
+                  <div className="cc-text-12d5px cc-text-a7bac6 mb-2 pb-1 border-b cc-border-243138">
+                    Waiting in the hall
+                  </div>
+                  <HallRow petitions={game.petitions} game={game} onHear={onHear} />
+                  {!waiting && (
+                    <div className="cc-text-12d5px cc-text-6f8794">Nobody at the door this season.</div>
+                  )}
+                  <button type="button" onClick={onHall} className="cc-formbtn mt-2">Open the hall</button>
+                </div>
+                <div>
+                  <div className="cc-text-12d5px cc-text-a7bac6 mb-2 pb-1 border-b cc-border-243138">Your captains</div>
+                  <div className="grid gap-2">
+                    {game.armies.filter((a) => a.owner === P && a.captain).map((a) => (
+                      <div key={a.id}>
+                        <div className="cc-text-11d5px cc-text-93a9b5 mb-1">{a.name}</div>
+                        <CaptainLine c={a.captain} compact />
+                      </div>
+                    ))}
+                    {(nat.hall || []).map((c) => (
+                      <div key={c.id}>
+                        <div className="cc-text-11d5px cc-text-93a9b5 mb-1">Waiting</div>
+                        <CaptainLine c={c} compact />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 min-w-0 grid gap-5">
+                <OfficesPanel game={game} P={P} onHold={onHold} onLeave={onLeave} />
+                <div>
+                  <div className="cc-text-12d5px cc-text-a7bac6 mb-2 pb-1 border-b cc-border-243138">
+                    What a realm does once
+                  </div>
+                  <DecisionsPanel game={game} P={P} onDecide={onDecide} />
+                </div>
+              </div>
+            </div>
+          )}
+          {tab === "way" && <CulturePanel game={game} P={P} onTake={onTake} />}
+          {tab === "lords" && <LordsBrowser game={game} P={P} onSuccession={onSuccession} onHall={onHall} />}
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+/* The warlord themselves, at the head of their own tab: who they are, where
+   they are standing, what they were born to and what they have hardened into. */
+function LordSummary({ game, P, onSuccession }) {
+  const nat = game.nations[P];
+  const w = WARLORDS[P];
+  const f = FACTION[P];
+  const withArmy = game.armies.find((a) => a.owner === P && a.lord);
+  const earned = nat.earned || [];
+  const cmd = realmCommand(nat);
+  return (
+    <div>
+      <LordPortrait id={P} className="cc-lordbig" />
+      <div className="disp cc-text-24px leading-tight mt-2" style={{ color: f.color }}>
+        {lordName(nat) || w?.name}
+      </div>
+      <div className="cc-text-13px cc-text-c6d6de">{lordTitle(nat) || w?.title}</div>
+      {nat.lordDead ? (
+        <div className="rounded border cc-border-5a3230 cc-bg-131f27 px-3 py-2 mt-2">
+          <div className="cc-text-13d5px cc-text-e0644a">The seat is empty, and no one has taken it.</div>
+          {onSuccession && <button type="button" onClick={onSuccession} className="cc-formbtn mt-2">Name a successor</button>}
+        </div>
+      ) : (
+        <div className="cc-text-12d5px cc-text-93a9b5 mt-1.5">
+          {nat.lordTransit ? "On the road. You command nothing until you arrive."
+            : withArmy ? `In the field with ${withArmy.name}.` : "At the seat."}
+          {" "}<span className="num">{game.turn - (nat.lord?.succeeded || 1)}</span> seasons in the chair.
+        </div>
+      )}
+      {nat.origin && ORIGINS[nat.origin] && (
+        <div className="rounded border cc-border-31454f cc-bg-131f27 px-3 py-2 mt-2">
+          <div className="cc-text-11d5px cc-text-8399a6">Born to it</div>
+          <div className="cc-text-12d5px cc-text-f2c97a">{ORIGINS[nat.origin].name} · {TRAITS[ORIGINS[nat.origin].trait]?.name}</div>
+          <div className="cc-text-12px cc-text-93a9b5 mt-0.5 leading-snug">{TRAITS[ORIGINS[nat.origin].trait]?.desc}</div>
+        </div>
+      )}
+      <div className="cc-text-12d5px cc-text-a7bac6 mt-3 mb-2 pb-1 border-b cc-border-243138">
+        What they have become
+      </div>
+      {earned.length ? (
+        <div className="grid gap-2">
+          {earned.map((id) => (
+            <div key={id} className="rounded border cc-border-8a6f36 cc-bg-131f27 px-3 py-2">
+              <div className="cc-text-13px cc-text-f2c97a">{TRAITS[id]?.name || id}</div>
+              <div className="cc-text-12px cc-text-93a9b5 mt-0.5 leading-snug">{TRAITS[id]?.desc}</div>
+              <CourtChips chips={traitChips(TRAITS[id])} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="cc-text-12d5px cc-text-6f8794 leading-snug">
+          Nothing yet. Five fields won, a wall taken, a people sworn to you or thirty seasons in the chair, and
+          you will be asked what it made of them.
+        </div>
+      )}
+      <div className="cc-text-12d5px cc-text-a7bac6 mt-3 mb-2 pb-1 border-b cc-border-243138">
+        Everything together, under this banner
+      </div>
+      <div className="grid gap-0.5">
+        {[["damage dealt", cmd.dealt, 1], ["damage taken", cmd.taken, -1], ["nerve holds", cmd.morale, -1],
+          ["storming a wall", cmd.storm, 1], ["shooting", cmd.ranged, 1], ["rations drawn", cmd.draw, -1]]
+          .filter(([, v]) => Math.round(Math.abs(v - 1) * 100) > 0)
+          .map(([label, v, dir]) => (
+            <div key={label} className="flex items-baseline gap-2 cc-text-12d5px">
+              <span className="flex-1 cc-text-93a9b5">{label}</span>
+              <span className={`num ${(dir > 0 ? v > 1 : v < 1) ? "cc-text-9fd6b4" : "cc-text-e09a8a"}`}>
+                {v > 1 ? "+" : "−"}{Math.round(Math.abs(v - 1) * 100)}%
+              </span>
+            </div>
+          ))}
+        {cmd.scout > 0 && (
+          <div className="flex items-baseline gap-2 cc-text-12d5px">
+            <span className="flex-1 cc-text-93a9b5">scouting</span>
+            <span className="num cc-text-9fd6b4">+{cmd.scout}</span>
+          </div>
+        )}
+        {cmd.relief > 0 && (
+          <div className="flex items-baseline gap-2 cc-text-12d5px">
+            <span className="flex-1 cc-text-93a9b5">supply reach</span>
+            <span className="num cc-text-9fd6b4">+{cmd.relief}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* Everybody else's warlord, which was the whole of this screen before the
+   court was built around it. Kept as it was, minus its own frame. */
+function LordsBrowser({ game, P, onSuccession, onHall }) {
   // A mutant horde has no warlord. Only factions with one are listed, and
   // every lookup below tolerates a faction that has none.
   const ids = [P, ...NATION_IDS.filter((i) => i !== P), ...MINOR_IDS]
@@ -11992,18 +12591,7 @@ function WarlordScreen({ game, P, onClose, onSuccession, onHall }) {
   const gone = !Object.values(game.provinces).some((p) => p.owner === sel);
 
   return (
-    <Overlay onClose={onClose}>
-      <div className="cc-w-980px cc-max-w-96vw cc-max-h-92vh rounded-lg border cc-border-31454f cc-bg-0d141a flex flex-col overflow-hidden">
-        <div className="px-5 py-3 border-b cc-border-28363f flex items-center gap-3"
-          style={{ background: "linear-gradient(90deg,#14202a,#0d141a)" }}>
-          <Crown size={18} className="cc-text-f0e2b8" />
-          <div className="disp cc-text-21px flex-1">Those who lead</div>
-          <button type="button" onClick={onClose} className="cc-seatclose cc-static" aria-label="Close">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto thin p-5 flex flex-col cc-lg-flex-row gap-5">
+    <div className="flex flex-col cc-lg-flex-row gap-5">
           <div className="cc-w-200px shrink-0 grid gap-1.5">
             {ids.map((id) => {
               const on = sel === id;
@@ -12166,9 +12754,7 @@ function WarlordScreen({ game, P, onClose, onSuccession, onHall }) {
               </div>
             </div>
           </div>
-        </div>
-      </div>
-    </Overlay>
+    </div>
   );
 }
 
@@ -12643,6 +13229,393 @@ function ChapterScene({ chapter, onClose }) {
       </div>
     </Overlay>
   );
+}
+
+/* --------------------------------- THE COURT --------------------------------
+   Four tabs, because four things live around a seat and they are not the same
+   kind of thing. The warlord is a person and what they carry; the court is the
+   people waiting and the decisions only a realm makes; the way is how a
+   hundred thousand people live; and those who lead is everybody else's
+   warlord, which was already written and is kept exactly as it was.
+   ------------------------------------------------------------------------ */
+function CourtChips({ chips }) {
+  if (!chips.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1 mt-1.5">
+      {chips.map((c, i) => (
+        <span key={i} className={`cc-text-11d5px rounded px-1.5 py-0.5 border ${c.good
+          ? "cc-border-3d5a4a cc-text-9fd6b4" : "cc-border-5a3230 cc-text-e09a8a"}`}>{c.t}</span>
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------- THE ARMOURY ------------------------------ */
+function ArmouryPanel({ game, P, onWear, onStow, onBuy }) {
+  const nat = game.nations[P];
+  const worn = SLOT_KEYS.map((k) => nat.regalia?.[k]).filter(Boolean);
+  const all = regaliaMods(worn);
+  const rack = nat.armoury || [];
+  const chips = [];
+  Object.entries(all).forEach(([k, v]) => {
+    if (k === "mul" || k === "scout" || k === "relief") return;
+    const pc = Math.round(Math.abs(v - 1) * 100);
+    if (pc) chips.push({ t: `${k} ${v > 1 ? "+" : "−"}${pc}%`, good: true });
+  });
+  return (
+    <div>
+      <div className="cc-text-13px cc-text-93a9b5 leading-relaxed mb-3">
+        Almost nothing here is bought. A piece comes off a seat you stormed, out of a wood you cleared, at the
+        end of a place's story, or off a rival warlord who lost the ground he was standing on. The yards will
+        make you a serviceable version of anything, and it will never be the good version.
+      </div>
+      <div className="grid gap-2">
+        {SLOTS.map((s) => {
+          const id = nat.regalia?.[s.k];
+          const p = id && REGALIA[id];
+          const forSale = buyable().filter((x) => REGALIA[x].slot === s.k)[0];
+          const sale = forSale && REGALIA[forSale];
+          const own = id === forSale || rack.includes(forSale);
+          return (
+            <div key={s.k} className="rounded border cc-border-31454f cc-bg-131f27 px-3 py-2.5">
+              <div className="flex items-baseline gap-2">
+                <span className="cc-text-11d5px cc-text-8399a6 cc-w-72px shrink-0">{s.name}</span>
+                {p ? (
+                  <span className="flex-1 min-w-0">
+                    <span className="disp cc-text-14d5px cc-text-f2c97a">{p.name}</span>
+                    <span className="cc-text-11d5px cc-text-93a9b5 cc-block leading-snug">{p.note}</span>
+                    {nat.found?.[id] && (
+                      <span className="cc-text-11px cc-text-c9a37a cc-block mt-0.5">{nat.found[id]}</span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="flex-1 cc-text-12d5px cc-text-6f8794">{s.note}</span>
+                )}
+                {p && (
+                  <button type="button" onClick={() => onStow(s.k)} className="cc-formbtn shrink-0">Take it off</button>
+                )}
+              </div>
+              {p && <CourtChips chips={regaliaChips(id)} />}
+              {!p && sale && !own && (
+                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                  <button type="button" onClick={() => onBuy(forSale)} className="cc-formbtn"
+                    title={sale.note}>
+                    {sale.name} · {Object.entries(sale.buy).map(([k, v]) => `${v} ${k === "food" ? "rations" : k}`).join(", ")}
+                  </button>
+                  <CourtChips chips={regaliaChips(forSale)} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="cc-text-12d5px cc-text-a7bac6 mt-4 mb-2 pb-1 border-b cc-border-243138">
+        On the rack {rack.length ? `· ${rack.length}` : ""}
+      </div>
+      {!rack.length && (
+        <div className="cc-text-12d5px cc-text-6f8794">Nothing spare. What is worn is everything there is.</div>
+      )}
+      <div className="grid gap-2">
+        {rack.map((id) => {
+          const p = REGALIA[id];
+          if (!p) return null;
+          return (
+            <div key={id} className="rounded border cc-border-31454f cc-bg-0f1820 px-3 py-2">
+              <div className="flex items-baseline gap-2">
+                <span className="flex-1 min-w-0">
+                  <span className="cc-text-13px cc-text-dfeaf0">{p.name}</span>
+                  <span className="cc-text-11px cc-text-8399a6"> · {SLOTS.find((s) => s.k === p.slot)?.name.toLowerCase()}</span>
+                  {nat.found?.[id] && <span className="cc-text-11px cc-text-c9a37a cc-block">{nat.found[id]}</span>}
+                </span>
+                <button type="button" onClick={() => onWear(id)} className="cc-formbtn shrink-0">Put it on</button>
+              </div>
+              <CourtChips chips={regaliaChips(id)} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------- OFFICES -------------------------------- */
+function OfficesPanel({ game, P, onHold, onLeave }) {
+  const nat = game.nations[P];
+  const hall = nat.hall || [];
+  return (
+    <div>
+      <div className="cc-text-13px cc-text-93a9b5 leading-relaxed mb-3">
+        A post takes the person. Whoever holds one is not available for a warband until you let them go, and what
+        the post is worth depends on their habits and on whether they still believe in you — a muttering officer
+        is worse than an empty chair in every way except that the chair is not plotting.
+      </div>
+      <div className="grid gap-2">
+        {OFFICE_IDS.map((oid) => {
+          const o = OFFICES[oid];
+          const c = nat.offices?.[oid];
+          const band = c && officeShare(c.loyalty);
+          const suits = c ? (c.traits || []).filter((t) => o.wants.includes(t)) : [];
+          return (
+            <div key={oid} className="rounded border cc-border-31454f cc-bg-131f27 px-3 py-2.5">
+              <div className="flex items-baseline gap-2">
+                <span className="disp cc-text-14d5px flex-1">{o.name} <span className="cc-text-12px cc-text-8399a6">of {o.of}</span></span>
+                {c && <button type="button" onClick={() => onLeave(oid)} className="cc-formbtn shrink-0">Release them</button>}
+              </div>
+              <div className="cc-text-12d5px cc-text-93a9b5 mt-0.5 leading-snug">{o.note}</div>
+              {c ? (
+                <div className="rounded border cc-border-3d5a4a cc-bg-0f1820 px-2.5 py-1.5 mt-2">
+                  <div className="cc-text-13px cc-text-dfeaf0">{c.name}</div>
+                  <div className="cc-text-11d5px cc-text-93a9b5 mt-0.5">
+                    {band.word}, so <span className="num">{Math.round(band.share * 100)}%</span> of what the post is worth
+                    {suits.length ? ` — and ${suits.map((t) => (TRAITS[t]?.name || t).toLowerCase()).join(" and ")}, which suits it` : ""}.
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2">
+                  <div className="cc-text-11d5px cc-text-8399a6 mb-1">
+                    Suits somebody who is {o.wants.map((t) => (TRAITS[t]?.name || t).toLowerCase()).join(", ")}.
+                  </div>
+                  {hall.length ? (
+                    <div className="flex flex-wrap gap-1">
+                      {hall.map((h) => (
+                        <button key={h.id} type="button" onClick={() => onHold(oid, h.id)}
+                          className={`cc-formbtn ${(h.traits || []).some((t) => o.wants.includes(t)) ? "cc-poston" : ""}`}
+                          title={(h.traits || []).map((t) => TRAITS[t]?.name || t).join(" · ")}>
+                          {h.name}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="cc-text-12d5px cc-text-6f8794">Nobody is waiting in the hall.</div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------- DECISIONS ------------------------------- */
+function DecisionsPanel({ game, P, onDecide }) {
+  const nat = game.nations[P];
+  const taken = nat.taken || [];
+  const held = Object.values(game.provinces).filter((p) => p.owner === P);
+  const ctx = {
+    seat: held.find((p) => p.capital && p.seat === P) || null,
+    holdings: held.length,
+    scrap: nat.res.scrap,
+  };
+  return (
+    <div>
+      <div className="cc-text-13px cc-text-93a9b5 leading-relaxed mb-3">
+        Not an edict — an edict is a shout from the seat and can be taken back next winter. These are done once
+        and stay done.
+      </div>
+      <div className="grid gap-2">
+        {DECISION_IDS.map((id) => {
+          const d = DECISIONS[id];
+          const done = taken.includes(id);
+          let can = false;
+          try { can = !!d.need(ctx); } catch { can = false; }
+          const short = Object.entries(d.cost || {}).find(([k, v]) => (nat.res[k] || 0) < v);
+          const chips = [];
+          Object.entries(d.gives?.mul || {}).forEach(([k, v]) => {
+            const word = { food: "rations", scrap: "scrap", metal: "metal", fuel: "fuel", powder: "powder", men: "recruits" };
+            chips.push({ t: `${word[k] || k} ${v > 1 ? "+" : "−"}${Math.round(Math.abs(v - 1) * 100)}%`, good: v > 1 });
+          });
+          if (d.gives?.growth) chips.push({ t: `people grow ${d.gives.growth > 1 ? "+" : "−"}${Math.round(Math.abs(d.gives.growth - 1) * 100)}%`, good: d.gives.growth > 1 });
+          if (d.gives?.research) chips.push({ t: `advances ${Math.round((1 - d.gives.research) * 100)}% faster`, good: true });
+          if (d.gives?.scoutAdd) chips.push({ t: `scouting +${d.gives.scoutAdd}`, good: true });
+          if (d.gives?.pop) chips.push({ t: `+${d.gives.pop} people at the seat`, good: true });
+          if (d.gives?.hall) chips.push({ t: `+${d.gives.hall} in the hall`, good: true });
+          if (d.gives?.loyalGain) chips.push({ t: `loyalty earned +${Math.round((d.gives.loyalGain - 1) * 100)}%`, good: true });
+          if (d.gives?.regardAll) chips.push({ t: `everybody's regard +${d.gives.regardAll}`, good: true });
+          return (
+            <div key={id} className={`rounded border px-3 py-2.5 ${done
+              ? "cc-border-3d5a4a cc-bg-0f1820" : "cc-border-31454f cc-bg-131f27"}`}>
+              <div className="flex items-baseline gap-2">
+                <span className="flex-1 min-w-0">
+                  <span className="disp cc-text-14d5px">{d.name}</span>
+                  <span className="cc-text-12d5px cc-text-a7bac6 cc-block">{d.line}</span>
+                </span>
+                {done
+                  ? <span className="cc-text-12d5px cc-text-9fd6b4 shrink-0">Done</span>
+                  : (
+                    <button type="button" disabled={!can || !!short} onClick={() => onDecide(id)}
+                      className="cc-envoybtn cc-w-200px shrink-0"
+                      title={!can ? "The position does not allow it yet." : short ? `Short of ${short[0]}.` : d.note}>
+                      {Object.entries(d.cost || {}).map(([k, v]) => `${v} ${k === "food" ? "rations" : k === "men" ? "recruits" : k}`).join(", ") || "Proclaim it"}
+                    </button>
+                  )}
+              </div>
+              <div className="cc-text-12d5px cc-text-93a9b5 mt-1 leading-snug">{done ? d.done : d.note}</div>
+              {!done && <CourtChips chips={chips} />}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------- THE WAY -------------------------------- */
+function CulturePanel({ game, P, onTake }) {
+  const nat = game.nations[P];
+  const held = nat.traditions || [];
+  const [swap, setSwap] = useState(null);
+  const free = CULTURE_SLOTS - held.length;
+  return (
+    <div>
+      <div className="cc-text-13px cc-text-93a9b5 leading-relaxed mb-3">
+        An edict is an order. This is how a hundred thousand people bury their dead, feed their children and
+        decide who is allowed through the gate — and it starts empty on purpose, because a realm three hundred
+        years into the cold has habits but has not yet decided what it is.
+      </div>
+
+      <div className="cc-text-12d5px cc-text-a7bac6 mb-2 pb-1 border-b cc-border-243138">
+        Held · <span className="num">{held.length}</span> of <span className="num">{CULTURE_SLOTS}</span>
+      </div>
+      <div className="grid gap-2">
+        {held.map((id) => {
+          const t = TRADITIONS[id];
+          if (!t) return null;
+          return (
+            <div key={id} className="rounded border cc-border-3d5a4a cc-bg-131f27 px-3 py-2.5">
+              <div className="flex items-baseline gap-2">
+                <span className="flex-1 min-w-0">
+                  <span className="disp cc-text-14d5px cc-text-9fd6b4">{t.name}</span>
+                  <span className="cc-text-12d5px cc-text-a7bac6 cc-block">{t.line}</span>
+                </span>
+                <button type="button" onClick={() => setSwap(swap === id ? null : id)}
+                  className={`cc-formbtn shrink-0 ${swap === id ? "cc-poston" : ""}`}
+                  title={`Tearing this out and putting another in its place costs ${REFORM.scrap} scrap, and every court on the coast hears about it.`}>
+                  {swap === id ? "Choose what replaces it" : "Reform it"}
+                </button>
+              </div>
+              <div className="cc-text-12d5px cc-text-93a9b5 mt-1 leading-snug">{t.note}</div>
+              <CourtChips chips={traditionChips(id)} />
+            </div>
+          );
+        })}
+        {!held.length && (
+          <div className="cc-text-12d5px cc-text-6f8794">Nothing yet written down. Four slots, and they are yours.</div>
+        )}
+      </div>
+
+      <div className="cc-text-12d5px cc-text-a7bac6 mt-4 mb-2 pb-1 border-b cc-border-243138">
+        {swap ? `What replaces ${TRADITIONS[swap]?.name.toLowerCase()} · ${REFORM.scrap} scrap`
+          : free > 0 ? `What else your people might become · ${free} ${free === 1 ? "slot" : "slots"} open`
+            : "Every slot is full. Reform one to take another."}
+      </div>
+      <div className="grid gap-2">
+        {TRADITION_IDS.filter((id) => !held.includes(id)).map((id) => {
+          const t = TRADITIONS[id];
+          const can = swap ? nat.res.scrap >= REFORM.scrap : free > 0;
+          return (
+            <div key={id} className="rounded border cc-border-31454f cc-bg-0f1820 px-3 py-2.5">
+              <div className="flex items-baseline gap-2">
+                <span className="flex-1 min-w-0">
+                  <span className="cc-text-14px cc-text-dfeaf0">{t.name}</span>
+                  <span className="cc-text-12d5px cc-text-8399a6 cc-block">{t.line}</span>
+                </span>
+                <button type="button" disabled={!can} onClick={() => { onTake(id, swap); setSwap(null); }}
+                  className="cc-formbtn shrink-0"
+                  title={can ? t.note : swap ? `You need ${REFORM.scrap} scrap.` : "Every slot is full."}>
+                  {swap ? "Put this in its place" : "Take it up"}
+                </button>
+              </div>
+              <div className="cc-text-12d5px cc-text-93a9b5 mt-1 leading-snug">{t.note}</div>
+              <CourtChips chips={traditionChips(id)} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------ A HABIT HARDENS ----------------------------
+   The one scene in the game that is about the person in the chair rather than
+   the coast. It arrives when something has actually happened to them, it offers
+   two readings of it, and it does not come round again — so the two options are
+   written to be a real choice about what kind of warlord this is going to be,
+   not a better and a worse number.
+   ------------------------------------------------------------------------ */
+function MilestoneScene({ id, game, P, onChoose }) {
+  const m = MILESTONES[id];
+  if (!m) return null;
+  const nat = game.nations[P];
+  return (
+    <Overlay>
+      <div className="cc-w-660px cc-max-w-94vw rounded-lg border cc-border-8a6f36 cc-bg-0d141a overflow-hidden">
+        <div className="px-5 py-3.5 border-b cc-border-2a1f1c flex items-center gap-3"
+          style={{ background: "linear-gradient(90deg,#1e1710,#0d141a)" }}>
+          <LordPortrait id={P} className="cc-lordthumb" small />
+          <div className="flex-1">
+            <div className="cc-text-11d5px cc-text-c9a37a">{m.kicker}</div>
+            <div className="disp cc-text-20px">{m.title}</div>
+          </div>
+        </div>
+        <div className="p-5 grid gap-3">
+          <p className="cc-text-14px leading-relaxed cc-text-dfeaf0">{m.scene}</p>
+          <div className="cc-text-12d5px cc-text-93a9b5">
+            {lordName(nat)} has already{" "}
+            <span className="num">{nat?.earned?.length || 0}</span>{" "}
+            {(nat?.earned?.length || 0) === 1 ? "habit" : "habits"} written on them. This is one more, and it is permanent.
+          </div>
+          <div className="grid gap-2 cc-md-grid-cols-2">
+            {m.options.map((o) => {
+              const t = TRAITS[o.trait] || {};
+              return (
+                <button key={o.trait} type="button" onClick={() => onChoose(id, o.trait)}
+                  className="text-left rounded border cc-border-31454f cc-bg-131f27 px-3.5 py-3 cc-hover-border-4d9aa6 transition-colors">
+                  <div className="disp cc-text-15px cc-text-f2c97a">{o.name}</div>
+                  <div className="cc-text-12d5px cc-text-adc2cc mt-1 leading-snug">{o.note}</div>
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {traitChips(t).map((c, i) => (
+                      <span key={i} className={`cc-text-11d5px rounded px-1.5 py-0.5 border ${c.good
+                        ? "cc-border-3d5a4a cc-text-9fd6b4" : "cc-border-5a3230 cc-text-e09a8a"}`}>{c.t}</span>
+                    ))}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+/* A habit said in the same words the armoury and the traditions use. */
+const TRAIT_WORD = {
+  dealt: ["damage dealt", 1], taken: ["damage taken", -1], morale: ["nerve holds", -1],
+  storm: ["storming a wall", 1], ranged: ["shooting", 1], flank: ["turning a flank", 1],
+  waste: ["losses out of supply", -1], draw: ["rations drawn", -1],
+  chase: ["the broken run down", 1], siege: ["cost of sitting on a siege", -1],
+  garrison: ["wear on a garrison", 1], regardGain: ["regard earned", 1],
+  raidOff: ["raids aimed at you", -1], loyalGain: ["loyalty earned", 1],
+};
+function traitChips(t) {
+  const out = [];
+  Object.entries(t || {}).forEach(([k, v]) => {
+    const w = TRAIT_WORD[k];
+    if (!w || typeof v !== "number") return;
+    const pc = Math.round(Math.abs(v - 1) * 100);
+    if (!pc) return;
+    out.push({ t: `${w[0]} ${v > 1 ? "+" : "−"}${pc}%`, good: w[1] > 0 ? v > 1 : v < 1 });
+  });
+  if (t?.scout) out.push({ t: `scouting +${t.scout}`, good: true });
+  if (t?.relief) out.push({ t: `supply reach +${t.relief}`, good: true });
+  Object.entries(t?.mul || {}).forEach(([k, v]) => {
+    const word = { food: "rations", scrap: "scrap", metal: "metal", fuel: "fuel", powder: "powder", men: "recruits" };
+    out.push({ t: `${word[k] || k} ${v > 1 ? "+" : "−"}${Math.round(Math.abs(v - 1) * 100)}%`, good: v > 1 });
+  });
+  return out;
 }
 
 /* ------------------------------- MISSIONS ---------------------------------
@@ -13355,6 +14328,14 @@ function Codex({ onClose }) {
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Meeting people</div>
             <p>What you have not laid eyes on, you know nothing about. The season your riders first come within sight of somebody, you get the meeting itself: where they are, what they are, why they are still here after three hundred years, and three or four things you might say to them. Every answer costs or pays something on the spot and every answer is remembered — each people carries a regard for you, said in a word, in the Rivals panel.</p>
             <p className="mt-2">Regard is not decoration. A people who think well of you will sell you what they dig out of the ground, season after season, and that arrangement sits in your ledger like any other income. A people you came at with a demand will cut the face back and range it, and the place costs more to take for the rest of the game. Marching companies onto their ground ends any arrangement the same day.</p>
+          </div>
+          <div>
+            <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Your court</div>
+            <p>The face at the top left opens it. Four things live around a seat and they are not the same kind of thing.</p>
+            <p className="mt-2"><span className="cc-text-f2c97a">The warlord</span> is a person and what they carry. Five slots — head, body, hand, mount, standard — and almost nothing that fills one is bought: a piece comes off a seat you stormed, out of a wood you cleared, at the end of a place's story, or off a rival warlord who lost the ground he was standing on. The yards will sell you a serviceable version of anything and it will never be the good version. A piece stays on the rack when a warlord falls, so the next one to take the seat finds it with the story of who carried it before.</p>
+            <p className="mt-2">They also harden. Five fields won, a wall taken, a people sworn to you, thirty seasons in the chair — each of those is a fact about a person rather than a bar filling up, and when one comes true you are asked which of two habits it made of them. Once, and it does not come round again.</p>
+            <p className="mt-2"><span className="cc-text-f2c97a">The court</span> is who is waiting and what a realm does once. Four posts — quartermaster, master of the works, marshal, envoy — can be filled from the hall, and a post takes the person: they are not available for a warband until you release them. What the post is worth depends on their habits and on whether they still believe in you. Beside them sit the decisions: a dyke, a general muster, a burning of the old rolls. Not edicts, which you can take back next winter. These are done once and stay done.</p>
+            <p className="mt-2"><span className="cc-text-f2c97a">The way</span> is how a hundred thousand people bury their dead, feed their children and decide who is allowed through the gate. Four slots, empty at the start on purpose, and taking a tradition into an empty one costs nothing but the saying of it. Putting one where another already stood is a reform: it costs scrap, and every court on the coast hears about it.</p>
           </div>
           <div>
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">The rival realms</div>

@@ -13,7 +13,14 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 13: the rival realms are somebody you can deal with. A position now carries
+/* 14: there is a court now. A realm carries what its warlord is wearing and
+   what is on the rack behind them, the habits they have hardened into and
+   which milestones have been answered, the traditions its people hold, the
+   decisions it has made once and for good, and who is sitting in which office.
+   A version 13 save has none of it, so every realm in it would load with an
+   empty armoury and no way of telling whether that is because nothing has been
+   won yet or because the save predates the rack.
+   13: the rival realms are somebody you can deal with. A position now carries
    the accords in force with each of them, their terms, whether you have torn
    one up and who the coast has decided is running away with it. A version 12
    save has none of that, so every realm in it would read as having signed
@@ -50,7 +57,7 @@ export const SAVE_KEY = "coldcoast.save";
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 13;
+export const SAVE_VERSION = 14;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight
@@ -59,7 +66,7 @@ export const SAVE_VERSION = 13;
    the AI has already started is part of the position — dropping it would hand
    the player a free escape. */
 const TRANSIENT = {
-  sel: null, tree: false, seat: null, lords: false, showCodex: false, district: null, intro: false,
+  sel: null, tree: false, seat: null, lords: false, courtTab: "lord", showCodex: false, district: null, intro: false,
   summary: null, roster: false, hearing: null, chapter: null,
   recruit: null, survey: null, lair: null, focus: null, notices: [],
   screen: null,
