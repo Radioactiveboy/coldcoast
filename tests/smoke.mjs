@@ -1300,8 +1300,11 @@ check("forty seasons pass", seasons === 40, `${seasons}${seasons < 40 ? ` — ${
   check("breaking Rune is worth something in Brittany", rg(a2, "bretons") > rg(b2, "bretons"),
     `${rg(b2, "bretons")} -> ${rg(a2, "bretons")}`);
 }
+/* Read every full-screen panel, not the first one: several can be in the
+   document at once and the stale one comes first in document order. */
 check("the first chapter was written", await page.evaluate(() =>
-  /The state of the coast/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || "")));
+  [...document.querySelectorAll(".fixed.inset-0.z-50")]
+    .some((x) => /The state of the coast/.test(x.innerText))));
 await click("Read on"); await wait(300);
 
 /* Sieges. Walls have to appear on their own for a siege to ever be offered, and
