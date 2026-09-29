@@ -2396,15 +2396,53 @@ const musteringGround = (p) => !!p && (p.capital || hasBuild(p, "muster"));
 // Sight is your own ground, wherever your warbands are standing, and one step
 // beyond both. Everything else is dark: you do not know who holds it, what is
 // built on it, or what is walking about on it.
-function seenSet(provinces, armies, natId) {
+/* What a warband can see from where it is standing. Scouting used to buy one
+   thing only — how much of the enemy line the deployment screen would show you
+   — so a column of hunters walked through the same one-hex bubble as a cart.
+   It carries on the map now: a company that can see brings its eyes with it,
+   and so do the chart-keepers, a silt pony and a warlord raised on the moor. */
+function armyReach(army, nat) {
+  const eyes = (army.units || []).reduce((n, u) => n + (u.str > 0 ? unitStats(u).scout : 0), 0)
+    + (nat ? realmCommand(nat).scout : 0)
+    + captainMods(army).scout;
+  /* One hex always. Every two pairs of eyes carries it another, up to three.
+     Two was chosen over three so that one company of hunters and a warlord
+     raised on the moor is visibly worth something — at three, almost every
+     warband in an ordinary game saw exactly as far as a cart. */
+  return 1 + Math.min(2, Math.floor(eyes / 2));
+}
+/* Which aggressive march has already been warned about, so the second attempt
+   is the one that goes. Deliberately not a hook and not state: it latches for a
+   single click, must not re-render the map, and the place it is needed sits
+   after the component's early returns where a hook cannot go. */
+const aggConfirm = { current: null };
+
+function seenSet(provinces, armies, natId, nations) {
   const seen = new Set();
-  const add = (c, r) => {
-    const k = key(c, r);
-    if (provinces[k]) seen.add(k);
-    neighbours(c, r).forEach(([x, y]) => { if (provinces[key(x, y)]) seen.add(key(x, y)); });
+  /* Walk outward ring by ring rather than measuring the distance to every hex
+     on the continent: at reach three that is nineteen hexes to look at instead
+     of fifteen thousand, and this runs on every render. */
+  const add = (c, r, reach = 1) => {
+    let edge = [[c, r]];
+    const k0 = key(c, r);
+    if (provinces[k0]) seen.add(k0);
+    for (let step = 0; step < reach; step++) {
+      const next = [];
+      edge.forEach(([x, y]) => neighbours(x, y).forEach(([nx, ny]) => {
+        const nk = key(nx, ny);
+        if (!provinces[nk] || seen.has(nk)) return;
+        seen.add(nk);
+        next.push([nx, ny]);
+      }));
+      edge = next;
+      if (!edge.length) break;
+    }
   };
   Object.values(provinces).forEach((p) => { if (p.owner === natId) add(p.c, p.r); });
-  armies.forEach((a) => { if (a.owner === natId) add(a.c, a.r); });
+  armies.forEach((a) => {
+    if (a.owner !== natId) return;
+    add(a.c, a.r, armyReach(a, nations?.[natId]));
+  });
   // A light, a crag, a market: places that see further than a step.
   const far = Object.values(provinces).filter((p) => p.owner === natId && FEATURES[p.feature]?.sight);
   if (far.length) Object.values(provinces).forEach((q) => {
@@ -3117,7 +3155,26 @@ function moveInfo(game, army, prov, P, atWar) {
       return { ok: false, cost, why: `${friend.name} is already at full strength — ${cap} companies is the limit.` };
     return { ok: true, cost, kind: "merge", label: `Merge forces with ${friend.name}` };
   }
-  if (prov.owner && prov.owner !== P) return { ok: true, cost, kind: "seize", label: "March in and take it" };
+  if (prov.owner && prov.owner !== P) {
+    /* Walking onto somebody's ground is the loudest thing you can do to them,
+       and the order said nothing about it — so a column could wander into
+       Brittany and find out afterwards that it had started something. A people
+       whose gate is open to you is the one case where it is not an act of
+       aggression, and that is exactly what the toll bought. */
+    const who = game.nations[prov.owner]?.short || "them";
+    const pid = (game.pacts || {})[prov.owner];
+    const holds = !!pid;
+    return { ok: true, cost, kind: "seize",
+      label: `March in and take ${prov.name}`,
+      aggression: {
+        who: prov.owner, name: who, pact: pid,
+        line: holds
+          ? `${who} have an arrangement with you and their gate is open. Taking this ground ends it the same day, and the place costs more to take for the rest of the game.`
+          : isMinor(prov.owner)
+            ? `This is ${who} ground. Marching on it is an act of aggression: they will cut the face back, range it, and remember your banner.`
+            : `This is ${who} ground. Marching on it is an act of aggression — it costs you regard with them and with everybody watching.`,
+      } };
+  }
   return { ok: true, cost, kind: "march", label: "March here" };
 }
 
@@ -3675,7 +3732,7 @@ function initialState() {
   return {
     turn: 1, player: null, ...w, war, armies, uid,
     sel: null, battle: null, log: [], recruit: null, over: null,
-    showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, regard: {}, pacts: {}, accords: {}, torn: 0, coalition: null, milestone: null,
+    showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, regard: {}, pacts: {}, accords: {}, torn: 0, coalition: null, milestone: null, warhorn: null,
     meetings: [], notices: [], focus: null, sound: { music: true, sfx: true },
     goals: { done: {}, hidden: false }, summary: null, roster: false,
     petitions: [], promises: [], hearing: null, chapter: null, hall: null,
@@ -3768,7 +3825,7 @@ export default function ColdCoast() {
   const nat = P ? game.nations[P] : null;
   // What your realm can actually see. Both the map and the panels work from it.
   const sight = useMemo(
-    () => (P ? seenSet(game.provinces, game.armies, P) : new Set()),
+    () => (P ? seenSet(game.provinces, game.armies, P, game.nations) : new Set()),
     [game.provinces, game.armies, P]
   );
   const income = useMemo(() => (P ? nationIncome(game, P) : null), [game, P]);
@@ -3979,7 +4036,7 @@ export default function ColdCoast() {
       const tk = key(target.c, target.r);
       const tp = { ...provinces[tk] };
       let logMsg = null;
-      const nations = { ...g.nations };
+      let nations = { ...g.nations };
       let regard = g.regard;
       if (tp.owner !== P && tp.owner !== null && atWar(P, tp.owner)) {
         const prev = tp.owner;
@@ -3989,6 +4046,15 @@ export default function ColdCoast() {
         if (P === "boreal" && prev) {
           nations[P] = { ...nations[P], res: { ...nations[P].res, scrap: nations[P].res.scrap + 25, food: nations[P].res.food + 20 } };
           logMsg += " The clans strip it bare.";
+        }
+        /* A seat gives up the thing that was kept in it, and it does not matter
+           how it fell — a storm, a garrison beaten in the open, or a gate that
+           was simply walked through once nobody was left to hold it. There is
+           one of each on the coast and this is the only way to get it. */
+        if (tp.seat || tp.capital) {
+          const took = awardPiece(nations, P, seatPiece(tp.seat || prev),
+            `taken at ${tp.name} when it fell`);
+          if (took) { nations = took.nations; logMsg += ` ${took.line}`; }
         }
         /* Ground taken off somebody is the loudest thing you can say to them,
            and they are not the only ones listening. */
@@ -4470,6 +4536,18 @@ export default function ColdCoast() {
     const info = moveInfo(game, a, t, P, atWar);
     if (!info || info.here) return;
     if (!info.ok) { push(info.why); return; }
+    /* The same guard the order panel puts on it. A right-click is the fastest
+       way to move and it should not also be the fastest way to start a war you
+       did not mean to: the first one warns, the second one goes. */
+    if (info.aggression) {
+      const k = `${a.id}:${key(c, r)}`;
+      if (aggConfirm.current !== k) {
+        aggConfirm.current = k;
+        push(`${info.aggression.line} Right-click again to cross.`);
+        return;
+      }
+    }
+    aggConfirm.current = null;
     Sound.play("march");
     attemptMove(a, t);
   }
@@ -4771,10 +4849,15 @@ export default function ColdCoast() {
     if (!m || !m.at) return g;
     const k = key(m.at[0], m.at[1]);
     if (!g.provinces[k]) return g;
+    /* This stands in for a conquest, so it has to do what a conquest does —
+       including handing over the thing that was kept in the seat. */
+    const took = awardPiece(g.nations, g.player, seatPiece(id), `taken at ${g.provinces[k].name} when it fell`);
     return {
       ...g,
+      nations: took ? took.nations : g.nations,
       provinces: { ...g.provinces, [k]: { ...g.provinces[k], owner: g.player, capital: false, seat: null } },
       armies: g.armies.filter((a) => a.owner !== id),
+      log: took ? [{ turn: g.turn, m: took.line }, ...g.log].slice(0, 60) : g.log,
     };
   });
 
@@ -5659,6 +5742,8 @@ export default function ColdCoast() {
       const notices = [];
       const notice = (kind, text, k) => notices.push({ id: `n${g.turn}${notices.length}`, kind, text, k });
       const pending = [];
+      // Peoples whose horns you are about to hear for the first time.
+      const warnings = [];
 
       /* Who the rest of the coast has started to worry about, worked out once
          before anybody acts on it. Null while it is still anybody's game. */
@@ -6163,6 +6248,16 @@ export default function ColdCoast() {
               makeUnit(t, id, `r${id}${g.turn}${i}${Math.random().toString(36).slice(2, 5)}`)),
             mp: 0, maxMp: 3,
           });
+          /* A band that has just been raised is two or three seasons' march
+             from anybody's fields, and you should hear the horns before you see
+             the smoke. Once per people, and only if you have met them and have
+             nothing standing between you. */
+          const heard = nations[g.player]?.horns || {};
+          const pacted = (g.pacts || {})[id];
+          if (g.met?.[id] && !heard[id] && !pacted) {
+            nations[g.player] = { ...nations[g.player], horns: { ...heard, [id]: g.turn } };
+            warnings.push({ who: id, turn: g.turn });
+          }
         });
 
         armies.filter((a) => raiders.includes(a.owner) && !a.lairBound && !a.mob
@@ -6444,7 +6539,7 @@ export default function ColdCoast() {
          it. Everyone you meet gets an opinion of you from this season on, and
          the ones written up get the scene. */
       {
-        const sight = seenSet(provinces, armies, g.player);
+        const sight = seenSet(provinces, armies, g.player, nations);
         const met = { ...(g.met || {}) };
         const fresh = [];
         const lay = (id) => {
@@ -6628,6 +6723,11 @@ export default function ColdCoast() {
         const res = { ...nations[id].res };
         res.food = res.food + inc.food;
         res.scrap += Math.max(0, inc.scrap);
+        /* Metal was computed, shown in the header with a plus in front of it,
+           and never paid in — so a realm could run a mine for fifty seasons
+           and have nothing in the bin. Everything the ledger promises is
+           credited here or the ledger is a lie. */
+        res.metal = (res.metal || 0) + Math.max(0, inc.metal);
         res.fuel += Math.max(0, inc.fuel);
         res.powder += Math.max(0, inc.powder);
         res.men += Math.max(0, inc.men);
@@ -6942,6 +7042,7 @@ export default function ColdCoast() {
 
       return {
         ...g, provinces, nations, armies, war, accords, turn: g.turn + 1,
+        warhorn: g.warhorn || warnings[0]?.who || null,
         log: [...newLog, ...g.log].slice(0, 60), sel: null, over,
         notices: [...notices, ...g.notices].slice(0, 6),
         battle, pending: battle ? live.slice(1) : [],
@@ -7063,6 +7164,10 @@ export default function ColdCoast() {
       )}
       {game.milestone && !game.battle && MILESTONES[game.milestone] && (
         <MilestoneScene id={game.milestone} game={game} P={P} onChoose={chooseHabit} />
+      )}
+      {game.warhorn && !game.battle && !game.milestone && MINORS[game.warhorn] && (
+        <WarhornScene who={game.warhorn} game={game} P={P}
+          onClose={() => setGame((g) => ({ ...g, warhorn: null }))} />
       )}
       {!game.battle && (game.meetings || []).length > 0 && FIRST_MEET[game.meetings[0]] && (
         <EncounterScene enc={FIRST_MEET[game.meetings[0]]} game={game} P={P} onAnswer={answerEncounter} />
@@ -8432,8 +8537,11 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
         men: str(b[s].units) + str(b[s].routed),
         co: b[s].units.length, brokeCo: b[s].routed.length,
       });
+      const pSide = b.aNat === gameRef.current.player ? "a" : b.dNat === gameRef.current.player ? "d" : null;
       return {
         round: b.round, over: !!b.over, winner: b.winner || null, stalemate: !!b.stalemate,
+        // What your outriders actually brought back: 0 nothing, 1 numbers, 2 names.
+        seen: pSide ? scoutLevel(b[pSide].units, b[`${pSide}Scout`] || 0) : null,
         said: b.lastExchange ? { a: b.lastExchange.aCas, d: b.lastExchange.dCas } : null,
         a: side("a"), d: side("d"),
         aNat: b.aNat, dNat: b.dNat,
@@ -8474,6 +8582,10 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           .map((p) => `${p.name}:${p.hard}:${game.armies.filter((a) => a.c === p.c && a.r === p.r)
             .reduce((n, a) => n + a.units.length, 0)}`),
         regard: Object.entries(game.regard || {}).map(([k, v]) => `${k}:${v}`),
+        /* How far each of your warbands can see, which used to be one hex for
+           everybody whatever they were carrying. */
+        reach: game.armies.filter((a) => a.owner === game.player)
+          .map((a) => `${a.id}:${armyReach(a, game.nations[game.player])}`),
         /* What is around the seat: what the warlord carries, what they have
            hardened into, how the people live, what the realm has settled once
            and for good, and who is sitting in which chair. */
@@ -9317,6 +9429,9 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair, o
 }
 
 function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onStorm, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift, onStory, onSally, onHall }) {
+  /* Which order, if any, has been armed once and is waiting to be confirmed.
+     First, because a hook cannot sit behind the early return below. */
+  const [aggArmed, setAggArmed] = useState(null);
   if (!selProv) return (
     <div className="cc-text-13d5px cc-text-93a9b5 leading-relaxed">
       <p className="mb-3">Pick a hex to see what it grows and what it hides.</p>
@@ -9437,21 +9552,38 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
       {selArmy && (() => {
         const info = moveInfo(game, selArmy, selProv, P, atWar);
         if (!info || info.here) return null;
+        /* An order that starts something has to say so before it is given, and
+           then be given twice. Nobody should find out they invaded Brittany by
+           reading the log afterwards. */
+        const agg = info.ok && info.aggression;
+        const armed = aggArmed === `${selArmy.id}:${key(selProv.c, selProv.r)}`;
         return (
           <Section title={`Orders for ${selArmy.name}`}>
             {info.ok ? (
               <>
-                <button type="button" onClick={() => onMarch(selArmy.id, key(selProv.c, selProv.r))}
-                  className={`w-full py-2.5 rounded disp cc-text-14d5px border transition-colors ${info.kind === "attack"
+                {agg && (
+                  <div className="rounded border cc-border-8a4636 cc-bg-1a1210 px-3 py-2 mb-2">
+                    <div className="cc-text-12d5px cc-text-e8b98a">This would be an act of aggression</div>
+                    <div className="cc-text-12px cc-text-e09a8a mt-0.5 leading-snug">{info.aggression.line}</div>
+                  </div>
+                )}
+                <button type="button"
+                  onClick={() => {
+                    if (agg && !armed) { setAggArmed(`${selArmy.id}:${key(selProv.c, selProv.r)}`); return; }
+                    setAggArmed(null);
+                    onMarch(selArmy.id, key(selProv.c, selProv.r));
+                  }}
+                  className={`w-full py-2.5 rounded disp cc-text-14d5px border transition-colors ${info.kind === "attack" || (agg && armed)
                     ? "cc-bg-5a2f26 cc-hover-bg-6e3a2e cc-border-8a4a38 cc-text-f3d9cf"
                     : info.kind === "cross"
                     ? "cc-bg-1a1610 cc-hover-bg-241d10 cc-border-8a6f36 cc-text-f2c97a"
                     : "cc-bg-1f4a52 cc-hover-bg-2a5f69 cc-border-356b76 cc-text-d9f0f2"}`}>
-                  {info.label}
+                  {agg ? (armed ? `Yes — cross into ${info.aggression.name} ground` : info.label) : info.label}
                 </button>
                 <div className="cc-text-12d5px cc-text-95aab6 mt-1.5">
                   Costs <span className="num">{info.cost}</span> of <span className="num">{selArmy.mp}</span> movement.
                   {info.note && <span className="cc-text-9fd6b4"> {info.note}</span>}
+                  {agg && !armed && <span className="cc-text-e8b98a"> Asks again before anybody moves.</span>}
                 </div>
                 {info.storm && (
                   <button type="button" onClick={() => onStorm(selArmy.id, key(selProv.c, selProv.r))}
@@ -13535,6 +13667,63 @@ function CulturePanel({ game, P, onTake }) {
         })}
       </div>
     </div>
+  );
+}
+
+/* --------------------------------- WARHORNS ---------------------------------
+   Raiders used to appear on your fields with no warning at all, which read as
+   the game cheating rather than as a people deciding something. They decide it
+   here, out loud, one season before anybody arrives — and the scene says the
+   thing the rules never said anywhere a player could see it: a holdout is
+   never at peace with you unless something is standing between you.
+   ------------------------------------------------------------------------ */
+function WarhornScene({ who, game, P, onClose }) {
+  const m = MINORS[who];
+  if (!m) return null;
+  const pact = (game.pacts || {})[who];
+  const regard = game.regard?.[who];
+  return (
+    <Overlay onClose={onClose}>
+      <div className="cc-w-620px cc-max-w-94vw rounded-lg border cc-border-5a3230 cc-bg-0d141a overflow-hidden">
+        <div className="px-5 py-3.5 border-b cc-border-2a1f1c flex items-center gap-3"
+          style={{ background: "linear-gradient(90deg,#1e1210,#0d141a)" }}>
+          <Sigil id={who} size={20} color={m.color} />
+          <div className="flex-1">
+            <div className="cc-text-11d5px cc-text-e09a8a">Warhorns sound</div>
+            <div className="disp cc-text-20px">{m.short} are coming for blood</div>
+          </div>
+        </div>
+        <div className="p-5 grid gap-3 cc-text-14px leading-relaxed cc-text-dfeaf0">
+          <p>
+            Your outriders come in off the road with the same story from three different directions. Bands are
+            out of {m.seatName || "their ground"}, moving in company strength and not stopping to trade. They are
+            not marching on your seat — they are going to your fields, your works and your carts, and they will
+            keep coming back for as long as there is anything left to take.
+          </p>
+          <p className="cc-text-e8b98a">
+            {m.short} are not a realm and there is no war to declare. They have been hostile since the day you
+            laid eyes on them and they will stay hostile: the only thing that turns a band aside is an
+            arrangement, paid every season, for as long as you want it kept.
+          </p>
+          <div className="rounded border cc-border-31454f cc-bg-131f27 px-3.5 py-2.5">
+            <div className="cc-text-12d5px cc-text-a7bac6">What would turn them round</div>
+            <div className="cc-text-13px cc-text-c6d6de mt-1 leading-snug">
+              {pact
+                ? "You already have an arrangement with them. It should be holding — if their bands are on your ground anyway, it is because your companies were on theirs first."
+                : <>Go to their ground and strike one, or break the place that sends them.
+                  They regard you as <span className={regardTone(regard)}>{regardBand(regard).word}</span>, which
+                  is what any arrangement will be priced off.</>}
+            </div>
+          </div>
+        </div>
+        <div className="px-5 pb-5">
+          <button type="button" onClick={onClose}
+            className="w-full py-2.5 rounded cc-bg-3a2018 cc-hover-bg-4a2a1f border cc-border-8a4636 cc-text-f0d6c2 disp cc-text-15px transition-colors">
+            Stand the wards to
+          </button>
+        </div>
+      </div>
+    </Overlay>
   );
 }
 
