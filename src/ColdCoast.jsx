@@ -18,7 +18,7 @@ import {
   Flag, Sparkles, Play, Anvil, Boxes, Lock,
 } from "lucide-react";
 import { TECHS, TECH_IDS, TECH_TIERS, TIER_OF, tierGate, tierOpen, tierNeeds } from "./data/techs.js";
-import { ICONS, ICON_AUTHORS, unitIcon, techIcon } from "./data/gameicons.js";
+import { ICONS, ICON_AUTHORS, unitIcon, techIcon, slotIcon } from "./data/gameicons.js";
 import { MAP_NAMES } from "./data/places.js";
 import { SECTORS, SECTOR_NAME, ADJACENT, POSTURES, POSTURE_IDS, GROUND, groundFor,
          FORMATIONS, FORMATION_IDS, FLANK_DEAL, FLANK_MORALE, SHAKEN_NEAR, SHAKEN_SECTOR,
@@ -38,6 +38,7 @@ import { ACCORDS, ACCORD_IDS, GIFT, ACCORD_OATH, ACCORD_BREAK_REGARD, PEACE,
 import { SLOTS, SLOT_KEYS, REGALIA, REGALIA_IDS, regaliaMods, regaliaChips,
          seatPiece, wildPieces, storyPiece, buyable } from "./data/regalia.js";
 import { TRADITIONS, TRADITION_IDS, CULTURE_SLOTS, REFORM, cultureMods, traditionChips } from "./data/culture.js";
+import { RETAINERS, HOUSEHOLD_SLOTS, householdMods, retainerChips, retainerDue } from "./data/retainers.js";
 import { OFFICES, OFFICE_IDS, officeShare, officeMods,
          DECISIONS, DECISION_IDS, decisionMods, MILESTONES, MILESTONE_IDS } from "./data/court.js";
 import { STORIES } from "./data/stories.js";
@@ -958,6 +959,21 @@ function UnitMark({ type, size = 22, lit }) {
   );
 }
 
+/* The mark for one of the five places a warlord can carry something. It is the
+   empty slot's whole content, so it has to read at twenty pixels with nothing
+   in it: lit when something is worn, and a dim outline when the slot is bare. */
+function SlotMark({ slot, size = 26, lit }) {
+  const ic = slotIcon(slot);
+  if (!ic) return <span style={{ width: size, height: size, display: "inline-block" }} />;
+  return (
+    <svg viewBox="0 0 512 512" width={size} height={size} aria-hidden="true" className="cc-slotmark"
+      data-lit={lit ? "1" : "0"}
+      style={{ display: "block", flexShrink: 0, color: lit ? "#f2c97a" : "#3c4c56" }}>
+      <path d={ic.d} fill="currentColor" />
+    </svg>
+  );
+}
+
 function UnitArt({ type, size = 40, plinth }) {
   const src = UNIT_ART[type];
   if (src) {
@@ -1514,6 +1530,8 @@ function courtCommand(nat) {
   fold(cultureMods(nat.traditions));
   fold(decisionMods(nat.taken));
   fold(officeMods(nat.offices));
+  // And the people at the warlord's own fire, who stay whoever is sitting at it.
+  fold(householdMods(nat.household));
   return out;
 }
 /* And what it is worth to the ledger: resource multipliers, plus the handful
@@ -1536,6 +1554,7 @@ function courtLedger(nat) {
   fold(cultureMods(nat.traditions));
   fold(decisionMods(nat.taken));
   fold(officeMods(nat.offices));
+  fold(householdMods(nat.household));
   return out;
 }
 
@@ -2393,6 +2412,20 @@ const bandCap = (nat) => (nat?.known?.hosting ? BAND_CAP_LONG : BAND_CAP);
 
 const musteringGround = (p) => !!p && (p.capital || hasBuild(p, "muster"));
 
+/* A hex's road and a hex's eyes. Both keys were written for features — the
+   thing a story leaves behind on the ground — but a cleared track and a watch
+   fire are the same two keys raised by hand, so both are read off whatever is
+   built here as well. A building knocked about in a raid carries neither until
+   it is repaired: a burnt beacon sees nothing. */
+const builtMove = (p) => doneBuilds(p).reduce((m, b) => {
+  const s = buildStep(b);
+  return b.damaged || !s?.move ? m : Math.min(m, s.move);
+}, 99);
+const hexSight = (p) => Math.max(
+  FEATURES[p.feature]?.sight || 0,
+  doneBuilds(p).reduce((n, b) => (b.damaged ? n : Math.max(n, buildStep(b)?.sight || 0)), 0),
+);
+
 // Sight is your own ground, wherever your warbands are standing, and one step
 // beyond both. Everything else is dark: you do not know who holds it, what is
 // built on it, or what is walking about on it.
@@ -2423,14 +2456,28 @@ function seenSet(provinces, armies, natId, nations) {
      on the continent: at reach three that is nineteen hexes to look at instead
      of fifteen thousand, and this runs on every render. */
   const add = (c, r, reach = 1) => {
-    let edge = [[c, r]];
     const k0 = key(c, r);
     if (provinces[k0]) seen.add(k0);
+    /* The one-step case is every hex you own, so it stays a bare ring rather
+       than setting up a walk. */
+    if (reach <= 1) {
+      neighbours(c, r).forEach(([nx, ny]) => {
+        const nk = key(nx, ny);
+        if (provinces[nk]) seen.add(nk);
+      });
+      return;
+    }
+    /* Further out, the frontier is tracked apart from what has been seen: a
+       watch fire standing in the middle of your own ground would otherwise
+       find every neighbour already lit and stop at the first ring. */
+    let edge = [[c, r]];
+    const walked = new Set([k0]);
     for (let step = 0; step < reach; step++) {
       const next = [];
       edge.forEach(([x, y]) => neighbours(x, y).forEach(([nx, ny]) => {
         const nk = key(nx, ny);
-        if (!provinces[nk] || seen.has(nk)) return;
+        if (!provinces[nk] || walked.has(nk)) return;
+        walked.add(nk);
         seen.add(nk);
         next.push([nx, ny]);
       }));
@@ -2443,16 +2490,42 @@ function seenSet(provinces, armies, natId, nations) {
     if (a.owner !== natId) return;
     add(a.c, a.r, armyReach(a, nations?.[natId]));
   });
-  // A light, a crag, a market: places that see further than a step.
-  const far = Object.values(provinces).filter((p) => p.owner === natId && FEATURES[p.feature]?.sight);
-  if (far.length) Object.values(provinces).forEach((q) => {
-    if (far.some((p) => hexDist(p.c, p.r, q.c, q.r) <= 1 + FEATURES[p.feature].sight)) seen.add(key(q.c, q.r));
+  // A light, a crag, a market, a watch fire: places that see further than a step.
+  Object.values(provinces).forEach((p) => {
+    if (p.owner !== natId) return;
+    const s = hexSight(p);
+    if (s) add(p.c, p.r, 1 + s);
   });
   return seen;
 }
 
-// What a hex costs to enter: the ground, unless something built on it is a road.
-const moveCost = (p) => Math.min(TERRAIN[p.t].move, FEATURES[p.feature]?.move ?? 99);
+// What a hex costs to enter: the ground, unless something on it is a road.
+const moveCost = (p) => Math.min(TERRAIN[p.t].move, FEATURES[p.feature]?.move ?? 99, builtMove(p));
+// What a post road does for a column standing on it: pulls the line in a hex.
+const builtSupply = (p) => doneBuilds(p).reduce((n, b) =>
+  (b.damaged ? n : n + (buildStep(b)?.supply || 0)), 0);
+
+/* ------------------------------ GARRISONS ----------------------------------
+   A wall is not a number on a hex. It is a number of places to stand, and a
+   place to stand is worth nothing until somebody is standing in it. A palisade
+   opens one, a ditch and bank two, a stone curtain four.
+
+   The men who fill them are a warband in every respect the rest of the game
+   already knows about — companies with ranks, a strength, a nerve, a share of
+   the rations — except that they have no movement and never will. That is the
+   whole of the implementation: everything else, from standing in the line when
+   somebody comes to gaining rank for having held, falls out of being an army. */
+const garrisonSlots = (p) => doneBuilds(p).reduce((n, b) =>
+  (b.damaged ? n : n + (buildStep(b)?.garrison || 0)), 0);
+// Thorn and ditch beyond the wall: what makes a band go round rather than in.
+const wallDeter = (p) => doneBuilds(p).reduce((n, b) =>
+  (b.damaged ? n : n + (buildStep(b)?.deter || 0)), 0);
+const garrisonId = (k) => `gar${k}`;
+const garrisonAt = (armies, k) => armies.find((a) => a.id === garrisonId(k) && a.units.length);
+/* What a raiding band sees when it looks at a wall: nothing at all if there is
+   nobody on it, and a reason to be somewhere else if there is. */
+const garrisonHold = (provinces, armies, k) =>
+  (provinces[k] && garrisonAt(armies, k) ? 1 + wallDeter(provinces[k]) : 0);
 
 const SEASON_TINT = { spring: "#9fd6a8", summer: "#e8d089", autumn: "#d09a6a", winter: "#9fc8dd" };
 
@@ -2925,7 +2998,9 @@ function supplyRelief(army, nat) {
   const road = nat?.known?.quartering ? QUARTER_RELIEF : 0;
   const captain = captainMods(army).relief + realmCommand(nat).relief;
   const here = supplyRelief.provinces?.[key(army.c, army.r)];
-  const place = here && here.owner === army.owner ? (FEATURES[here.feature]?.supply || 0) + (FEATURES[here.feature]?.carry || 0) : 0;
+  const place = here && here.owner === army.owner
+    ? (FEATURES[here.feature]?.supply || 0) + (FEATURES[here.feature]?.carry || 0) + builtSupply(here)
+    : 0;
   return { carts, road, captain, place, total: carts + road + captain + place };
 }
 
@@ -3003,6 +3078,8 @@ function buildWorld() {
          what it is, and that is the game. */
       regalia: {},        // what the warlord is wearing, by slot
       armoury: [],        // what is on the rack and not being worn
+      household: [],      // who came to the fire and stayed
+      household_gone: [], // ...and who was sent away, who does not come back
       earned: [],         // habits the warlord hardened into at a milestone
       met_milestones: [], // ...and which milestones have already been answered
       traditions: [],     // how the people live, up to CULTURE_SLOTS of them
@@ -3128,6 +3205,7 @@ function opened(game, prov) {
 function moveInfo(game, army, prov, P, atWar) {
   if (!army || !prov || army.owner !== P) return null;
   if (army.c === prov.c && army.r === prov.r) return { here: true };
+  if (army.garrison) return { ok: false, why: "They are the wall. They do not march." };
   const adj = neighbours(army.c, army.r).some(([x, y]) => x === prov.c && y === prov.r);
   if (!adj) return { ok: false, why: "Not next to your warband." };
   const cost = moveCost(prov);
@@ -3148,7 +3226,7 @@ function moveInfo(game, army, prov, P, atWar) {
   if (army.mp < cost)
     return { ok: false, cost, why: `Needs ${cost} movement; ${army.mp} left this season.` };
   if (other) return { ok: true, cost, kind: "attack", label: `Attack the ${game.nations[other.owner].short} warband` };
-  const friend = game.armies.find((a) => a.c === prov.c && a.r === prov.r && a.owner === P);
+  const friend = game.armies.find((a) => a.c === prov.c && a.r === prov.r && a.owner === P && !a.garrison);
   if (friend) {
     const cap = bandCap(game.nations[P]);
     if (friend.units.length + army.units.length > cap)
@@ -3731,8 +3809,8 @@ function initialState() {
     .forEach(([a, b]) => { war[warKey(a, b)] = true; });
   return {
     turn: 1, player: null, ...w, war, armies, uid,
-    sel: null, battle: null, log: [], recruit: null, over: null,
-    showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, regard: {}, pacts: {}, accords: {}, torn: 0, coalition: null, milestone: null, warhorn: null,
+    sel: null, battle: null, log: [], recruit: null, wallAt: null, over: null,
+    showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, regard: {}, pacts: {}, accords: {}, torn: 0, coalition: null, milestone: null, warhorn: null, retainer: null,
     meetings: [], notices: [], focus: null, sound: { music: true, sfx: true },
     goals: { done: {}, hidden: false }, summary: null, roster: false,
     petitions: [], promises: [], hearing: null, chapter: null, hall: null,
@@ -4775,6 +4853,7 @@ export default function ColdCoast() {
       const from = g.armies.find((a) => a.id === fromId);
       const to = g.armies.find((a) => a.id === toId);
       if (!from || !to || from.id === to.id) return g;
+      if (from.garrison || to.garrison) return g;      // the wall is not a warband
       if (from.owner !== P || to.owner !== P) return g;
       if (from.c !== to.c || from.r !== to.r) return g;
       if (from.units.length + to.units.length > bandCap(g.nations[P])) return g;
@@ -4842,6 +4921,33 @@ export default function ColdCoast() {
     };
   });
 
+  /* For the smoke test only: an advance is understood, and a finished building
+     appears on ground you hold. Roads, watch fires and walls are thirty seasons
+     of ordinary play away from the opening position, and what they do is worth
+     checking without spending them. */
+  if (typeof window !== "undefined") window.__ccLearn = (id) => setGame((g) => {
+    if (!TECHS[id]) return g;
+    const n = g.nations[g.player];
+    return { ...g, nations: { ...g.nations, [g.player]: { ...n, known: { ...n.known, [id]: true } } } };
+  });
+  /* ...and the yards have been working. A wall and a company to stand on it
+     are twenty seasons of ordinary play apart, and what wants checking is the
+     wall, not the twenty seasons. */
+  if (typeof window !== "undefined") window.__ccStock = (type) => setGame((g) => {
+    const n = g.nations[g.player];
+    if (!n || !UNITS[type]) return g;
+    return { ...g, nations: { ...g.nations, [g.player]: { ...n,
+      res: { ...n.res, scrap: n.res.scrap + 400, men: n.res.men + 400, metal: (n.res.metal || 0) + 60 },
+      arms: { ...(n.arms || {}), [type]: UNITS[type].size } } } };
+  });
+  if (typeof window !== "undefined") window.__ccRaise = (c, r, id, lvl, fork) => setGame((g) => {
+    const k = key(c, r);
+    const p = g.provinces[k];
+    if (!p || p.owner !== g.player || !BUILDINGS[id]) return g;
+    const rest = buildsOf(p).filter((b) => b.id !== id);
+    return { ...g, provinces: { ...g.provinces, [k]: { ...p, builds: [...rest, { id, lvl: lvl || 1, fork }] } } };
+  });
+
   /* For the smoke test only: a holdout's seat changes hands, so the things
      that hang off breaking one can be reached without a campaign. */
   if (typeof window !== "undefined") window.__ccBreak = (id) => setGame((g) => {
@@ -4892,6 +4998,44 @@ export default function ColdCoast() {
           met_milestones: [...(n.met_milestones || []), id] } },
         log: [{ turn: g.turn, m: `${lordName(n)} is ${(TRAITS[trait]?.name || trait).toLowerCase()} now. ${TRAITS[trait]?.desc || ""}` },
           ...g.log].slice(0, 60),
+      };
+    });
+  }
+
+  /* Somebody has come to the fire. Taking them costs nothing and gives up a
+     place; sending them away costs nothing and gives up the person, for good —
+     a retainer turned down does not come back, which is why the scene says so
+     before the button is pressed. */
+  function answerRetainer(id, keep) {
+    setGame((g) => {
+      const n = g.nations[P];
+      const r = RETAINERS[id];
+      if (!n || !r) return { ...g, retainer: null };
+      const has = [...(n.household || []), ...(n.household_gone || [])];
+      if (has.includes(id)) return { ...g, retainer: null };
+      Sound.play(keep ? "claim" : "tick");
+      return {
+        ...g, retainer: null,
+        nations: { ...g.nations, [P]: { ...n,
+          household: keep ? [...(n.household || []), id] : (n.household || []),
+          household_gone: keep ? (n.household_gone || []) : [...(n.household_gone || []), id] } },
+        log: [{ turn: g.turn, m: keep ? `${r.name} is of the household now. ${r.took}` : `${r.name} is sent on their way.` },
+          ...g.log].slice(0, 60),
+      };
+    });
+  }
+  /* And letting one go afterwards, which is the same finality: the place comes
+     back, the person does not. */
+  function releaseRetainer(id) {
+    setGame((g) => {
+      const n = g.nations[P];
+      if (!n || !(n.household || []).includes(id)) return g;
+      return {
+        ...g,
+        nations: { ...g.nations, [P]: { ...n,
+          household: (n.household || []).filter((x) => x !== id),
+          household_gone: [...(n.household_gone || []), id] } },
+        log: [{ turn: g.turn, m: `${RETAINERS[id]?.name || "Somebody"} leaves the hall. They will not be back.` }, ...g.log].slice(0, 60),
       };
     });
   }
@@ -5439,6 +5583,44 @@ export default function ColdCoast() {
         });
       }
       return { ...g, nations, armies, provinces, uid, recruit: null, log: [{ turn: g.turn, m: `${UNITS[type].name} mustered at ${p.name} — ${popCost} of its people go with them.` }, ...g.log].slice(0, 60) };
+    });
+  }
+
+  /* The same muster, walked into a wall instead of out of the gate. Everything
+     about the cost is the ordinary cost of a company — the arms off the rack,
+     the scrap, the people of this ground — and the only difference is where
+     they end up: a warband with no movement, named for the place, which stands
+     here until it is stood down or somebody comes through it. */
+  function garrisonUnit(k, type, wg, ag) {
+    setGame((g) => {
+      const p = g.provinces[k];
+      if (!p || p.owner !== P) return g;
+      const gid = garrisonId(k);
+      const held = g.armies.find((a) => a.id === gid);
+      const slots = garrisonSlots(p);
+      if (!slots || (held?.units.length || 0) >= slots) return g;
+      const n0 = g.nations[P];
+      const cost = unitCost(type, P, n0, wg, ag);
+      const res = n0.res;
+      const need = UNITS[type].size;
+      const have = (n0.arms || {})[type] || 0;
+      const popCost = popCostOf(need);
+      if (res.scrap < cost.scrap || res.men < cost.men || (res.metal || 0) < cost.metal) return g;
+      if (have < need) return g;
+      if ((p.pop || 0) < popCost) return g;
+      const nations = { ...g.nations };
+      nations[P] = { ...n0,
+        res: { ...res, scrap: res.scrap - cost.scrap, metal: (res.metal || 0) - cost.metal, men: res.men - cost.men },
+        arms: { ...(n0.arms || {}), [type]: have - need } };
+      const provinces = { ...g.provinces, [k]: { ...p, pop: Math.max(0, (p.pop || 0) - popCost) } };
+      let uid = g.uid;
+      const u = makeUnit(type, P, uid++, wg, ag);
+      const armies = held
+        ? g.armies.map((a) => (a.id === gid ? { ...a, units: [...a.units, u] } : a))
+        : [...g.armies, { id: gid, owner: P, c: p.c, r: p.r, garrison: k,
+            name: `${p.name} wall`, units: [u], mp: 0, maxMp: 0 }];
+      return { ...g, nations, armies, provinces, uid, wallAt: null,
+        log: [{ turn: g.turn, m: `${UNITS[type].name} take their place on the wall at ${p.name}.` }, ...g.log].slice(0, 60) };
     });
   }
 
@@ -6289,6 +6471,13 @@ export default function ColdCoast() {
                     const z = provinces[key(x, y)]; return z && z.owner && !isMinor(z.owner);
                   }).length * 5;
               if (a.recent.includes(k)) v -= 40;             // stripped already
+              /* A wall with men on it is not walked past. The hex itself is out
+                 of the question, and the ground under its eyes is worth less
+                 than open country — which is the whole of what makes a band go
+                 round a walled ward rather than through it. */
+              if (garrisonHold(provinces, armies, k)) return -1000;
+              v -= neighbours(q.c, q.r).reduce((n, [x, y]) =>
+                n + garrisonHold(provinces, armies, key(x, y)) * 14, 0);
               // A holdout's band works its own ground: it will not go further
               // out than its reach, and it will not set foot on the ground of
               // whoever it has an arrangement with.
@@ -6581,6 +6770,24 @@ export default function ColdCoast() {
         if (due) g = { ...g, milestone: due };
       }
 
+      /* --- who has come to the fire ---
+         A retainer is not hired and cannot be sought out. They turn up because
+         of something that has already happened: fields won, an accord signed,
+         a holdout broken, a wall raised, or simply enough seasons gone by. One
+         at a time, and only when there is a place for them. */
+      if (!g.retainer && !g.milestone && nations[g.player]) {
+        const t = nations[g.player].tally || {};
+        const held = (id) => MINORS[id]?.at && provinces[key(MINORS[id].at[0], MINORS[id].at[1])]?.owner === g.player;
+        const due = retainerDue(nations[g.player], {
+          turn: g.turn,
+          fields: t.fields || 0,
+          accords: Object.keys(accords).length,
+          holdouts: MINOR_IDS.filter(held).length,
+          walls: Object.values(provinces).filter((p) => p.owner === g.player && garrisonSlots(p)).length,
+        });
+        if (due) g = { ...g, retainer: due };
+      }
+
       /* --- what the envoys agreed, and what the coast thinks of you ---
          An accord has a term on it. When it runs out it is said so, once, and
          then it is simply gone: the ledger stops paying it and the road shuts.
@@ -6823,12 +7030,27 @@ export default function ColdCoast() {
             // put their nerve back takes some of it instead.
             morale: Math.max(0, shake ? u.morale - shake : Math.min(u.maxMorale, u.morale + 12)),
           })),
-          mp: Math.max(1, a.maxMp + ((EDICTS[nations[a.owner]?.edict || "none"] || EDICTS.none).move || 0)
+          // Men on a wall are given no movement, ever. Everything else gets at
+          // least a step however bad the season and however heavy the carts.
+          mp: a.garrison ? 0
+            : Math.max(1, a.maxMp + ((EDICTS[nations[a.owner]?.edict || "none"] || EDICTS.none).move || 0)
             + lordMul(a.owner, nations[a.owner]).move + seasonOf(g.turn + 1).move - cartDrag(a)
             - (a.tired ? 1 : 0)),
         };
       }).map((a) => ({ ...a, units: a.units.filter((u) => u.str > 0) }))
         .filter((a) => a.units.length > 0);
+
+      /* A wall whose ground has changed hands is not a pocket of men who cannot
+         march. They were the wall, and the wall belongs to somebody else now. */
+      armies = armies.filter((a) => {
+        if (!a.garrison) return true;
+        const on = provinces[a.garrison];
+        if (on && on.owner === a.owner) return true;
+        if (a.owner === g.player) {
+          newLog.push({ turn: g.turn, m: `${a.name} is gone with the ground it stood on.` });
+        }
+        return false;
+      });
 
       /* A captain at nothing walks, and takes the warband with them. It goes
          to the Wasters: nobody's people, now, holding whatever it is standing
@@ -7122,6 +7344,7 @@ export default function ColdCoast() {
           <Sidebar
             game={game} P={P} nat={nat} sight={sight} selProv={selProv} selArmy={selArmy} atWar={atWar}
             onBuild={build} onRecruitOpen={(k) => setGame((g) => ({ ...g, recruit: k }))}
+            onWallOpen={(k) => setGame((g) => ({ ...g, wallAt: k }))}
             onWar={toggleWar} onDeselect={deselect}
             onInvestigate={investigate} onClaim={claim} onMarch={march} onStorm={storm}
             onInvest={invest} onLift={liftSiege} onStory={advanceStory} onSally={sally}
@@ -7148,6 +7371,14 @@ export default function ColdCoast() {
           onConfirm={(type, wg, ag) => recruitUnit(game.recruit, type, wg, ag)}
         />
       )}
+      {game.wallAt && (
+        <RecruitPanel wall
+          natId={P} nat={nat} provName={game.provinces[game.wallAt]?.name}
+          prov={game.provinces[game.wallAt]}
+          onClose={() => setGame((g) => ({ ...g, wallAt: null }))}
+          onConfirm={(type, wg, ag) => garrisonUnit(game.wallAt, type, wg, ag)}
+        />
+      )}
       {game.battle && (
         <BattleScreen b={game.battle} nations={game.nations} P={P}
           onStep={stepBattle} onAuto={autoBattle} onClose={closeBattle}
@@ -7164,7 +7395,7 @@ export default function ColdCoast() {
           onHear={(pid) => setGame((g) => ({ ...g, lords: false, hearing: pid }))}
           onWear={wearPiece} onStow={stowPiece} onBuy={buyPiece}
           onHold={holdOffice} onLeave={leaveOffice}
-          onTake={takeTradition} onDecide={decide} />
+          onTake={takeTradition} onDecide={decide} onRelease={releaseRetainer} />
       )}
       {game.chapter && !game.battle && (
         <ChapterScene chapter={game.chapter} onClose={() => setGame((g) => ({ ...g, chapter: null }))} />
@@ -7172,7 +7403,10 @@ export default function ColdCoast() {
       {game.milestone && !game.battle && MILESTONES[game.milestone] && (
         <MilestoneScene id={game.milestone} game={game} P={P} onChoose={chooseHabit} />
       )}
-      {game.warhorn && !game.battle && !game.milestone && MINORS[game.warhorn] && (
+      {game.retainer && !game.battle && !game.milestone && RETAINERS[game.retainer] && (
+        <RetainerScene id={game.retainer} game={game} P={P} onAnswer={answerRetainer} />
+      )}
+      {game.warhorn && !game.battle && !game.milestone && !game.retainer && MINORS[game.warhorn] && (
         <WarhornScene who={game.warhorn} game={game} P={P}
           onClose={() => setGame((g) => ({ ...g, warhorn: null }))} />
       )}
@@ -8022,7 +8256,7 @@ function WarbandGlyph({ kind }) {
    second plate behind the first. Drawn about 16 wide against a hex of 27, so
    the ground still shows round it. */
 const PLATE = "M-7.6-8.6h15.2v9.4q0 5.4-7.6 8.4-7.6-3-7.6-8.4z";
-function WarbandMark({ col, n, str, edge, chosen, kind, stack, idle }) {
+function WarbandMark({ col, n, str, edge, chosen, kind, stack, idle, wall }) {
   const ink = lum(col) > 0.62 ? "#101a20" : "#eef3f5";
   const fill = mix(col, "#0b1116", 0.18);
   const barCol = str > 0.66 ? "#9fd6b4" : str > 0.33 ? "#e8b98a" : "#e0644a";
@@ -8037,7 +8271,10 @@ function WarbandMark({ col, n, str, edge, chosen, kind, stack, idle }) {
       {idle && !chosen && <path d={PLATE} className="cc-idle" fill="none" stroke="#ffffff" strokeWidth="2.6" />}
       <path d={PLATE} fill="#0b1219" stroke={edge} strokeWidth={chosen ? 1.5 : 1.1} strokeLinejoin="round" />
       <path d={PLATE} fill={fill} transform="scale(.86)" stroke="none" />
-      <path d="M-6.5-7.4h13v2.6h-13z" fill={col} opacity="0.9" />
+      {/* Men who hold ground carry the wall on the plate instead of a band. */}
+      {wall
+        ? <path d="M-6.5-8.6h2.6v1.2h1.8v-1.2h2.6v1.2h1.8v-1.2h2.6v3.8h-13z" fill={col} opacity="0.9" />
+        : <path d="M-6.5-7.4h13v2.6h-13z" fill={col} opacity="0.9" />}
       <g fill={ink} stroke="#0a1015" strokeWidth="0.55" strokeLinejoin="round" strokeLinecap="round"
          transform="translate(0,1.4) scale(.92)">
         <WarbandGlyph kind={kind} />
@@ -8565,6 +8802,10 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
       break: (id) => window.__ccBreak && window.__ccBreak(id),
       // ...or to walk a warband four hexes to look at something.
       put: (c, r) => window.__ccPut && window.__ccPut(c, r),
+      // ...or to spend thirty seasons reaching a wall and a road.
+      learn: (id) => window.__ccLearn && window.__ccLearn(id),
+      raise: (c, r, id, lvl, fork) => window.__ccRaise && window.__ccRaise(c, r, id, lvl, fork),
+      stock: (type) => window.__ccStock && window.__ccStock(type),
     };
     if (typeof window !== "undefined") window.__ccWild = () => {
       const game = gameRef.current;
@@ -8574,6 +8815,9 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
         woods: woods.length,
         herds: woods.filter((p) => p.lair === "herd").length,
         mobs: game.armies.filter((a) => a.mob).length,
+        // Where the player's seat is, so a probe can put something on the map
+        // without first working out which hex is theirs.
+        seat: (() => { const p = all.find((q) => q.owner === game.player && q.capital); return p ? key(p.c, p.r) : null; })(),
         // Who is leading what, across every realm, so a test can see that
         // rivals are giving out commands rather than only the player.
         led: NATION_IDS.map((id) => {
@@ -8589,6 +8833,22 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           .map((p) => `${p.name}:${p.hard}:${game.armies.filter((a) => a.c === p.c && a.r === p.r)
             .reduce((n, a) => n + a.units.length, 0)}`),
         regard: Object.entries(game.regard || {}).map(([k, v]) => `${k}:${v}`),
+        /* What has been raised on your own ground and what it actually does:
+           which hexes are roads that would otherwise be hard going, which
+           carry your eyes further, and which walls have anybody on them. */
+        works: (() => {
+          const mine = all.filter((p) => p.owner === game.player);
+          return {
+            roads: mine.filter((p) => TERRAIN[p.t].move > moveCost(p)).map((p) => key(p.c, p.r)),
+            eyes: mine.filter((p) => hexSight(p)).map((p) => `${key(p.c, p.r)}:${hexSight(p)}`),
+            walls: mine.filter((p) => garrisonSlots(p)).map((p) => {
+              const k = key(p.c, p.r);
+              const gar = garrisonAt(game.armies, k);
+              return `${k}:${gar ? gar.units.length : 0}/${garrisonSlots(p)}:hold${garrisonHold(game.provinces, game.armies, k)}:mp${gar ? gar.mp : "-"}`;
+            }),
+            seen: seenSet(game.provinces, game.armies, game.player, game.nations).size,
+          };
+        })(),
         /* How far each of your warbands can see, which used to be one hex for
            everybody whatever they were carrying. */
         reach: game.armies.filter((a) => a.owner === game.player)
@@ -8603,6 +8863,9 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
             rack: n.armoury || [],
             earned: n.earned || [],
             answered: n.met_milestones || [],
+            household: n.household || [],
+            sentAway: n.household_gone || [],
+            atDoor: game.retainer || null,
             traditions: n.traditions || [],
             taken: n.taken || [],
             offices: Object.entries(n.offices || {}).map(([k, c]) => `${k}:${c?.name || "?"}`),
@@ -9083,7 +9346,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
                     {chosen && <rect className="cc-ants" x="-10.2" y="-11.2" width="20.4" height="24.4" rx="5"
                       fill="none" stroke="#ffffff" strokeWidth="1.1" strokeDasharray="3.6 3" opacity="0.95" />}
                     <WarbandMark col={col} n={a.units.length} str={strNow / strMax} edge={edge}
-                      chosen={chosen} kind={warbandKind(a)} stack={stack}
+                      chosen={chosen} kind={warbandKind(a)} stack={stack} wall={!!a.garrison}
                       idle={own && a.mp > 0} />
                     {a.lord && (
                       <path d="M-4.4 -14.2l1.8 3 2.6 -3.6 2.6 3.6 1.8 -3 0.7 4.4h-10.2z"
@@ -9145,7 +9408,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
 }
 
 /* -------------------------------- SIDEBAR --------------------------------- */
-function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onStorm, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift, onStory, onSally, onHall }) {
+function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecruitOpen, onWallOpen, onWar, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onStorm, onSeat, onResearch, onOpenTree, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift, onStory, onSally, onHall }) {
   const [tab, setTab] = useState("here");
   // Only the two that are about what is in front of you. The realm-wide
   // screens moved to the top bar; six tabs did not fit this column.
@@ -9166,7 +9429,7 @@ function Sidebar({ game, P, nat, sight, selProv, selArmy, atWar, onBuild, onRecr
       <div className="flex-1 overflow-y-auto thin p-3.5">
         {tab === "here" && (
           <SelectionPanel game={game} P={P} sight={sight} selProv={selProv} selArmy={selArmy}
-            onBuild={onBuild} onRecruitOpen={onRecruitOpen} onDisband={onDisband}
+            onBuild={onBuild} onRecruitOpen={onRecruitOpen} onWallOpen={onWallOpen} onDisband={onDisband}
             onDeselect={onDeselect} onInvestigate={onInvestigate} onClaim={onClaim}
             onMarch={onMarch} onStorm={onStorm} atWar={atWar} onSeat={onSeat} onRepair={onRepair} onDistrict={onDistrict}
             onInvest={onInvest} onLift={onLift} onStory={onStory} onSally={onSally} onHall={onHall}
@@ -9196,6 +9459,11 @@ function buildingEffect(step, bid) {
     out.push(`+${v} ${label} every season`);
   });
   if (step?.def) out.push(`+${step.def}% to anyone defending here`);
+  if (step?.garrison) out.push(`${step.garrison} ${step.garrison === 1 ? "place" : "places"} on the wall`);
+  if (step?.deter) out.push("bands go round rather than in");
+  if (step?.move) out.push("crossed for one movement, whatever the ground");
+  if (step?.sight) out.push(`carries your eyes ${step.sight} ${step.sight === 1 ? "hex" : "hexes"} further`);
+  if (step?.supply) out.push("pulls the supply line a hex further out");
   if (step?.hands) out.push(`${step.hands} pairs of hands at the arms`);
   if (step?.quality) out.push("what leaves is better than what a hut turns out");
   if (bid === "muster") out.push("lets you raise warbands here");
@@ -9435,7 +9703,7 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair, o
   );
 }
 
-function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onStorm, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift, onStory, onSally, onHall }) {
+function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOpen, onWallOpen, onDisband, onDeselect, onInvestigate, onClaim, onMarch, onStorm, atWar, onSeat, onRepair, onTake, onMerge, onReinforce, onCommand, onCraft, onInvestPop, onRename, onSplit, onDistrict, onInvest, onLift, onStory, onSally, onHall }) {
   /* Which order, if any, has been armed once and is waiting to be confirmed.
      First, because a hook cannot sit behind the early return below. */
   const [aggArmed, setAggArmed] = useState(null);
@@ -9748,7 +10016,7 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
                   </div>
                 )}
                 <div className="flex flex-wrap gap-1 mt-1.5">
-                  {buildingEffect(bld.id).map((e) => (
+                  {buildingEffect(buildStep(bld), bld.id).map((e) => (
                     <span key={e} className={`cc-text-11d5px rounded px-1.5 py-0.5 border ${left ? "cc-border-31454f cc-text-95aab6" : "cc-border-3d5a4a cc-text-9fd6b4"}`}>{e}</span>
                   ))}
                 </div>
@@ -9776,6 +10044,45 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
           })}
         </Section>
       )}
+
+      {/* Your own wall: the places it opens, who is standing in them, and what
+          it takes to put somebody else there. A wall nobody is on is worth its
+          percentage to a defender and nothing else — it does not turn a band
+          round, and it does not stop anyone walking onto the hex. */}
+      {mine && garrisonSlots(selProv) > 0 && (() => {
+        const k = key(selProv.c, selProv.r);
+        const gar = game.armies.find((a) => a.id === garrisonId(k));
+        const on = gar?.units || [];
+        const slots = garrisonSlots(selProv);
+        const full = on.length >= slots;
+        return (
+          <Section title={`The wall — ${on.length} of ${slots} ${slots === 1 ? "place" : "places"} filled`}>
+            <div className="cc-text-13px cc-text-c6d6de leading-relaxed mb-2">
+              {on.length === 0
+                ? "The wall is up and there is nobody on it. It is worth its share to whoever defends here, and nothing more, until somebody is standing in it."
+                : wallDeter(selProv)
+                  ? "They hold this ground and they never march. Bands go round rather than come at it."
+                  : "They hold this ground and they never march. Anybody who wants it has to come through them."}
+            </div>
+            {on.map((u) => {
+              const r = rankOf(u.xp);
+              return (
+                <div key={u.id} className="flex items-baseline gap-2 mb-1">
+                  <span className="cc-text-13px flex-1">{unitName(u)}</span>
+                  <span className="num cc-text-12d5px cc-text-c9a37a">{u.str}</span>
+                  <span className="cc-text-11d5px cc-text-8399a6">{r.n ? `Rank ${r.n} · ${r.name}` : "unblooded"}</span>
+                </div>
+              );
+            })}
+            <button type="button" disabled={full} onClick={() => onWallOpen(k)}
+              className={`w-full mt-2 py-2 rounded cc-text-13px border transition-colors ${full
+                ? "cc-border-25313a cc-text-78909e"
+                : "cc-bg-2a3a4a cc-hover-bg-35495c cc-border-4d7488 cc-text-dfeaf0"}`}>
+              {full ? "Every place on it is filled" : "Put a company on the wall"}
+            </button>
+          </Section>
+        );
+      })()}
 
       {/* A walled place somebody else holds. You can walk at it and be shot off
           the wall, or you can sit down in front of it and wait. */}
@@ -10115,7 +10422,7 @@ function WarbandBar({ game, P, army, sameHex, onDeselect, onRename, onHall, onCo
   const supTone = sup.band.tone === "good" ? "cc-text-9fd6b4"
     : sup.band.tone === "warn" ? "cc-text-e8b98a" : "cc-text-e08a6a";
   const openU = open ? army.units.find((u) => u.id === open) : null;
-  const mates = (sameHex || []).filter((a) => a.id !== army.id && a.owner === P && own);
+  const mates = (sameHex || []).filter((a) => a.id !== army.id && a.owner === P && own && !a.garrison);
 
   return (
     <div className="cc-warbar">
@@ -11105,7 +11412,7 @@ const Section = ({ title, children }) => (
 );
 
 /* ------------------------------ RECRUIT ----------------------------------- */
-function RecruitPanel({ natId, nat, provName, prov, onClose, onConfirm }) {
+function RecruitPanel({ natId, nat, provName, prov, onClose, onConfirm, wall }) {
   const open = unitsFor(nat);
   const [type, setType] = useState(open[0] || "spearmen");
   const wOpts = gradesFor(nat, WEAPON_GRADES), aOpts = gradesFor(nat, ARMOUR_GRADES);
@@ -11135,8 +11442,10 @@ function RecruitPanel({ natId, nat, provName, prov, onClose, onConfirm }) {
           style={{ background: "linear-gradient(90deg,#14202a,#0d141a)" }}>
           <Hammer size={18} className="cc-text-8fe3d6" />
           <div className="min-w-0">
-            <div className="disp cc-text-21px">Raise a company</div>
-            <div className="cc-text-12d5px cc-text-a7bac6">Mustering at {provName}</div>
+            <div className="disp cc-text-21px">{wall ? "Man the wall" : "Raise a company"}</div>
+            <div className="cc-text-12d5px cc-text-a7bac6">
+              {wall ? `Taking a place on the wall at ${provName}` : `Mustering at ${provName}`}
+            </div>
           </div>
           <button type="button" onClick={onClose} className="cc-seatclose cc-static ml-auto" aria-label="Close">
             <X size={18} />
@@ -11240,6 +11549,14 @@ function RecruitPanel({ natId, nat, provName, prov, onClose, onConfirm }) {
               </div>
             </div>
 
+            {wall && (
+              <div className="rounded border cc-border-3d5a4a cc-bg-121d18 p-3 mt-3 cc-text-12d5px cc-text-9fd6b4 leading-snug">
+                They will hold this ground and nothing else. A company put on a wall has no
+                movement and never gets any: it stands in the line when somebody comes here,
+                it gains rank for having held, it eats its rations, and it can be brought up
+                to strength or stood down — but it does not march.
+              </div>
+            )}
             <div className="rounded border cc-border-31454f cc-bg-131f27 p-3.5 mt-3">
               <div className="cc-text-12d5px cc-text-a7bac6 mb-2">Cost to raise</div>
               <Row label="Scrap" value={cost.scrap} tint={nat.res.scrap < cost.scrap ? "#e0644a" : undefined} />
@@ -11261,7 +11578,9 @@ function RecruitPanel({ natId, nat, provName, prov, onClose, onConfirm }) {
                 : "cc-border-25313a cc-text-78909e"}`}>
               {!armed ? `Only ${rack} of ${d.size} armed — set the works to it`
                 : !peopled ? "Not enough people on this ground"
-                : afford ? `Raise the ${d.name.toLowerCase()}` : "Not enough to raise them"}
+                : !afford ? "Not enough to raise them"
+                : wall ? `Put the ${d.name.toLowerCase()} on the wall`
+                : `Raise the ${d.name.toLowerCase()}`}
             </button>
           </div>
         </div>
@@ -12540,7 +12859,7 @@ const COURT_TABS = [
   { k: "lords", name: "Those who lead", note: "Everybody else's warlord" },
 ];
 function CourtScreen({ game, P, tab, onTab, onClose, onSuccession, onHall, onHear,
-                       onWear, onStow, onBuy, onHold, onLeave, onTake, onDecide }) {
+                       onWear, onStow, onBuy, onHold, onLeave, onTake, onDecide, onRelease }) {
   const nat = game.nations[P];
   const waiting = (game.petitions || []).length;
   return (
@@ -12577,7 +12896,8 @@ function CourtScreen({ game, P, tab, onTab, onClose, onSuccession, onHall, onHea
                 <LordSummary game={game} P={P} onSuccession={onSuccession} />
               </div>
               <div className="flex-1 min-w-0">
-                <ArmouryPanel game={game} P={P} onWear={onWear} onStow={onStow} onBuy={onBuy} />
+                <ArmouryPanel game={game} P={P} onWear={onWear} onStow={onStow} onBuy={onBuy}
+                  onRelease={onRelease} />
               </div>
             </div>
           )}
@@ -13390,7 +13710,7 @@ function CourtChips({ chips }) {
 }
 
 /* ------------------------------- THE ARMOURY ------------------------------ */
-function ArmouryPanel({ game, P, onWear, onStow, onBuy }) {
+function ArmouryPanel({ game, P, onWear, onStow, onBuy, onRelease }) {
   const nat = game.nations[P];
   const worn = SLOT_KEYS.map((k) => nat.regalia?.[k]).filter(Boolean);
   const all = regaliaMods(worn);
@@ -13418,6 +13738,7 @@ function ArmouryPanel({ game, P, onWear, onStow, onBuy }) {
           return (
             <div key={s.k} className="rounded border cc-border-31454f cc-bg-131f27 px-3 py-2.5">
               <div className="flex items-baseline gap-2">
+                <SlotMark slot={s.k} lit={!!p} />
                 <span className="cc-text-11d5px cc-text-8399a6 cc-w-72px shrink-0">{s.name}</span>
                 {p ? (
                   <span className="flex-1 min-w-0">
@@ -13474,6 +13795,65 @@ function ArmouryPanel({ game, P, onWear, onStow, onBuy }) {
           );
         })}
       </div>
+
+      <HouseholdPanel game={game} P={P} onRelease={onRelease} />
+    </div>
+  );
+}
+
+/* ------------------------------ THE HOUSEHOLD ------------------------------
+   Three places at the fire, filled by people who turned up. There is nothing
+   to buy here and no list to choose from, which is the point: the panel shows
+   who came, what they are worth, and the empty places that somebody will walk
+   into one of these seasons. */
+function HouseholdPanel({ game, P, onRelease }) {
+  const nat = game.nations[P];
+  const held = nat.household || [];
+  const gone = nat.household_gone || [];
+  return (
+    <div>
+      <div className="cc-text-12d5px cc-text-a7bac6 mt-4 mb-2 pb-1 border-b cc-border-243138 flex items-center gap-2">
+        <svg viewBox="0 0 512 512" width="15" height="15" aria-hidden="true" style={{ color: "#8fe3d6" }}>
+          <path d={ICONS.ui_household.d} fill="currentColor" />
+        </svg>
+        The household — {held.length} of {HOUSEHOLD_SLOTS}
+      </div>
+      <div className="cc-text-12d5px cc-text-93a9b5 leading-relaxed mb-2">
+        Nobody here was hired. They came because of something you had already done, and each of them came
+        once. A place given up is given up for good.
+      </div>
+      <div className="grid gap-2">
+        {held.map((id) => {
+          const r = RETAINERS[id];
+          if (!r) return null;
+          return (
+            <div key={id} className="rounded border cc-border-3d5a4a cc-bg-121d18 px-3 py-2.5">
+              <div className="flex items-baseline gap-2">
+                <span className="flex-1 min-w-0">
+                  <span className="disp cc-text-14px cc-text-8fe3d6">{r.name}</span>
+                  <span className="cc-text-11d5px cc-text-93a9b5 cc-block">{r.title}</span>
+                </span>
+                {onRelease && (
+                  <button type="button" onClick={() => onRelease(id)} className="cc-formbtn shrink-0"
+                    title="They leave the hall, and they do not come back.">Let them go</button>
+                )}
+              </div>
+              <CourtChips chips={retainerChips(id)} />
+            </div>
+          );
+        })}
+        {Array.from({ length: Math.max(0, HOUSEHOLD_SLOTS - held.length) }).map((_, i) => (
+          <div key={`empty${i}`} className="rounded border cc-border-25313a px-3 py-2.5 cc-text-12d5px cc-text-6f8794">
+            An empty place at the fire. Somebody will walk into it.
+          </div>
+        ))}
+      </div>
+      {gone.length > 0 && (
+        <div className="cc-text-11d5px cc-text-6f8794 mt-2 leading-snug">
+          {gone.map((id) => RETAINERS[id]?.name).filter(Boolean).join(", ")}
+          {gone.length === 1 ? " was sent away." : " were sent away."} None of them are coming back.
+        </div>
+      )}
     </div>
   );
 }
@@ -13684,6 +14064,60 @@ function CulturePanel({ game, P, onTake }) {
    thing the rules never said anywhere a player could see it: a holdout is
    never at peace with you unless something is standing between you.
    ------------------------------------------------------------------------ */
+/* Somebody has walked in. A retainer is the only thing in the court that
+   arrives with a face and a reason rather than a price, so the scene is the
+   whole of the feature — and it says out loud that turning them down is final,
+   because the one thing worse than a bad retainer is finding out afterwards
+   that you could only ever have had them once. */
+function RetainerScene({ id, game, P, onAnswer }) {
+  const r = RETAINERS[id];
+  const nat = game.nations[P];
+  if (!r) return null;
+  const room = HOUSEHOLD_SLOTS - (nat.household || []).length;
+  return (
+    <Overlay onClose={() => onAnswer(id, false)}>
+      <div className="cc-w-660px cc-max-w-94vw rounded-lg border cc-border-31454f cc-bg-0d141a overflow-hidden">
+        <div className="px-5 py-3.5 border-b cc-border-28363f flex items-center gap-3"
+          style={{ background: "linear-gradient(90deg,#14202a,#0d141a)" }}>
+          <svg viewBox="0 0 512 512" width="24" height="24" aria-hidden="true" style={{ color: "#8fe3d6" }}>
+            <path d={ICONS.ui_household.d} fill="currentColor" />
+          </svg>
+          <div className="flex-1 min-w-0">
+            <div className="cc-text-11d5px cc-text-8fe3d6">Somebody is at the fire</div>
+            <div className="disp cc-text-20px">{r.name}</div>
+            <div className="cc-text-12px cc-text-93a9b5">{r.title}</div>
+          </div>
+        </div>
+        <div className="p-5 grid gap-3 cc-text-14px leading-relaxed cc-text-dfeaf0">
+          <p className="cc-text-13px cc-text-a7bac6">{r.face}</p>
+          <p>{r.text}</p>
+          <div className="rounded border cc-border-3d5a4a cc-bg-121d18 px-3.5 py-2.5">
+            <div className="cc-text-12d5px cc-text-a7bac6">What having them about is worth</div>
+            <CourtChips chips={retainerChips(id)} />
+          </div>
+          <p className="cc-text-12d5px cc-text-e8b98a">
+            {room > 0
+              ? `There is room for ${room} more at the fire. Send them away and they do not come back.`
+              : "There is no room at the fire. Somebody would have to be let go first — and letting go is as final as turning away."}
+          </p>
+        </div>
+        <div className="px-5 pb-5 grid gap-2 cc-md-grid-cols-2">
+          <button type="button" disabled={room <= 0} onClick={() => onAnswer(id, true)}
+            className={`py-2.5 rounded disp cc-text-15px border transition-colors ${room > 0
+              ? "cc-bg-2b3f2c cc-hover-bg-37502f cc-border-4a6b45 cc-text-d7ecc9"
+              : "cc-border-25313a cc-text-78909e"}`}>
+            {room > 0 ? "A place at the fire" : "No room at the fire"}
+          </button>
+          <button type="button" onClick={() => onAnswer(id, false)}
+            className="py-2.5 rounded border cc-border-5a3230 cc-text-e09a8a cc-hover-bg-2a1a18 cc-text-14px transition-colors">
+            Send them on their way
+          </button>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
 function WarhornScene({ who, game, P, onClose }) {
   const m = MINORS[who];
   if (!m) return null;
@@ -14531,7 +14965,14 @@ function Codex({ onClose }) {
             <p className="mt-2"><span className="cc-text-f2c97a">The warlord</span> is a person and what they carry. Five slots — head, body, hand, mount, standard — and almost nothing that fills one is bought: a piece comes off a seat you stormed, out of a wood you cleared, at the end of a place's story, or off a rival warlord who lost the ground he was standing on. The yards will sell you a serviceable version of anything and it will never be the good version. A piece stays on the rack when a warlord falls, so the next one to take the seat finds it with the story of who carried it before.</p>
             <p className="mt-2">They also harden. Five fields won, a wall taken, a people sworn to you, thirty seasons in the chair — each of those is a fact about a person rather than a bar filling up, and when one comes true you are asked which of two habits it made of them. Once, and it does not come round again.</p>
             <p className="mt-2"><span className="cc-text-f2c97a">The court</span> is who is waiting and what a realm does once. Four posts — quartermaster, master of the works, marshal, envoy — can be filled from the hall, and a post takes the person: they are not available for a warband until you release them. What the post is worth depends on their habits and on whether they still believe in you. Beside them sit the decisions: a dyke, a general muster, a burning of the old rolls. Not edicts, which you can take back next winter. These are done once and stay done.</p>
+            <p className="mt-2"><span className="cc-text-f2c97a">The household</span> sits under the armoury, and it is the one part of the court you cannot go and get. Three places at the warlord's own fire, filled by people who turned up — after a field, after an accord, after a wall went up, or simply after enough seasons — each with a face, a reason and something they are worth. Nobody here is hired and nobody comes twice: send one away, or let one go later, and that is the end of them. The empty places are shown because one of them is going to be walked into.</p>
             <p className="mt-2"><span className="cc-text-f2c97a">The way</span> is how a hundred thousand people bury their dead, feed their children and decide who is allowed through the gate. Four slots, empty at the start on purpose, and taking a tradition into an empty one costs nothing but the saying of it. Putting one where another already stood is a reform: it costs scrap, and every court on the coast hears about it.</p>
+          </div>
+          <div>
+            <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Tracks, fires and walls</div>
+            <p>Most buildings are a yield. Three are not, and they are the earliest things a people can put up. A <span className="cc-text-f2c97a">cleared track</span> makes the hex cost one movement whatever the ground under it — a road through a ruinfield or a wood is worth more than it looks, and the third level either grazes beasts on the hoof or runs riders in relay and pulls your supply line two hexes further out.</p>
+            <p className="mt-2">A <span className="cc-text-f2c97a">watch fire</span> carries your sight. A hex that has one is not only lit itself: everything within its reach is, so a chain of them along a border shows you what is walking about on ground you do not own. Green wood by day and fire by night takes it to two hexes, and a beacon chain to three.</p>
+            <p className="mt-2">A <span className="cc-text-f2c97a">palisade</span> is different again. It is worth its percentage to whoever defends the hex, like any works — but it also opens places to stand, one for a palisade, two for a ditch and bank, four for a stone curtain. A place on the wall is worth nothing until somebody is in it. Put a company there and it becomes a warband that holds this ground and never marches: it stands in the line when anybody comes, it gains rank for having held, it eats its rations, and it can be brought up to strength or stood down. What it will not do is move, ever. Raiding bands look at a manned wall and go round it; thorn and ditchworks make them go a long way round. A wall with nobody on it turns nothing aside at all.</p>
           </div>
           <div>
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">The rival realms</div>

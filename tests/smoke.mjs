@@ -80,6 +80,20 @@ const closeOverlay = async () => {
    carry on, the way a player would when they are busy with something else. */
 const clearScenes = async () => {
   for (let i = 0; i < 6; i++) {
+    /* Somebody at the fire is modal in the same way, and turning them away is
+       final — so the busy answer is to take them, which is also what leaves
+       the household with something in it to check afterwards. */
+    const fire = await page.evaluate(() => {
+      const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")]
+        .find((x) => /Somebody is at the fire/.test(x.innerText));
+      if (!ov) return false;
+      const bb = [...ov.querySelectorAll("button")];
+      const take = bb.find((x) => /A place at the fire/.test(x.textContent) && !x.disabled)
+        || bb.find((x) => /Send them on their way/.test(x.textContent));
+      if (take) { take.click(); return true; }
+      return false;
+    });
+    if (fire) { await wait(350); continue; }
     /* A habit hardening is modal the same way a first meeting is, and it has to
        be answered rather than dismissed — so a test that does not answer it
        plays the rest of the game behind it. */
@@ -1151,6 +1165,24 @@ const courtTab = async (name) => {
   check("a realm can settle something once and for good",
     decided.taken.length > tookWas, decided.taken.join(",") || "nothing settled");
 
+  /* The five places a warlord can carry something were five lines of text and
+     nothing else, which is not an outfitter. Each one carries its own mark now,
+     and the mark is lit when the slot is filled. */
+  await courtTab("The warlord");
+  const marks = await page.evaluate(() => [...document.querySelectorAll(".cc-slotmark")]
+    .map((x) => (x.getAttribute("data-lit") === "1" ? "lit" : "bare")));
+  check("every place on the warlord carries its own mark",
+    marks.length === 5 && marks.includes("lit"), marks.join(",") || "no marks");
+
+  /* And the household sits under them: three places nobody is sold, with the
+     empty ones shown because one of them is going to be walked into. */
+  const house = await page.evaluate(() => document.body.innerText);
+  const filled = +((house.match(/The household — (\d) of 3/) || [])[1] ?? -1);
+  check("the household shows every place at the fire, taken or empty",
+    filled === (await court()).household.length
+      && (filled === 3 || /An empty place at the fire/.test(house)),
+    (house.match(/The household — [^\n]*/) || [])[0] || "no household");
+
   // A tradition goes into an empty slot and reaches the ledger.
   await courtTab("The way");
   await click("Take it up"); await wait(400);
@@ -1254,7 +1286,7 @@ for (let i = 0; i < 200 && seasons < 40; i++) {
     continue;
   }
   if (text.includes("Start again")) { stoppedBecause = "the game ended"; break; }
-  if (/What do you say to them\?|Choose what you say|A habit hardens/.test(text)) { await clearScenes(); continue; }
+  if (/What do you say to them\?|Choose what you say|A habit hardens|Somebody is at the fire/.test(text)) { await clearScenes(); continue; }
   if (!(await click("End (spring|summer|autumn|winter)"))) { stoppedBecause = "no end-of-season order was offered"; break; }
   await wait(50);
   seasons++;
@@ -1365,6 +1397,72 @@ await click("Read on"); await wait(300);
   check("the first breach opens the centre", sg?.storm?.[1] === "walls/rough/walls", sg?.storm?.[1]);
   check("three breaches leave no wall standing", sg?.storm?.[3] === "rough/rough/rough", sg?.storm?.[3]);
 }
+/* ----------------------------- TRIBAL WORKS -------------------------------
+   Three buildings that do something other than pay out: a hex that is a road,
+   a hex that carries your eyes, and a hex with places on it for men who hold
+   it and never march. All three hang off keys — move, sight, garrison — that
+   were only ever read off a feature before, so the thing to check is that a
+   building is read the same way, and that a place on a wall is worth nothing
+   until somebody is standing in it.
+   ------------------------------------------------------------------------ */
+{
+  await closeOverlay();
+  const works = async () => (await page.evaluate(() => window.__ccWild())).works;
+  const seatK = await page.evaluate(() => window.__ccWild().seat);
+  const [sc, sr] = (seatK || "0,0").split(",").map(Number);
+  await page.evaluate(() => { window.__ccTest.learn("earthworks"); window.__ccTest.learn("carting"); });
+  await wait(300);
+
+  const before = await works();
+  await page.evaluate((c, r) => window.__ccTest.raise(c, r, "track", 1), sc, sr);
+  await wait(300);
+  const roaded = await works();
+  check("a cleared track makes the hex a road whatever the ground under it",
+    !before.roads.includes(seatK) && roaded.roads.includes(seatK),
+    `${roaded.roads.join(" ") || "no roads"}`);
+
+  await page.evaluate((c, r) => window.__ccTest.raise(c, r, "watchfire", 2), sc, sr);
+  await wait(300);
+  const lit = await works();
+  check("a watch fire carries your eyes past your own ground",
+    lit.seen > roaded.seen && lit.eyes.some((x) => x.startsWith(`${seatK}:`)),
+    `${roaded.seen} hexes -> ${lit.seen}, ${lit.eyes.join(" ") || "no eyes"}`);
+
+  await page.evaluate((c, r) => window.__ccTest.raise(c, r, "wall", 1), sc, sr);
+  await wait(300);
+  const walled = await works();
+  const bare = walled.walls.find((x) => x.startsWith(`${seatK}:`)) || "";
+  check("a wall is places to stand, and a wall nobody is on turns nothing aside",
+    /:0\/1:hold0/.test(bare), bare || "no wall");
+
+  // The panel offers the places, and a company put in one holds the ground.
+  await page.evaluate((c, r) => window.__ccPick(c, r), sc, sr);
+  await wait(400);
+  const said = await page.evaluate(() => document.body.innerText);
+  check("the wall says how many places on it are filled",
+    /The wall — 0 of 1 place filled/.test(said),
+    (said.match(/The wall — [^\n]*/) || [])[0] || "no wall section");
+
+  await page.evaluate(() => window.__ccTest.stock("spearmen")); await wait(300);
+  const opened = await click("Put a company on the wall"); await wait(450);
+  const onScreen = await page.evaluate(() => document.body.innerText);
+  const put = await click("Put the .* on the wall"); await wait(500);
+  const manned = await works();
+  const row = manned.walls.find((x) => x.startsWith(`${seatK}:`)) || "";
+  check("a company on the wall holds the ground and is given no movement",
+    opened && /Man the wall/.test(onScreen) && put && /:1\/1:hold1:mp0/.test(row),
+    `${row || "nobody on it"}${put ? "" : " — the muster would not raise them"}`);
+  await closeOverlay();
+}
+
+/* And the fire filled up over forty seasons. Nobody here was bought: they
+   turned up because of something that had already happened on the map. */
+{
+  const c = await court();
+  check("somebody came to the fire and stayed", c.household.length > 0,
+    `${c.household.join(", ") || "nobody"}${c.sentAway.length ? ` — ${c.sentAway.join(", ")} sent away` : ""}`);
+}
+
 /* And tearing one up is an oath broken, which is the whole reason a term is
    worth anything. Kept until here because it costs regard with every court on
    the coast, and doing that in the middle of a long game makes everything after

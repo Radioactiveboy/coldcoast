@@ -13,7 +13,17 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 14: there is a court now. A realm carries what its warlord is wearing and
+/* 15: the ground is built on and the fire is sat at. A realm now carries a
+   household — who came to the warlord's fire, who was sent away and never
+   comes back — and its provinces carry cleared tracks, watch fires and walls,
+   which are the first buildings to do something other than yield: a hex that
+   is a road, a hex that carries your eyes, and a hex with places on it for
+   companies that hold it and never march. Those companies are armies with a
+   `garrison` key on them, and a version 14 save has no such armies and no
+   household, so a realm in it would load with three empty places at the fire
+   and every wall unmanned with no way of telling that from a wall nobody had
+   chosen to man.
+   14: there is a court now. A realm carries what its warlord is wearing and
    what is on the rack behind them, the habits they have hardened into and
    which milestones have been answered, the traditions its people hold, the
    decisions it has made once and for good, and who is sitting in which office.
@@ -57,7 +67,7 @@ export const SAVE_KEY = "coldcoast.save";
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 14;
+export const SAVE_VERSION = 15;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight
@@ -68,7 +78,7 @@ export const SAVE_VERSION = 14;
 const TRANSIENT = {
   sel: null, tree: false, seat: null, lords: false, courtTab: "lord", showCodex: false, district: null, intro: false,
   summary: null, roster: false, hearing: null, chapter: null,
-  recruit: null, survey: null, lair: null, focus: null, notices: [],
+  recruit: null, wallAt: null, survey: null, lair: null, focus: null, notices: [],
   screen: null,
 };
 
