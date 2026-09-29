@@ -110,7 +110,36 @@ export const TRAITS = {
   oldsoldier:  { name: "Old soldier", origin: true,
     desc: "Stood in a line before they held a seat. Nobody under their banner breaks early.",
     morale: 0.95, loyalStart: 15 },
+  /* What a warlord hardens into. These are earned at the milestones in
+     court.js — one of two, chosen, permanent — and they reach the whole realm
+     the way an origin does, which is why none of them is large. */
+  ofline:      { name: "Of the line", lord: true,
+    desc: "Has stood in it five times. Every company under the banner holds its nerve longer.",
+    morale: 0.92 },
+  ofchase:     { name: "Of the chase", lord: true,
+    desc: "Knows exactly what a beaten army is worth if somebody goes after it. The broken are run down harder.",
+    chase: 1.3 },
+  wallwise:    { name: "Wall-wise", lord: true,
+    desc: "Has taken stonework and the companies know it. Storms come easier under this banner.",
+    storm: 1.1, morale: 0.97 },
+  patient:     { name: "Patient", lord: true,
+    desc: "Would rather sit in front of a wall for two years than lose a company going up it.",
+    siege: 0.75, garrison: 1.3 },
+  openhand:    { name: "Open-handed", lord: true,
+    desc: "Whatever an envoy of theirs carries is worth more than it weighs. Regard comes faster.",
+    regardGain: 1.5 },
+  ironname:    { name: "A name with iron in it", lord: true,
+    desc: "The holdouts think twice about this realm's ground, and its companies stand better on it.",
+    taken: 0.96, raidOff: 0.7 },
+  oldchair:    { name: "Old in the chair", lord: true,
+    desc: "Has held the seat long enough that leaving looks stranger than staying.",
+    loyalGain: 1.3 },
+  setways:     { name: "Set in their ways", lord: true,
+    desc: "Nothing new will be attempted. What there is runs better than it has any right to.",
+    mul: { food: 1.05, scrap: 1.05 } },
 };
+// The habits only a warlord can hold, earned at a milestone.
+export const LORD_TRAITS = Object.keys(TRAITS).filter((id) => TRAITS[id].lord);
 export const BORN_TRAITS = Object.keys(TRAITS).filter((id) => TRAITS[id].born);
 // Pairs that cannot both be true of one person.
 export const TRAIT_CLASH = [["cautious", "reckless"], ["hard", "beloved"]];
