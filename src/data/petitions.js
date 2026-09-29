@@ -88,6 +88,63 @@ export const PETITIONS = [
     ],
     ignore: { ransom: "none", loyalty: -8, result: "The rider waited three seasons and left without an answer. Your captains noticed." },
   },
+  /* --------------------------- THE RIVAL COURTS ---------------------------
+     Three of these come from the realms rather than from your own people. A
+     rival that only ever appears as a warband on a hill is a hazard; one that
+     sends somebody to your hall to ask for something is an opponent. Each of
+     these can be signed on the spot, which is why the envoy screen is not the
+     only way an accord gets made. */
+  {
+    id: "rival_tribute", who: "A herald of {rival}",
+    need: (c) => c.bigRival,
+    text: "\"{rivalName} has counted your holdings and ours. The reckoning was not close. Scrap and grain to our court every season, and our hosts will find somewhere else to be this year. Or not, and they will not.\"",
+    options: [
+      { label: "Agree to it.", hint: "Tribute out of your stores every season for twelve. They leave you alone, and think better of you for knowing the arithmetic.",
+        effect: { accord: "tributeTo", regardWith: 14 },
+        result: "The carts are loaded before the herald is out of the gate. It is cheaper than the alternative and everybody in the hall knows it." },
+      { label: "Send back half of what they asked and a civil letter.",
+        hint: "30 scrap now. It buys a season of quiet and nothing signed.",
+        effect: { res: { scrap: -30 }, peace: 6, regardWith: 4 },
+        result: "The herald takes the cart and the letter. Neither was what they came for, and both were something." },
+      { label: "\"Tell them to come and take it.\"",
+        hint: "Nothing paid. They will, eventually, and they will bring friends.",
+        effect: { grudge: true, regardWith: -16 },
+        result: "The herald repeats it back to you word for word to be sure, writes it down, and rides." },
+    ],
+    ignore: { grudge: true, regardWith: -10, result: "The herald waited three seasons for an answer and took the silence back as one." },
+  },
+  {
+    id: "rival_league", who: "An envoy of {rival}",
+    need: (c) => c.leaguer,
+    text: "\"{rivalName} is not asking for your scrap. {leader} holds more of this coast than the rest of us together will if it goes on, and we would rather it did not go on. Come in with us and neither of us has to be next.\"",
+    options: [
+      { label: "Come in with them.", hint: "A league for fourteen seasons. Their war becomes yours, and so does the peace between you.",
+        effect: { accord: "league", regardWith: 10 },
+        result: "It is signed in your hall with two seals and no ceremony. Somewhere to the south, somebody very large has just acquired a second problem." },
+      { label: "Take their gift and promise nothing.", hint: "40 scrap in hand. They will not ask twice.",
+        effect: { res: { scrap: 40 }, regardWith: -12 },
+        result: "The envoy leaves the chest and the offer on the table, and only the chest stays." },
+      { label: "Refuse, and say why.", hint: "Nothing gained. Honest, at least, and the honesty is worth a little.",
+        effect: { regardWith: -4 },
+        result: "The envoy hears you out, says that you may feel differently in five years, and is almost certainly right." },
+    ],
+    ignore: { regardWith: -8, result: "The envoy waited in your hall for three seasons while the thing they came about got worse." },
+  },
+  {
+    id: "rival_border", who: "A rider from {rival}",
+    need: (c) => c.rival && c.onTheirBorder,
+    text: "\"There are companies of yours standing where our people can see them, and nobody has said why. {rivalName} would like to know whether we are digging or not.\"",
+    options: [
+      { label: "Give them your word it is nothing.", hint: "Costs nothing. They believe you a little.",
+        effect: { regardWith: 6 }, result: "The rider goes back with an answer, which is all anybody wanted." },
+      { label: "Say nothing and let them wonder.", hint: "A cheap threat, and it reads as one.",
+        effect: { grudge: true, regardWith: -8 }, result: "The rider leaves without an answer. Within the month there is a ditch on their side of the line." },
+      { label: "Offer the road both ways instead.", hint: "45 scrap. Columns cross freely for sixteen seasons, both of you.",
+        effect: { res: { scrap: -45 }, accord: "road", regardWith: 8 },
+        result: "The rider came for an explanation and goes home with a treaty, which is the best afternoon anybody in that court has had this year." },
+    ],
+    ignore: { regardWith: -6, result: "Nobody answered the rider. There is a ditch on their side of the line now, and it is getting deeper." },
+  },
   {
     id: "stores_dust", who: "The quartermaster of {seat}",
     need: (c) => c.food < 45,

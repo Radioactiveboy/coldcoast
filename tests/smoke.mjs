@@ -892,8 +892,12 @@ check("the host can march to the lair", ac === 20, `stopped at ${ac},${ar}`);
   await page.evaluate((c, r) => window.__ccPick(c, r), ac, ar);
   await wait(300);
   const panel = await panelText();
+  /* Which of the bad bands it lands in depends on how far the host actually
+     got, so the check is that it is named as one of them and not that it is the
+     worst one — the next check is the one that pins the number. */
   check("a column out in the wild says it is out of supply",
-    /Cut off|Off the waggons/.test(panel), panel.split("\n").find((l) => /rations ×/.test(l)) || "no supply line");
+    /Cut off|Off the waggons|The end of the line/.test(panel),
+    panel.split("\n").find((l) => /rations ×/.test(l)) || "no supply line");
   check("and says what the rations now cost", /rations ×(2\.4|3\.6|5)/.test(panel),
     panel.match(/rations ×[\d.]+/)?.[0] || "no multiplier");
   const eats = +(panel.match(/eats\s+(\d+)/)?.[1] || 0);
@@ -1017,7 +1021,82 @@ check("the game survives the battle", await page.evaluate(() =>
   check("a cleared place starts its story", !ours || /Bristol Weir · 1 of 3/.test(t), ours ? "" : "the lair was not taken, so no story to start");
 }
 
+/* ------------------------------ THE ENVOYS --------------------------------
+   The rival realms used to be a single switch: declare war, or pay forty scrap
+   and hope. There is a ladder now, and the whole point of it is that each rung
+   asks more regard than the one below — so the thing to check is not that a
+   button works but that the ladder is ordered, that regard is what moves you
+   up it, and that a signed thing has a term on it and can be torn up.
+   ------------------------------------------------------------------------ */
+const diplo = () => page.evaluate(() => window.__ccWild().diplo);
+const regardFor = async (id) => {
+  const rows = await page.evaluate(() => window.__ccWild().regard);
+  const row = rows.find((x) => x.startsWith(`${id}:`));
+  return row ? +row.split(":")[1] : null;
+};
+/* There can be more than one full-screen panel in the document at once, and a
+   stale one sits in front of the live one in document order — so the screen is
+   opened until the thing that is only on the envoy screen is actually there. */
+const openRivals = async () => {
+  for (let i = 0; i < 3; i++) {
+    await closeOverlay();
+    await page.evaluate(() => document.querySelector('[aria-label="Rivals"]')?.click());
+    await wait(400);
+    if (await page.evaluate(() => /Send an envoy with a gift/.test(document.body.innerText))) return true;
+  }
+  return false;
+};
+{
+  await closeOverlay();
+  await page.evaluate(() => window.__ccTest.meet("lyon")); await wait(300);
+  const onScreen = await openRivals();
+  const card = await page.evaluate(() => document.body.innerText);
+  check("a rival realm is somebody you can deal with", onScreen && /Send an envoy with a gift/.test(card),
+    card.split("\n").find((l) => /regard you as/.test(l)) || "no card");
+  /* The ladder is a ladder because regard is what climbs it. Counting the
+     rungs a realm will hear before and after a gift is the actual property —
+     asserting that any one rung is open at a given moment is asserting the
+     weather, since whether they will take a truce also depends on whether they
+     are currently winning. */
+  const rungsFor = async (id) => {
+    const row = ((await diplo()).hear.find((x) => x.startsWith(`${id}:`)) || "");
+    return { open: (row.match(/\+/g) || []).length, row };
+  };
+  const before = await rungsFor("lyon");
+  check("the top of the ladder is out of reach at a shrug", /league-/.test(before.row), before.row);
+
+  const scrapWas = (await purse()).scrap;
+  const regardWas = await regardFor("lyon");
+  await click("Send an envoy with a gift"); await wait(400);
+  const regardNow = await regardFor("lyon");
+  check("a gift moves what a realm thinks of you",
+    regardNow > regardWas && (await purse()).scrap < scrapWas,
+    `regard ${regardWas} -> ${regardNow}, scrap ${scrapWas} -> ${(await purse()).scrap}`);
+
+  // Keep sending envoys until they will hear something they would not hear at
+  // a shrug. That is the whole mechanism, and it should take a few goes.
+  let after = await rungsFor("lyon");
+  for (let i = 0; i < 4 && after.open <= before.open; i++) {
+    if (!(await click("Send an envoy with a gift"))) break;
+    await wait(350);
+    after = await rungsFor("lyon");
+  }
+  check("regard is what opens the rungs", after.open > before.open,
+    `${before.open} open at ${regardWas}, ${after.open} at ${await regardFor("lyon")}`);
+
+  const asked = await click("Ask for a truce"); await wait(450);
+  const signed = await diplo();
+  const truce = signed.accords.find((x) => x.startsWith("lyon:truce"));
+  check("an accord is signed with a term on it and stops the war",
+    asked && !!truce && !signed.wars.includes("lyon"), truce || "nothing signed");
+  /* Left standing on purpose. The seasons below run past its term, which is
+     the only way to see that a term actually runs out. */
+  await closeOverlay();
+}
+
+
 let seasons = 0;
+let stoppedBecause = "the two hundred tries ran out";
 for (let i = 0; i < 200 && seasons < 40; i++) {
   const text = await page.evaluate(() => document.body.innerText);
   if (text.includes("Give the order")) {
@@ -1025,13 +1104,31 @@ for (let i = 0; i < 200 && seasons < 40; i++) {
     await click("Count the cost"); await wait(120);
     continue;
   }
-  if (text.includes("Start again")) break;
+  if (text.includes("Start again")) { stoppedBecause = "the game ended"; break; }
   if (/What do you say to them\?|Choose what you say/.test(text)) { await clearScenes(); continue; }
-  if (!(await click("End (spring|summer|autumn|winter)"))) break;
+  if (!(await click("End (spring|summer|autumn|winter)"))) { stoppedBecause = "no end-of-season order was offered"; break; }
   await wait(50);
   seasons++;
 }
-check("forty seasons pass", seasons === 40, `${seasons}`);
+// Say why it stopped. Forty seasons short with no reason is a morning's work.
+check("forty seasons pass", seasons === 40, `${seasons}${seasons < 40 ? ` — ${stoppedBecause}` : ""}`);
+
+/* Somebody is usually clear of the field by now. Whoever it is, the courts are
+   supposed to have said so out loud — the announcement is what the rest of the
+   coast then acts on, so a leader nobody has noticed is the rule not running. */
+{
+  const d = await diplo();
+  check("the coast notices whoever is running away with it",
+    d.leader ? d.coalition === d.leader : d.coalition === null,
+    d.leader ? `${d.leader} is clear, courts talking about ${d.coalition}` : "nobody is clear of the field yet");
+  /* The truce signed forty seasons ago had twelve on it. Nothing renews
+     anything on your behalf, so by now it is gone and the ledger has stopped
+     paying it. */
+  check("a term on an accord actually runs out",
+    !d.accords.some((x) => x.startsWith("lyon:")), d.accords.join(" ") || "nothing standing");
+}
+
+
 
 /* What the three did with those seasons. Bridgerton digs in, Holk ploughs the
    flats, and Wight sends bands out onto the silt. None of it needs the player
@@ -1096,6 +1193,43 @@ await click("Read on"); await wait(300);
   check("the first breach opens the centre", sg?.storm?.[1] === "walls/rough/walls", sg?.storm?.[1]);
   check("three breaches leave no wall standing", sg?.storm?.[3] === "rough/rough/rough", sg?.storm?.[3]);
 }
+/* And tearing one up is an oath broken, which is the whole reason a term is
+   worth anything. Kept until here because it costs regard with every court on
+   the coast, and doing that in the middle of a long game makes everything after
+   it harder to read. */
+{
+  if (await openRivals()) {
+    for (let i = 0; i < 6; i++) {
+      const row = ((await diplo()).hear.find((x) => x.startsWith("lyon:")) || "");
+      if (/truce\+/.test(row)) break;
+      if (!(await click("Send an envoy with a gift"))) break;
+      await wait(300);
+    }
+    const again = await click("Ask for a truce"); await wait(450);
+    const beforeTear = await regardFor("lyon");
+    const tore = await page.evaluate(() => {
+      const b = [...document.querySelectorAll("button")]
+        .find((x) => /Declare war and tear up the accord/.test(x.textContent));
+      if (b) { b.click(); return true; }
+      return false;
+    });
+    await wait(450);
+    const t = await diplo();
+    const nowR = await regardFor("lyon");
+    check("tearing up an accord is an oath the whole coast hears",
+      again && tore && t.torn > 0 && !t.accords.some((x) => x.startsWith("lyon:")) && nowR < beforeTear,
+      `signed ${again}, tore ${tore}, torn at turn ${t.torn}, Lyon ${beforeTear} -> ${nowR}`);
+    await closeOverlay();
+    /* This spent scrap mid-season, and the reload check below compares the live
+       header against what comes back off the disk — so write the position out
+       before it does. It also means the accords and the torn oath go through a
+       real save and back, which is worth having. */
+    await click("^Save$"); await wait(300);
+  } else {
+    check("tearing up an accord is an oath the whole coast hears", false, "the envoy screen would not open");
+  }
+}
+
 check("no NaN on screen", !/NaN/.test(await page.evaluate(() => document.body.innerText)));
 check("no page errors", errors.length === 0, errors.slice(0, 2).join(" | "));
 

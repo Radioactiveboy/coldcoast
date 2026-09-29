@@ -13,7 +13,12 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 12: two more peoples across the mud — the Domesayers on the river at Rune
+/* 13: the rival realms are somebody you can deal with. A position now carries
+   the accords in force with each of them, their terms, whether you have torn
+   one up and who the coast has decided is running away with it. A version 12
+   save has none of that, so every realm in it would read as having signed
+   nothing — which is very nearly true of one, and quietly wrong about the rest.
+   12: two more peoples across the mud — the Domesayers on the river at Rune
    and the Bretons behind the hedge at Kernev — hold ground a version 11 save
    has nobody on.
    11: the floor of the old Channel is its own terrain — a bogged warzone with
@@ -45,7 +50,7 @@ export const SAVE_KEY = "coldcoast.save";
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 12;
+export const SAVE_VERSION = 13;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight
