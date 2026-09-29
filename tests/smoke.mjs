@@ -970,11 +970,15 @@ check("a battle opens on the line, not the first blow", deploy.open && deploy.se
    the strength comes back rounded, never exact, and the companies opposite are
    anonymous. Exact numbers here would mean the scouting level is being ignored. */
 const blind = await page.evaluate(() =>
-  document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"));
 const vague = /drawing up blind|nobody sent to look/.test(blind)
   || (/about \d+/.test(blind) && /a company/.test(blind));
-check("you only see what you scouted", vague,
-  vague ? "" : blind.split("\n").slice(0, 2).join(" / "));
+/* What the screen shows has to match the scouting the host actually has. A
+   column with eyes is allowed to see exactly what is opposite — asserting that
+   it must be vague was asserting the weather. */
+const level = await page.evaluate(() => (window.__ccField && window.__ccField()?.seen) ?? null);
+check("you only see what you scouted", level === null ? vague : (level === 2 ? !vague : vague),
+  `scouting level ${level === null ? "?" : level}${vague ? ", and the screen is vague" : ", and the screen is exact"}`);
 // Drop a company somewhere else and check it actually moves.
 const spread = () => page.evaluate(() => [...document.querySelectorAll(".cc-sector")]
   .map((s) => s.querySelectorAll(".cc-chippick").length).join(","));
@@ -1041,6 +1045,45 @@ check("the game survives the battle", await page.evaluate(() =>
   const t = await page.evaluate(() => document.querySelector("aside")?.innerText || "");
   const ours = /held by Doggerbund/.test(t);
   check("a cleared place starts its story", !ours || /Bristol Weir · 1 of 3/.test(t), ours ? "" : "the lair was not taken, so no story to start");
+}
+
+/* The ledger has to be honest: everything it shows with a plus in front of it
+   has to arrive. Metal was computed, displayed with a plus, and never credited
+   — so measure one season with nothing being spent and watch the bin. */
+{
+  const ledger = () => page.evaluate(() => {
+    const t = document.querySelector("header")?.innerText || "";
+    const stock = (label) => {
+      const m = t.match(new RegExp("([\\d,]+)\\s*\\n?\\s*" + label, "i"));
+      return m ? +m[1].replace(/,/g, "") : null;
+    };
+    const flow = (label) => {
+      const m = t.match(new RegExp(label + "\\s*\\n?\\s*([+-]?\\d+)", "i"));
+      return m ? +m[1] : null;
+    };
+    return { metal: stock("Metal"), metalIn: flow("Metal"), fuel: stock("Fuel"), fuelIn: flow("Fuel") };
+  });
+  const was = await ledger();
+  await click("End (spring|summer|autumn|winter)"); await wait(500);
+  await clearScenes(); await closeOverlay();
+  const now = await ledger();
+  /* Fuel is the control: it was always credited. Metal has to behave the same
+     way, and if the income is zero this season the check says so rather than
+     passing on a technicality. */
+  const owed = Math.max(0, was.metalIn || 0);
+  check("everything the ledger promises is actually paid in",
+    owed === 0 ? (now.fuel > was.fuel || (was.fuelIn || 0) <= 0) : now.metal >= was.metal + owed,
+    `metal ${was.metal} +${was.metalIn} -> ${now.metal}; fuel ${was.fuel} +${was.fuelIn} -> ${now.fuel}`);
+}
+
+/* Scouting bought exactly one thing before this — how much of the enemy line
+   the deployment screen showed you — and nothing whatever on the map. */
+{
+  const reach = await page.evaluate(() => window.__ccWild().reach);
+  const far = reach.map((x) => +x.split(":").pop());
+  check("scouting carries a warband's sight on the map",
+    far.length > 0 && far.every((n) => n >= 1),
+    reach.join("  ") || "no warbands to see with");
 }
 
 /* -------------------------------- THE COURT --------------------------------
@@ -1284,6 +1327,12 @@ check("forty seasons pass", seasons === 40, `${seasons}${seasons < 40 ? ` — ${
   await click("End (spring|summer|autumn|winter)"); await wait(500);
   if (await inBattle()) await fightOut();
   const after = await page.evaluate(() => window.__ccWild());
+  {
+    const c = await court();
+    check("a seat gives up its piece however it falls",
+      [...c.worn, ...c.rack].some((x) => /skinlessmask/.test(x)),
+      [...c.worn, ...c.rack].join(" · ") || "nothing on the rack");
+  }
   check("breaking Wight costs you at the gate", rg(after, "bridgers") < rg(before, "bridgers"),
     `${rg(before, "bridgers")} -> ${rg(after, "bridgers")}`);
   check("and the toll goes with it", !(after.pacts || []).includes("bridgers:bridgeToll"),
