@@ -11,11 +11,11 @@ dropped in with the right name appears in the game without a code change.
 | `seat-<id>`     | the `art` on a people's `MINORS` entry | the meeting scene, and their seat on the map |
 | `unit-<type>`   | a unit id from `data/units.js`   | the muster roll and company chips |
 | `terrain-<name>`| wired by hand in `TERRAIN_ART`   | the province panel and survey scenes |
-| `lord-<name>-bust` / `-head` | wired by hand in `LORD_ART` | the warlord screen |
+| `lord-<faction>-bust` / `-head` | the faction the person speaks for | the warlord screen, and the face in their meeting scene |
 
-`ward-*` and `seat-*` are picked up automatically by `import.meta.glob`. The others are
-imported by name at the top of `ColdCoast.jsx` — add the import when you add
-the file.
+`ward-*`, `seat-*` and `lord-*` are picked up automatically by `import.meta.glob`.
+The unit and terrain plates are still imported by name at the top of
+`ColdCoast.jsx` — add the import when you add the file.
 
 ## Size
 

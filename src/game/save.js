@@ -13,7 +13,15 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 15: the ground is built on and the fire is sat at. A realm now carries a
+/* 16: three more peoples hold ground — the Holtfolk in the Gallian wood, the
+   Fentaken out on the fresh Balt and the Combers on the eastern rim of the
+   flats — and four more hexes are named places, two of them carrying the only
+   stories on the map that are about the wars fought before the Collapse
+   rather than about what it left. A version 15 save has all seven of those
+   hexes as ordinary unclaimed ground with nobody on them and no nation to put
+   there, so it would load as a coast with three fewer peoples in it and no way
+   of telling that from three peoples you had already broken.
+   15: the ground is built on and the fire is sat at. A realm now carries a
    household — who came to the warlord's fire, who was sent away and never
    comes back — and its provinces carry cleared tracks, watch fires and walls,
    which are the first buildings to do something other than yield: a hex that
@@ -67,7 +75,7 @@ export const SAVE_KEY = "coldcoast.save";
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 15;
+export const SAVE_VERSION = 16;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight

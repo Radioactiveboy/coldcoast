@@ -1,11 +1,3 @@
-import lordCullBust from "./assets/lord-cull-bust.webp";
-import lordCullHead from "./assets/lord-cull-head.webp";
-import lordGatemasterBust from "./assets/lord-gatemaster-bust.webp";
-import lordGatemasterHead from "./assets/lord-gatemaster-head.webp";
-import lordGorranBust from "./assets/lord-gorran-bust.webp";
-import lordGorranHead from "./assets/lord-gorran-head.webp";
-import lordGrimhandBust from "./assets/lord-grimhand-bust.webp";
-import lordGrimhandHead from "./assets/lord-grimhand-head.webp";
 import terrainPlains from "./assets/terrain-plains.webp";
 import terrainSiltFlats from "./assets/terrain-siltflats.webp";
 import unitAxemen from "./assets/unit-axemen.webp";
@@ -752,6 +744,7 @@ const LANDMARKS = {
   "75,55": "Riga Deep",
   "16,59": "Glasgow Rust",
   "19,59": "Edinburgh Crag",
+  "47,60": "Aalborg Staithe",
   "52,59": "Kobenhavn Sill",
   "103,59": "Muskova Drift",
   "22,61": "Newcastle Slag",
@@ -770,6 +763,8 @@ const LANDMARKS = {
   "35,72": "Amsterdam Bed",
   "54,72": "Berlin Vault",
   "70,74": "Warszawa Stack",
+  "21,85": "The Somme Floor",
+  "21,86": "Crecy Wood",
   "19,77": "Cardiff Tide",
   "20,77": "Bristol Weir",
   "25,77": "Lunden",
@@ -784,6 +779,7 @@ const LANDMARKS = {
   "65,93": "Budapest Span",
   "45,97": "The Innsbruck Door",
   "51,98": "Venezia Silt",
+  "33,90": "Fontainebleau Holt",
   "35,99": "Lyon Terraces",
   "45,100": "Milan Foundry",
   "41,102": "Torino Works",
@@ -2046,6 +2042,73 @@ const MINORS = {
     fortify: { add: 3, cap: 28, every: 3, company: "pikemen", companyEvery: 11, companyMax: 2 },
     grows: { on: ["h", "p", "f"], every: 4, max: 8, chance: 0.5 },
   },
+  /* Three more peoples, further out than the Albion five and doing three
+     things none of them do. The Holtfolk make ground rather than take it —
+     the wood itself is the thing that grows. The Fentaken hold water, which
+     nobody else on the map does, and are the only people you meet who are not
+     quite people any more. The Combers are the pure form of the raiding
+     holdout: no walls worth the name, nothing to sell, and a range that
+     covers the whole eastern half of the Dogger flats. */
+  holtfolk: {
+    name: "The Holtfolk of Fontainebleau", short: "Holtfolk", color: "#4f7a3a",
+    at: [33, 90], seatName: "Fontainebleau Holt", defBonus: 38, regard: 44,
+    feature: "holt", building: "wall",
+    blurb:
+      "Forty thousand people living inside a wood that has had three hundred years to decide where its paths go. They coppice it, burn it for charcoal, eat out of it, and have never in living memory let anybody cut a ride through it who was not from it.",
+    trait:
+      "They do not raid and they do not trade much. What they do is grow: every few years the laid thorn is further out than it was, and the ground it took is wood now. A column that goes into the holt is fighting the holt.",
+    guardName: "The Holt Wardens",
+    garrison: [
+      ["hunters", "iron", "leather"],
+      ["hunters", "iron", "leather"],
+      ["spearmen", "iron", "leather"],
+      ["axemen", "iron", "hide"],
+    ],
+    // The thorn is thicker every few years, and so is the wood behind it.
+    fortify: { add: 3, cap: 30, every: 3, company: "hunters", companyEvery: 10, companyMax: 3 },
+    grows: { on: ["f"], every: 3, max: 14, chance: 0.6 },
+  },
+  fentaken: {
+    name: "The Fentaken of Stockholm Reef", short: "Fentaken", color: "#4aa3c9",
+    at: [62, 46], seatName: "Stockholm Reef", defBonus: 30, regard: 38,
+    feature: "reefmere", building: "fishery",
+    blurb:
+      "When the sills closed, the Balt went fresh and then went shallow, and the people who stayed in it went in after it. Three hundred years down in the weed and the eel runs has done something to them that they do not consider a misfortune and nobody else has a word for.",
+    trait:
+      "They hold water the way other peoples hold hills, and they are the only ones who can. Their ground goes out along the fresh every few years, they will ferry anything for iron, and what comes out of the mere at night is not a warband in any sense you were taught.",
+    guardName: "The Reef Weirwatch",
+    garrison: [
+      ["bowmen", "iron", "leather"],
+      ["spearmen", "iron", "leather"],
+      ["hunters", "iron", "hide"],
+      ["hunters", "iron", "hide"],
+    ],
+    raids: { bands: 2, reach: 7, after: 14, chance: 0.34,
+             units: ["hunters", "spearmen", "hunters"] },
+    grows: { on: ["l", "c"], every: 3, max: 12, chance: 0.55 },
+  },
+  combers: {
+    name: "The Combers of Aalborg Staithe", short: "Combers", color: "#c2724a",
+    at: [47, 60], seatName: "Aalborg Staithe", defBonus: 22, regard: 20,
+    feature: "staithe", building: "muster",
+    blurb:
+      "A harbour that was left forty feet above its own water, and the people who worked out first what that meant. They keep light boats on wheels under the landing and they run them out onto the silt with the wind behind, and they have been doing it for six generations.",
+    trait:
+      "They make nothing, grow nothing and hold nothing but the staithe. Everything they have came off somebody crossing the flats, and the flats are very wide — their bands work the whole eastern half of them and think nothing of a fortnight out.",
+    guardName: "The Staithe Crews",
+    garrison: [
+      ["riders", "iron", "leather"],
+      ["axemen", "iron", "leather"],
+      ["axemen", "iron", "hide"],
+      ["hunters", "iron", "hide"],
+    ],
+    /* The widest reach of any people on the map, because the whole point of
+       them is the distance: a sail-cart with the wind behind it crosses in a
+       day what a column walks in four. They start late, so the opening
+       twenty seasons are still Albion's argument. */
+    raids: { bands: 4, reach: 18, after: 12, chance: 0.5,
+             units: ["riders", "axemen", "hunters"], hunt: ["dogger"] },
+  },
   wasters: {
     name: "The Wasters", short: "Wasters", color: "#b5793f", defBonus: 10, roaming: true,
     blurb: "Nobody's people. They hold a ruin until it is emptied and then they walk to the next one.",
@@ -2093,6 +2156,12 @@ const FEATURES = {
               desc: "Eight feet of thorn on a bank with a ditch under it, running field to field to field across the whole neck of the peninsula. It was built to keep cattle in. It does other things now." },
   eyrie:    { name: "The Wight watch",   yield: { scrap: 2 }, sight: 2, def: 10,
               desc: "Eight hundred feet of old island standing out of the mud. From the top you can see everything crossing, days before it arrives." },
+  holt:     { name: "The standing wood",  yield: { fuel: 4, food: 2, men: 1 }, def: 30,
+              desc: "Coppice worked on a twenty-year round, rides cut to no pattern anybody but the holt knows, and a belt of laid thorn four hundred years in the making. There is no line of sight in it longer than a bowshot and every one of those is somebody's." },
+  reefmere: { name: "The living reef",    yield: { food: 6, men: 2 }, sight: 1, def: 20,
+              desc: "The old town on the middle hill, and under it a mile of flooded streets worked like a fishery — weed frames, eel runs and pens down to the third storey. Most of the people who work it are only sometimes above the water." },
+  staithe:  { name: "The dry staithe",    yield: { scrap: 4, metal: 1 }, sight: 1, def: 14,
+              desc: "Eleven hundred metres of harbour landing standing forty feet over a floor of silt, with the cranes still on it and a rack of light boats underneath on wheels. Everything that crosses the eastern rim is watched from it." },
   /* What a place's story leaves behind. These do more than yield: `sight`
      carries your sight further, `def` is a wall, `move` makes the hex a
      road, `supply` and `carry` pull the supply line in for whoever stands
@@ -2116,6 +2185,13 @@ const FEATURES = {
   dock:       { name: "The Ram dock",        yield: { scrap: 2, food: 2 }, def: 10, desc: "A dry dock with its gates hung: a fortress with a floor." },
   market:     { name: "The Bar market",      yield: { scrap: 2, food: 2 }, sight: 1, desc: "Everyone comes. Everyone leaves owing you, and telling you things." },
   wainwrights:{ name: "The Keel wainwrights", yield: { scrap: 1 }, carry: 2, desc: "Shipwrights with no sea, building the best carts on the coast." },
+  /* What three wars in a row leave in the ground. The narrows have been fought
+     over by everyone who ever wanted Albion or wanted out of it, and the
+     leavings are worth having if you are prepared to go and get them. */
+  ironfield: { name: "The iron harvest", yield: { powder: 3, metal: 2, scrap: 2 },
+              desc: "Ordnance, plate and wire, ploughed up a field at a time by people who have learned exactly which of it can be moved. Nothing here was made for you and all of it works." },
+  oldlines:  { name: "The old lines",     yield: { scrap: 1 }, def: 30, sight: 1,
+              desc: "Four systems of trenchwork cut across each other under two centuries of birch, with concrete at the junctions and a firing step somebody has swept. Whoever holds the wood holds every approach to it." },
 };
 
 // on: terrains this encounter suits. null means anywhere.
@@ -2407,6 +2483,11 @@ function reinforceCost(u, natId, atMuster) {
 }
 /* How many companies will march under one banner. The long muster is a
    clerical advance, not a military one: rolls, billets and who feeds whom. */
+/* What a rival keeps back per company it is short, before it will spend on a
+   shed or a scholar. Roughly what a plain company costs to raise, so a realm
+   three companies down stops building for about three seasons and then has an
+   army again. */
+const MUSTER_RESERVE = 60;
 const BAND_CAP = 8, BAND_CAP_LONG = 10;
 const bandCap = (nat) => (nat?.known?.hosting ? BAND_CAP_LONG : BAND_CAP);
 
@@ -4921,6 +5002,14 @@ export default function ColdCoast() {
     };
   });
 
+  // For the smoke test only: ground is surveyed, without walking to it and
+  // rolling an encounter on the way.
+  if (typeof window !== "undefined") window.__ccSee = (c, r) => setGame((g) => {
+    const k = key(c, r);
+    if (!g.provinces[k]) return g;
+    return { ...g, provinces: { ...g.provinces, [k]: { ...g.provinces[k], explored: true } } };
+  });
+
   /* For the smoke test only: an advance is understood, and a finished building
      appears on ground you hold. Roads, watch fires and walls are thirty seasons
      of ordinary play away from the opening position, and what they do is worth
@@ -4969,14 +5058,15 @@ export default function ColdCoast() {
 
   /* For the smoke test only: your riders come over the rim at Red-Ruth. The
      walk there is a dozen seasons and a test cannot wait for it. */
-  if (typeof window !== "undefined") window.__ccMeet = (id) => setGame((g) => ({
+  /* `quiet` lays eyes on them without opening the scene, which is what a test
+     that wants to reach the envoy screen needs — the scene itself is checked
+     on its own, by answering it. */
+  if (typeof window !== "undefined") window.__ccMeet = (id, quiet) => setGame((g) => ({
     ...g,
     met: { ...(g.met || {}), [id]: true },
     regard: { ...(g.regard || {}), [id]: g.regard?.[id] ?? regardStart(id) },
-    /* Only somebody with a scene written for them joins the queue. A realm has
-       no first-contact scene, and one sitting at the head of the queue would
-       show nothing and hold up everybody behind it. */
-    meetings: !FIRST_MEET[id] || (g.meetings || []).includes(id)
+    // Only somebody with a scene written for them joins the queue.
+    meetings: quiet || !FIRST_MEET[id] || (g.meetings || []).includes(id)
       ? g.meetings : [...(g.meetings || []), id],
   }));
   if (typeof window !== "undefined") window.__ccFall = () => setGame((g) => ({
@@ -5263,6 +5353,21 @@ export default function ColdCoast() {
       });
       const pacts = { ...(g.pacts || {}) };
       if (opt.pact) pacts[fid] = opt.pact;
+      /* A realm is not a people on the road: there is no toll to buy and no
+         gate to be let through. What an answer can do instead is sign
+         something with a term on it, or start the war on the spot. Both are
+         the realm-level machinery the envoy screen already uses — this is the
+         same thing said at the moment you first lay eyes on them. */
+      const accords = { ...(g.accords || {}) };
+      const war = { ...g.war };
+      let signed = null;
+      if (opt.accord && ACCORDS[opt.accord] && !isMinor(fid)) {
+        const acc = ACCORDS[opt.accord];
+        accords[fid] = { id: opt.accord, until: g.turn + acc.term, since: g.turn, against: null };
+        delete war[warKey(g.player, fid)];       // every accord holds the peace while it runs
+        signed = acc;
+      }
+      if (opt.war && !isMinor(fid)) war[warKey(g.player, fid)] = true;
       let provinces = g.provinces, armies = g.armies;
       const m = MINORS[fid];
       const k = m?.at ? key(m.at[0], m.at[1]) : null;
@@ -5281,11 +5386,16 @@ export default function ColdCoast() {
         ? { ...g.nations, [fid]: { ...theirs, spite: (theirs.spite || 0) + opt.anger } }
         : g.nations;
       Sound.play(opt.harden ? "horn" : "give");
+      const said = signed
+        ? `${FACTION[fid]?.short || fid}: ${signed.name.toLowerCase()} is signed, ${signed.term} seasons on it.`
+        : opt.war
+          ? `${FACTION[fid]?.short || fid}: it is a war, then, and it started the day you met.`
+          : `${FACTION[fid]?.short || fid}: ${opt.label.toLowerCase()}.`;
       return {
-        ...g, provinces, armies, pacts, regard,
+        ...g, provinces, armies, pacts, regard, accords, war,
         nations: { ...nations, [g.player]: { ...nat, res } },
         meetings: (g.meetings || []).filter((x) => x !== fid),
-        log: [{ turn: g.turn, m: `${FACTION[fid]?.short || fid}: ${opt.label.toLowerCase()}.` }, ...g.log].slice(0, 60),
+        log: [{ turn: g.turn, m: said }, ...g.log].slice(0, 60),
       };
     });
   }
@@ -5936,6 +6046,32 @@ export default function ColdCoast() {
         return held[0][1] >= Math.max(1, second) * COALITION.ahead ? held[0][0] : null;
       })();
 
+      /* --- a realm in exile moves its court ---
+         Losing the seat used to be the end of a realm without ever saying so:
+         nothing musters anywhere but a capital or a muster hall, so a realm
+         whose capital had been taken could never raise another company, never
+         take anything back, and sat on its holdings with a full arms rack and
+         nine hundred recruits until somebody walked over it. That is most of
+         why a late-game rival turns out to be an empty map.
+
+         A realm that still holds ground but has no seat left seats itself in
+         the largest thing it does hold. It is marked a refuge, because it is
+         not one of the six great seats of the coast and taking it should not
+         count towards winning the whole thing. */
+      NATION_IDS.forEach((id) => {
+        const held = Object.values(provinces).filter((p) => p.owner === id);
+        if (!held.length || held.some((p) => p.capital)) return;
+        const next = held.slice().sort((a, b) => (b.pop || 0) - (a.pop || 0))[0];
+        const nk = key(next.c, next.r);
+        provinces[nk] = { ...provinces[nk], capital: true, seat: id, refuge: true };
+        if (id === g.player) {
+          newLog.push({ turn: g.turn, m: `The court is carried to ${next.name}. It is not a seat, but it is where the rolls are kept now.` });
+          notice("lord", `Your seat is gone. What is left of the court has set up at ${next.name}.`, nk);
+        } else {
+          newLog.push({ turn: g.turn, m: `${NATIONS[id].short} have no seat left. What remains of their court is at ${next.name}.` });
+        }
+      });
+
       // --- AI turns ---
       NATION_IDS.forEach((id) => {
         if (id === g.player) return;
@@ -5944,8 +6080,28 @@ export default function ColdCoast() {
         const myProv = Object.values(provinces).filter((p) => p.owner === id);
         if (!myProv.length) return;
 
+        /* What this realm will not spend on sheds. A rival that has lost its
+           companies has exactly one priority, and the order here used to put
+           building and research ahead of the muster unconditionally — so a
+           realm that had been in a war spent every season's scrap on a shed,
+           never afforded a company again, and quietly stopped being a rival.
+           Walking into an industrialised capital and finding nobody home was
+           that, and nothing else. */
+        const hostCo = armies.filter((a) => a.owner === id && a.units.length)
+          .reduce((n, a) => n + a.units.length, 0);
+        /* How much of a host a realm of this size thinks it ought to have, and
+           what it holds back to get there. Both are deliberately modest: a
+           realm that spends everything on companies stops settling ground,
+           and a coast of armed realms holding one hex each is no better a
+           game than a coast of rich ones holding no companies. Three
+           companies' worth is the most it will ever sit on. */
+        const wantCo = Math.min(bandCap(nations[id]), 2 + Math.floor(myProv.length / 5));
+        const shortBy = Math.max(0, wantCo - hostCo);
+        const reserve = Math.min(shortBy, 3) * MUSTER_RESERVE;
+        const spare = res.scrap - reserve;
+
         // build
-        if (res.scrap > 90 / style.build) {
+        if (spare > 90 / style.build) {
           // Prefer somewhere with room. The AI pays the same escalating price
           // for a second worksite on the same ground that the player does.
           /* Rivals improve what they have as well as raising new things, and
@@ -5961,7 +6117,7 @@ export default function ColdCoast() {
           }));
           if (grow.length && Math.random() < 0.55) {
             const g2 = grow[Math.floor(Math.random() * grow.length)];
-            if (res.scrap >= g2.o.scrap) {
+            if (spare >= g2.o.scrap) {
               nations[id] = { ...nations[id], res: { ...res, scrap: res.scrap - g2.o.scrap } };
               const k2 = key(g2.p.c, g2.p.r);
               provinces[k2] = {
@@ -5984,7 +6140,7 @@ export default function ColdCoast() {
               .filter(([, b]) => !b.on || b.on.includes(target.t));
             const [bid, b] = opts[Math.floor(Math.random() * opts.length)] || [];
             const price = b ? buildCost(b.scrap, buildsOf(target).length) : 0;
-            if (bid && res.scrap >= price) {
+            if (bid && spare >= price) {
               nations[id] = { ...nations[id], res: { ...res, scrap: res.scrap - price } };
               provinces[key(target.c, target.r)] = {
                 ...target, builds: [...buildsOf(target), { id: bid, left: b.turns }] };
@@ -5992,49 +6148,89 @@ export default function ColdCoast() {
           }
         }
 
-        // recruit, with the best kit this realm knows how to make
+        /* --- the muster ---
+           A realm used to pick exactly one company — its finest, in the finest
+           kit it knew how to make — and if it could not afford that one thing
+           it raised nothing at all. Since the finest kit is priced in metal and
+           a realm that has been fighting has no metal, that is a realm with a
+           full arms rack, a thousand recruits and no army, for ever. It walks
+           down its own list now: best company first, and if the good kit is out
+           of reach, the plain kit, and if the good company is out of reach, a
+           worse one. Spearmen in hide are still a company. */
         const r2 = nations[id].res;
         const nat2 = nations[id];
         // Whatever it has learned to raise, weighted a little by temperament.
         const open2 = unitsFor(nat2);
         const want = id === "horde" ? ["riders", "technicals"] : id === "boreal" ? ["axemen", "riders"]
           : id === "alpine" ? ["ironclad", "vaultguard"] : id === "solar" ? ["riflemen", "musketeers"] : [];
-        // Ranked worst to best; the AI takes from the end. Baggage sits at the
-        // front deliberately — a cart is not something a realm recruits when
-        // it is deciding what to put in the field.
+        // Ranked worst to best. Baggage sits at the front deliberately — a cart
+        // is not something a realm recruits when deciding what to put in a line.
         const order = ["baggage", "spearmen", "hunters", "axemen", "bowmen", "pikemen", "riders", "ironclad",
                        "line", "musketeers", "technicals", "guncrew", "riflemen", "vaultguard"];
         const pool = open2.slice().sort((a, b) => order.indexOf(a) - order.indexOf(b));
         const liked = pool.filter((u) => want.includes(u));
-        const type = (liked.length && Math.random() < 0.6 ? liked : pool).pop() || "spearmen";
+        // Best first. What it would like, if it would, and then everything else.
+        const tries = (liked.length && Math.random() < 0.6 ? liked.slice().reverse() : [])
+          .concat(pool.slice().reverse());
         const bw = gradesFor(nat2, WEAPON_GRADES).slice(-1)[0].id;
         const ba = gradesFor(nat2, ARMOUR_GRADES).slice(-1)[0].id;
-        const cost = unitCost(type, id, nat2, bw, ba);
-        const rack = (nat2.arms || {})[type] || 0;
+        // Good kit, then whatever a people with no metal can still put together.
+        const kits = [[bw, ba], [WEAPON_GRADES[0].id, ARMOUR_GRADES[0].id]]
+          .filter(([w2, a2], i) => i === 0 || w2 !== bw || a2 !== ba);
         // The AI musters from its seat, and pays the same in people the player
         // does. Letting it raise companies out of nowhere would quietly hand it
         // every province the player has to spend to fill.
         const seatP = myProv.find((p) => p.capital);
         const seatK = seatP ? key(seatP.c, seatP.r) : null;
         const seatPop = seatK ? (provinces[seatK].pop || 0) : 0;
-        const popCost = popCostOf(UNITS[type].size);
-        if (rack >= UNITS[type].size && (r2.metal || 0) >= cost.metal && seatK && seatPop >= popCost
-            && r2.scrap > cost.scrap * (1.6 / style.host) && r2.men > cost.men * (1.4 / style.host)) {
-          const host = armies.find((a) => a.owner === id && a.units.length < bandCap(nations[id]));
-          const u = makeUnit(type, id, Math.random().toString(36).slice(2), bw, ba);
+        /* A realm with a host in the field can afford to be choosy about when
+           it raises another company. A realm with nothing standing cannot. */
+        const keen = shortBy > 0 ? 1.15 : 1.6 / style.host;
+        const keenMen = shortBy > 0 ? 1.3 : 1.4 / style.host;
+        /* And it keeps a claim's worth of recruits in hand while it has anybody
+           standing at all. Companies and settlers come out of the same pool, and
+           a realm that put every recruit into the line stopped taking ground
+           entirely — which is its own way of not being a rival. */
+        const menFloor = hostCo > 0 ? claimCost(provinces, id).men : 0;
+        /* A realm does not raise companies it cannot feed. Rations are what
+           settles new ground as well as what keeps a line standing, so a realm
+           that musters down to an empty granary stops expanding — and a coast
+           of armed realms holding one hex each is not a better game than the
+           one this set out to fix. */
+        const fed = (r2.food || 0) > claimCost(provinces, id).food * 2;
+        let pick = null;
+        if (seatK && (fed || hostCo === 0)) for (const t of tries) {
+          const rack = (nat2.arms || {})[t] || 0;
+          if (rack < UNITS[t].size) continue;
+          const popCost = popCostOf(UNITS[t].size);
+          if (seatPop < popCost) continue;
+          for (const [w2, a2] of kits) {
+            const cost = unitCost(t, id, nat2, w2, a2);
+            if ((r2.metal || 0) < cost.metal) continue;
+            if (!(r2.scrap > cost.scrap * keen) || !(r2.men > cost.men * keenMen)) continue;
+            if (r2.men - cost.men < menFloor) continue;
+            pick = { t, w2, a2, cost, rack, popCost };
+            break;
+          }
+          if (pick) break;
+        }
+        if (pick) {
+          const host = armies.find((a) => a.owner === id && a.units.length
+            && a.units.length < bandCap(nations[id]));
+          const u = makeUnit(pick.t, id, Math.random().toString(36).slice(2), pick.w2, pick.a2);
           if (host) host.units.push(u);
           else {
-            const cap = myProv.find((p) => p.capital) || myProv[0];
             armies.push({
               id: `ai${id}${Math.random().toString(36).slice(2, 6)}`, owner: id,
-              c: cap.c, r: cap.r, name: `${NATIONS[id].short} Host`,
+              c: seatP.c, r: seatP.r, name: `${NATIONS[id].short} Host`,
               units: [u], mp: 0, maxMp: baseMove(id),
             });
           }
-          provinces[seatK] = { ...provinces[seatK], pop: Math.max(0, seatPop - popCost) };
+          provinces[seatK] = { ...provinces[seatK], pop: Math.max(0, seatPop - pick.popCost) };
           nations[id] = { ...nations[id],
-            res: { ...r2, scrap: r2.scrap - cost.scrap, metal: (r2.metal || 0) - cost.metal, men: r2.men - cost.men },
-            arms: { ...(nat2.arms || {}), [type]: rack - UNITS[type].size } };
+            res: { ...r2, scrap: r2.scrap - pick.cost.scrap, metal: (r2.metal || 0) - pick.cost.metal,
+                   men: r2.men - pick.cost.men },
+            arms: { ...(nat2.arms || {}), [pick.t]: pick.rack - UNITS[pick.t].size } };
         }
 
         // research
@@ -6045,8 +6241,48 @@ export default function ColdCoast() {
           if (open.length) {
             const pick = open[Math.floor(Math.random() * open.length)];
             const t = TECHS[pick];
-            nations[id] = { ...nr, res: { ...nr.res, scrap: nr.res.scrap - t.scrap },
-              research: { id: pick, left: researchTurns(id, t, nr) } };
+            // Scholars were being paid out of money the realm did not have —
+            // and, once the muster has a claim on it, out of the muster's.
+            if (nr.res.scrap - reserve >= t.scrap) {
+              nations[id] = { ...nr, res: { ...nr.res, scrap: nr.res.scrap - t.scrap },
+                research: { id: pick, left: researchTurns(id, t, nr) } };
+            }
+          }
+        }
+
+        /* --- and the companies are brought back up to strength ---
+           Nothing did this before. The player has had a reinforce button since
+           the first week; a rival had nothing at all, so every field a rival
+           fought took men off it for good and every company ground down to the
+           five-man floor and was deleted. Over a long game that turned the
+           whole coast into empty capitals with full granaries.
+
+           One company a season, the worst-off first, and only where it is
+           standing on ground the realm holds — the same rule the player plays
+           by. It is paid for out of the same purse as the muster, so a realm
+           short of both replaces what it has before it raises what it has not. */
+        {
+          let worst = null;
+          armies.forEach((a) => {
+            if (a.owner !== id || !a.units.length) return;
+            const on = provinces[key(a.c, a.r)];
+            if (!on || on.owner !== id) return;               // no resupply in the field
+            a.units.forEach((u) => {
+              const frac = u.str / Math.max(1, u.max);
+              // Not worth a muster for a handful of men; a company that has
+              // lost a third of itself is.
+              if (frac > 0.7) return;
+              if (!worst || frac < worst.frac) worst = { u, frac, at: musteringGround(on) };
+            });
+          });
+          if (worst) {
+            const rc = reinforceCost(worst.u, id, worst.at);
+            const r4 = nations[id].res;
+            if (rc && r4.scrap >= rc.scrap && r4.men - rc.men >= menFloor) {
+              worst.u.str = worst.u.max;
+              nations[id] = { ...nations[id],
+                res: { ...r4, scrap: r4.scrap - rc.scrap, men: r4.men - rc.men } };
+            }
           }
         }
 
@@ -7070,7 +7306,7 @@ export default function ColdCoast() {
       NATION_IDS.forEach((id) => { counts[id] = heldNow[id] || 0; });
       const landTotal = Object.keys(provinces).length;
       const seatsHeld = Object.values(provinces).filter(
-        (p) => p.capital && p.seat !== g.player && !isMinor(p.seat) && p.owner === g.player).length;
+        (p) => p.capital && !p.refuge && p.seat !== g.player && !isMinor(p.seat) && p.owner === g.player).length;
       let over = g.over;
       if (counts[g.player] === 0) over = { win: false, why: "Your last holding is gone. The flag comes down." };
       else if (seatsHeld >= 4) over = { win: true, why: `Four rival seats fly your banner. Nobody left can contest the coast.` };
@@ -8733,6 +8969,29 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
   // to address a hex by, so expose one hook for tests to drive selection.
   useEffect(() => {
     if (typeof window !== "undefined") window.__ccPick = (c, r) => selRef.current(c, r);
+    // For probes: the shape of the ground in a box, as one character a hex.
+    if (typeof window !== "undefined") window.__ccScan = (c0, r0, w, h) => {
+      const out = [];
+      for (let r = r0; r < r0 + h; r++) {
+        let line = String(r).padStart(3, " ") + " ";
+        for (let c = c0; c < c0 + w; c++) {
+          const p = gameRef.current.provinces[key(c, r)];
+          line += p ? (p.capital ? "@" : p.t) : " ";
+        }
+        out.push(line);
+      }
+      return out.join("\n");
+    };
+    // For probes: what is actually on a hex, without walking a warband to it.
+    if (typeof window !== "undefined") window.__ccHex = (c, r) => {
+      const p = gameRef.current.provinces[key(c, r)];
+      if (!p) return null;
+      return { k: key(c, r), t: p.t, land: TERRAIN[p.t]?.land, name: p.name || null,
+        terrain: TERRAIN[p.t]?.name, owner: p.owner || null, feature: p.feature || null,
+        lair: p.lair || null, capital: !!p.capital, pop: Math.round(p.pop || 0),
+        near: neighbours(c, r).map(([x, y]) => { const q = gameRef.current.provinces[key(x, y)];
+          return q ? `${x},${y}:${q.t}${q.name ? `:${q.name}` : ""}${q.owner ? `:${q.owner}` : ""}` : `${x},${y}:-`; }) };
+    };
     if (typeof window !== "undefined") window.__ccHeard = () => Sound.heard();
     /* For the smoke test: how much of the wild is actually holding something.
        There is no way to check the spawn rate by playing — you would have to
@@ -8797,7 +9056,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
       fall: () => selRef.current && window.__ccFall && window.__ccFall(),
       knock: () => window.__ccKnock && window.__ccKnock(),
       // Walking to Red-Ruth takes a dozen seasons; a test cannot wait for it.
-      meet: (id) => window.__ccMeet && window.__ccMeet(id),
+      meet: (id, quiet) => window.__ccMeet && window.__ccMeet(id, quiet),
       // ...and neither can it wait to storm Wight Mountain.
       break: (id) => window.__ccBreak && window.__ccBreak(id),
       // ...or to walk a warband four hexes to look at something.
@@ -8806,6 +9065,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
       learn: (id) => window.__ccLearn && window.__ccLearn(id),
       raise: (c, r, id, lvl, fork) => window.__ccRaise && window.__ccRaise(c, r, id, lvl, fork),
       stock: (type) => window.__ccStock && window.__ccStock(type),
+      see: (c, r) => window.__ccSee && window.__ccSee(c, r),
     };
     if (typeof window !== "undefined") window.__ccWild = () => {
       const game = gameRef.current;
@@ -8833,6 +9093,32 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           .map((p) => `${p.name}:${p.hard}:${game.armies.filter((a) => a.c === p.c && a.r === p.r)
             .reduce((n, a) => n + a.units.length, 0)}`),
         regard: Object.entries(game.regard || {}).map(([k, v]) => `${k}:${v}`),
+        // The standing arrangements, which are otherwise only legible by
+        // reading the ledger line by line.
+        pacts: Object.entries(game.pacts || {}).map(([k, v]) => `${k}:${v}`),
+        /* Whether the rival realms are actually keeping armies in the field, or
+           quietly turning into empty maps. A realm that never musters is not a
+           rival, and there is no way to see it from the map: you find out by
+           walking into a capital and meeting nobody. */
+        // Where the ground actually went, which is the only way to tell a coast
+        // of small realms from a coast one realm has eaten.
+        land: (() => {
+          const by = {};
+          all.forEach((p) => { if (TERRAIN[p.t]?.land) by[p.owner || "-"] = (by[p.owner || "-"] || 0) + 1; });
+          return Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(" ");
+        })(),
+        hosts: NATION_IDS.map((id) => {
+          const n = game.nations[id] || {};
+          const mine = game.armies.filter((a) => a.owner === id && a.units.length);
+          const plan = craftPlan(n, game.provinces, id);
+          const rack = Object.entries(n.arms || {}).filter(([, v]) => v > 0)
+            .map(([t, v]) => `${t}=${v}`).join(",");
+          return `${id} bands:${mine.length} co:${mine.reduce((x, a) => x + a.units.length, 0)}`
+            + ` hands:${plan.hands}/${plan.assigned} rack:${rack || "-"}`
+            + ` crafts:${Object.entries(n.crafts || {}).filter(([, v]) => v > 0).map(([t, v]) => `${t}=${v}`).join(",") || "-"}`
+            + ` scrap:${Math.round(n.res?.scrap || 0)} men:${Math.round(n.res?.men || 0)} metal:${Math.round(n.res?.metal || 0)}`
+            + ` hex:${Object.values(game.provinces).filter((p) => p.owner === id).length}`;
+        }),
         /* What has been raised on your own ground and what it actually does:
            which hexes are roads that would otherwise be hard going, which
            carry your eyes further, and which walls have anybody on them. */
@@ -12681,24 +12967,22 @@ function SeatScreen({ game, P, prov, onClose, onEdict, onUpgrade, onWork, onRecr
 
 /* Painted portraits, carried as data URIs because an artifact cannot fetch
    files. Anything not listed here falls back to the drawn bust below. */
-const LORD_ART = {
-  bridgers: {
-    bust: lordGatemasterBust,
-    head: lordGatemasterHead,
-  },
-  skinless: {
-    bust: lordCullBust,
-    head: lordCullHead,
-  },
-  quarrymen: {
-    bust: lordGorranBust,
-    head: lordGorranHead,
-  },
-  dogger: {
-    bust: lordGrimhandBust,
-    head: lordGrimhandHead,
-  },
-};
+/* The painted faces. Keyed by the faction the person speaks for, and picked up
+   the same way the seats and the quarters are: a pair of files dropped in as
+   lord-<faction>-bust.webp and lord-<faction>-head.webp gives that people a
+   face wherever one is drawn, with no code change. They were eight imports and
+   a hand-written map, which meant every new face was three edits and a chance
+   to wire one to the wrong people. */
+const LORD_ART = (() => {
+  const out = {};
+  Object.entries(import.meta.glob("./assets/lord-*-{bust,head}.{webp,png,jpg}",
+    { eager: true, query: "?url", import: "default" })).forEach(([path, src]) => {
+    const m = path.match(/lord-(.+)-(bust|head)\.[a-z]+$/i);
+    if (!m) return;
+    (out[m[1]] = out[m[1]] || {})[m[2]] = src;
+  });
+  return out;
+})();
 
 const lordAlive = (nat) => !nat || !nat.lordDead;
 function commandMul(natId) {
@@ -13541,9 +13825,9 @@ function EncounterScene({ enc, game, P, onAnswer }) {
         </div>
 
         <div ref={scroll} className="overflow-y-auto thin grid gap-3 px-5 py-4">
-          {SEAT_ART[MINORS[enc.who]?.art] && (
+          {SEAT_ART[FACTION[enc.who]?.art] && (
             <div style={{ margin: "-16px -20px 2px" }}>
-              <SeatPlate id={MINORS[enc.who].art} height={210} caption={MINORS[enc.who].seatName} />
+              <SeatPlate id={FACTION[enc.who].art} height={210} caption={FACTION[enc.who].seatName || enc.where} />
             </div>
           )}
           {enc.scene.map((l, i) => (
@@ -14967,6 +15251,11 @@ function Codex({ onClose }) {
             <p className="mt-2"><span className="cc-text-f2c97a">The court</span> is who is waiting and what a realm does once. Four posts — quartermaster, master of the works, marshal, envoy — can be filled from the hall, and a post takes the person: they are not available for a warband until you release them. What the post is worth depends on their habits and on whether they still believe in you. Beside them sit the decisions: a dyke, a general muster, a burning of the old rolls. Not edicts, which you can take back next winter. These are done once and stay done.</p>
             <p className="mt-2"><span className="cc-text-f2c97a">The household</span> sits under the armoury, and it is the one part of the court you cannot go and get. Three places at the warlord's own fire, filled by people who turned up — after a field, after an accord, after a wall went up, or simply after enough seasons — each with a face, a reason and something they are worth. Nobody here is hired and nobody comes twice: send one away, or let one go later, and that is the end of them. The empty places are shown because one of them is going to be walked into.</p>
             <p className="mt-2"><span className="cc-text-f2c97a">The way</span> is how a hundred thousand people bury their dead, feed their children and decide who is allowed through the gate. Four slots, empty at the start on purpose, and taking a tradition into an empty one costs nothing but the saying of it. Putting one where another already stood is a reform: it costs scrap, and every court on the coast hears about it.</p>
+          </div>
+          <div>
+            <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Who else is out there</div>
+            <p>Eight peoples hold ground of their own and none of them are a realm. Six are within reach of Albion in the first twenty seasons and each does one thing: Bridgerton fortifies, Holk ploughs the flats, the Skinless raid the silt, Red-Ruth digs in and will not treat, Rune crusades, Kernev grows a hedge. Two more are a long way out and worth the walk — the Holtfolk of Fontainebleau, who make ground rather than take it, and the Fentaken of Stockholm Reef, who hold water, which nobody else can. The Combers of Aalborg Staithe are the ninth and they do nothing but take: sail-carts on the dry floor, and no part of the eastern flats they do not consider theirs.</p>
+            <p className="mt-2">Meeting any of them is a scene with four answers, and so is meeting one of the six great realms — that used to be a line in the log. A realm has no toll to sell you, so what an answer buys is a standing with them, a signed accord with a term on it, or a war that starts the day you met.</p>
           </div>
           <div>
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Tracks, fires and walls</div>

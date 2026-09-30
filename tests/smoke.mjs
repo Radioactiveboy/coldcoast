@@ -59,13 +59,25 @@ const openCompany = async (n = 0) => {
   return did;
 };
 const popText = () => page.evaluate(() => document.querySelector(".cc-wbpop")?.innerText || "");
+/* Press the march order, whatever it is called, including the second press an
+   act of aggression asks for. The label for taking somebody's ground names the
+   place — "March in and take Wessex 12" — so a test looking for the words
+   "March in and take it" only ever worked on ground nobody held, and started
+   failing the moment the neighbours got livelier. */
+const marchOrder = async () => {
+  const went = await click("March here|March in and take ");
+  if (!went) return false;
+  await wait(160);
+  await click("Yes . cross into");
+  return true;
+};
 /* Shut whatever full-screen panel is open — a seat, the works, a codex — so a
    click meant for the map reaches the map. Scenes are answered by
    clearScenes(); this is for the ones that just have a way out. */
 const closeOverlay = async () => {
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 6; i++) {
     const shut = await page.evaluate(() => {
-      const ov = document.querySelector(".fixed.inset-0.z-50");
+      const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
       if (!ov) return false;
       const b = ov.querySelector('[aria-label="Close"]') || ov.querySelector("button");
       if (b) { b.click(); return true; }
@@ -115,7 +127,7 @@ const clearScenes = async () => {
     });
     if (!open) return;
     await page.evaluate(() => {
-      const ov = document.querySelector(".fixed.inset-0.z-50");
+      const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
       const opts = [...ov.querySelectorAll(".cc-origin")];
       if (opts.length) opts[opts.length - 1].click();
     });
@@ -162,9 +174,9 @@ await banner.click();
 await wait(900);
 // The opening scene stands between the picker and the map now.
 check("the opening scene names the threat", await page.evaluate(() =>
-  /Rendfast Host/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || "")));
+  /Rendfast Host/.test([...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"))));
 check("the opening asks who you were", await page.evaluate(() =>
-  /hunter's child/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || "")));
+  /hunter's child/.test([...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"))));
 await click("The captain's child");
 await page.waitForSelector("svg.cc-worldmap", { timeout: 30000 });
 await wait(1500);
@@ -255,7 +267,7 @@ const fightOut = async (rounds = 14, choice = null) => {
       roundGap += Math.abs((was.a.men - now.a.men) - now.said.a)
                 + Math.abs((was.d.men - now.d.men) - now.said.d);
     }
-    if (await page.evaluate(() => /Let them go/.test(document.querySelector(".fixed.inset-0.z-50")?.innerText || ""))) {
+    if (await page.evaluate(() => /Let them go/.test([...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n")))) {
       sawAftermath = true;
       if (choice === "ride" && !pursuit && now && now.winner) {
         const lost = now.winner === "a" ? "d" : "a";
@@ -268,7 +280,7 @@ const fightOut = async (rounds = 14, choice = null) => {
     await click("Count the cost"); await wait(260);
   }
   await page.evaluate(() => {
-    const ov = document.querySelector(".fixed.inset-0.z-50");
+    const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
     if (ov) [...ov.querySelectorAll("button")].pop()?.click();
   });
   await wait(400);
@@ -320,7 +332,7 @@ check("a warband starts with nobody leading it", await page.evaluate(() =>
   const scrapNow = () => page.evaluate(() => +((document.querySelector("header")?.innerText.match(/([\d,]+)\s*\n?\s*Scrap/) || [])[1] || "0").replace(/,/g, ""));
   const before = await scrapNow();
   await click("Nobody leads them"); await wait(350);
-  const hall = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  const hall = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"));
   check("the hall has men waiting and names a price", /Waiting in the hall/.test(hall) && /Wants \d+ scrap/.test(hall),
     hall.match(/Wants \d+ scrap/)?.[0] || "no price");
   await click("Give them the command"); await wait(450);
@@ -355,7 +367,7 @@ await clearScenes();
   });
   const ledgerBefore = await rates();
   await page.evaluate(() => window.__ccTest.meet("quarrymen")); await wait(450);
-  const scene = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  const scene = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"));
   check("meeting a people opens a scene, not a log line",
     /Quarrymen of Red-Ruth/.test(scene) && /Gorran Black/.test(scene),
     (scene.split("\n")[1] || "").slice(0, 40));
@@ -365,7 +377,7 @@ await clearScenes();
       .every((t) => scene.includes(t)));
   await click("Ask the Pit-King"); await wait(300);
   check("an answer shows what came of it before you commit",
-    /carts start east/.test(await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "")));
+    /carts start east/.test(await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"))));
   await click("So it is said"); await wait(450);
   const meet = await page.evaluate(() => window.__ccWild());
   check("the answer is remembered", (meet.regard || []).some((r) => /^quarrymen:/.test(r)),
@@ -395,7 +407,7 @@ await clearScenes();
   check("a holdout garrison is what its table says", !/0co/.test(kinds), kinds);
   const mu = await page.evaluate(() => window.__ccWild().minorUnits);
   check("a holdout's companies belong to the holdout",
-    mu.owners.every((o) => /^(quarrymen|bridgers|holk|skinless|domesayers|bretons|wasters|beasts|changed)$/.test(o)),
+    mu.owners.every((o) => /^(quarrymen|bridgers|holk|skinless|domesayers|bretons|holtfolk|fentaken|combers|wasters|beasts|changed)$/.test(o)),
     mu.owners.join(","));
   check("and are the companies the table names", mu.types.length > 2, mu.types.join(","));
 }
@@ -413,7 +425,7 @@ await clearScenes();
     (gate.match(/(Attack|Cross)[^\n]*/) || [])[0] || "no order offered");
 
   await page.evaluate(() => window.__ccTest.meet("bridgers")); await wait(450);
-  const sc = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  const sc = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"));
   check("the bridge has a scene of its own",
     /Bridgers of Bridgerton/.test(sc) && /Gatemaster/.test(sc) && /DOCKS/.test(sc),
     (sc.split("\n")[1] || "").slice(0, 40));
@@ -453,12 +465,12 @@ await clearScenes();
   const panel = await page.evaluate(() => document.querySelector("aside")?.innerText || "");
   check("the old Channel floor is its own ground", /Bogged warzone/.test(panel),
     (panel.split("\n")[2] || "").slice(0, 40));
-  await click("March here|March in and take it"); await wait(600);
-  const sc = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  await marchOrder(); await wait(600);
+  const sc = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"));
   check("marching into the bog is met, not surveyed", /mud is already taken/.test(sc),
     (sc.split("\n")[1] || "").slice(0, 40));
   await page.evaluate(() => {
-    const ov = document.querySelector(".fixed.inset-0.z-50");
+    const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
     if (ov) [...ov.querySelectorAll("button")].pop()?.click();
   });
   await wait(400);
@@ -474,7 +486,7 @@ await clearScenes();
 await clearScenes();
 {
   await page.evaluate(() => window.__ccTest.meet("domesayers")); await wait(450);
-  const sc = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  const sc = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"));
   check("Rune has a scene of its own",
     /Domesayers of Rune/.test(sc) && /The Reader/.test(sc) && /eleven of them/.test(sc),
     (sc.split("\n")[1] || "").slice(0, 40));
@@ -488,14 +500,14 @@ await clearScenes();
     (w.pacts || []).join(" "));
 
   await page.evaluate(() => window.__ccTest.meet("bretons")); await wait(450);
-  const bs = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  const bs = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"));
   check("Kernev has a scene of its own",
     /Bretons of Kernev/.test(bs) && /Aouregan Plou/.test(bs) && /thorn/.test(bs),
     (bs.split("\n")[1] || "").slice(0, 40));
   check("the farmers start out warm without your having done anything",
     /regard you as (warm|sworn)/.test(bs) || true);
   await click("Tell them what you know about Rune"); await wait(300);
-  const said = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  const said = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"));
   check("a warning costs nothing and is worth a great deal", /regard you as sworn to you|regard you as warm/.test(said),
     (said.match(/regard you as [\w ]+/) || [])[0] || "no regard line");
   await click("So it is said"); await wait(400);
@@ -506,10 +518,10 @@ await clearScenes();
 await clearScenes();
 {
   await page.evaluate(() => window.__ccTest.meet("holk")); await wait(450);
-  const sc = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  const sc = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"));
   check("a people can start out already warm to you", /warm|sworn/.test(sc) || true);
   await click("Say you will be back"); await wait(280);
-  const preview = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  const preview = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"));
   check("Holk think well of you before you have done anything", /regard you as warm/.test(preview),
     (preview.match(/regard you as \w+/) || [])[0] || "no regard line");
   await click("So it is said"); await wait(400);
@@ -520,7 +532,7 @@ await clearScenes();
 await page.evaluate(() => window.__ccTest.knock()); await wait(300);
 check("somebody waits in the hall", await page.evaluate(() => !!document.querySelector(".cc-hallrow")));
 await page.evaluate(() => document.querySelector(".cc-hallrow")?.click()); await wait(350);
-const heardOne = await page.evaluate(() => (document.querySelector(".fixed.inset-0.z-50")?.innerText || "").includes("In the hall"));
+const heardOne = await page.evaluate(() => ([...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n")).includes("In the hall"));
 await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50 .cc-origin")][0]?.click()); await wait(400);
 check("a petition is heard and answered", heardOne && await page.evaluate(() => !document.querySelector(".cc-hallrow")));
 
@@ -586,7 +598,10 @@ check("the season button says who has not moved", await page.evaluate(() =>
 {
   const before = await page.evaluate(() => document.querySelector("header")?.innerText.split("\n")[1] || "");
   await page.evaluate(() => window.__ccTest.fall()); await wait(500);
-  const scene = await page.evaluate(() => (document.querySelector(".fixed.inset-0.z-50")?.innerText || "").includes("The seat is empty"));
+  /* Read every full-screen panel, not the first: a stale one sits in front of
+     the live one in document order and this check has flaked on it. */
+  const scene = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")]
+    .some((x) => x.innerText.includes("The seat is empty")));
   await click("Give them the seat"); await wait(500);
   const after = await page.evaluate(() => document.querySelector("header")?.innerText.split("\n")[1] || "");
   check("the seat passes to a captain", scene && after !== before && !/Grimhand/.test(after), after.split(" · ")[0]);
@@ -600,17 +615,20 @@ await page.evaluate(() => {
 });
 await wait(400);
 {
-  const t = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+  /* Every full-screen panel, not the first: a stale one sits in front of the
+     live one in document order and this has flaked on it. */
+  const t = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")]
+    .map((x) => x.innerText).join("\n"));
   const kinds = [...new Set((t.match(/What now|Your word|The hall|A place|A quarter/g) || []))];
   check("the missions screen gathers what is outstanding",
     /Outstanding —/.test(t) && kinds.length >= 2, kinds.join(", ") || "nothing listed");
   await page.evaluate(() => {
-    const ov = document.querySelector(".fixed.inset-0.z-50");
+    const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
     if (ov) [...ov.querySelectorAll("button")].find((b) => /^\s*$/.test(b.textContent) || b.getAttribute("aria-label") === "Close")?.click();
   });
   await wait(250);
   await page.keyboard.press("Escape"); await wait(250);
-  await page.evaluate(() => { const ov = document.querySelector(".fixed.inset-0.z-50"); if (ov) ov.click(); });
+  await page.evaluate(() => { const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop(); if (ov) ov.click(); });
   await wait(300);
 }
 
@@ -654,7 +672,7 @@ await page.evaluate(() => {
 await wait(350);
 await click("Consult the scholars");
 await wait(500);
-const tree = await page.evaluate(() => document.querySelector(".fixed.inset-0.z-50")?.innerText || "");
+const tree = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"));
 check("the tech tree opens from Consult the scholars", /TRIBAL/.test(tree));
 check("later tiers are shrouded at the start",
   /Learn \d+ more Tribal advance/.test(tree) && !/Bloomery|Vault craft/.test(tree),
@@ -692,17 +710,17 @@ await wait(250);
 await click("Set the scholars on it");
 await wait(350);
 await page.evaluate(() => {
-  const ov = document.querySelector(".fixed.inset-0.z-50");
+  const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
   if (ov) ov.querySelector("button")?.click();
 });
 await wait(250);
 await page.evaluate(() => {
-  const ov = document.querySelector(".fixed.inset-0.z-50");
+  const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
   if (ov) ov.querySelector("button")?.click();
 });
 await wait(250);
 await page.evaluate(() => {
-  const ov = document.querySelector(".fixed.inset-0.z-50");
+  const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
   if (ov) ov.querySelector("button")?.click();
 });
 await wait(250);
@@ -725,7 +743,7 @@ await wait(400);
     open: document.querySelectorAll(".cc-slotempty").length,
     filled: document.querySelectorAll(".cc-slotfull").length,
     wards: document.querySelectorAll(".cc-ward").length,
-    text: document.querySelector(".fixed.inset-0.z-50")?.innerText || "",
+    text: [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"),
   }));
   check("a settlement starts with one slot and quarters to take",
     slots.open + slots.filled === 1 && slots.wards >= 4,
@@ -764,7 +782,7 @@ const raised = await page.evaluate(() => {
 check("something can be raised on empty ground", raised);
 await wait(350);
 await page.evaluate(() => {
-  const ov = document.querySelector(".fixed.inset-0.z-50");
+  const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
   if (ov) ov.querySelector("button")?.click();
 });
 await wait(250);
@@ -786,7 +804,7 @@ check("a finished building offers its next level", /Cutting floor/.test(up), up.
     rivals.join("  "));
 }
 await page.evaluate(() => {
-  const ov = document.querySelector(".fixed.inset-0.z-50");
+  const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
   if (ov) ov.querySelector("button")?.click();
 });
 await wait(250);
@@ -849,7 +867,7 @@ check("a company can march out on its own", splitOk,
 // from there — which also leaves the host back on 25,77 for the march below.
 await page.evaluate((c, r) => window.__ccPick(c, r), 24, 77);
 await wait(200);
-await click("March here|March in and take it");
+await marchOrder();
 await wait(350);
 await page.evaluate((c, r) => window.__ccPick(c, r), 24, 77);
 await wait(200);
@@ -905,7 +923,7 @@ for (let step = 0; step < 34 && ac > 20; step++) {
   await wait(120);
   await page.evaluate((c, r) => window.__ccPick(c, r), ac - 1, ar);
   await wait(140);
-  const moved = await click("March here|March in and take it");
+  const moved = await marchOrder();
   if (moved) { ac -= 1; await wait(160); continue; }
   // Somebody's band is standing in the road. Go through them.
   if (await click("Attack the")) {
@@ -954,7 +972,7 @@ for (let i = 0; i < 8; i++) {
 }
 await wait(500);
 await page.evaluate(() => {
-  const ov = document.querySelector(".fixed.inset-0.z-50");
+  const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
   if (ov) [...ov.querySelectorAll("button")].pop()?.click();
 });
 await wait(300);
@@ -1045,7 +1063,7 @@ if (battle.open) {
   }), await page.evaluate(() => (document.querySelector(".cc-narration")?.innerText || "").split("\n")[0]));
   await click("Count the cost"); await wait(400);
   await page.evaluate(() => {
-    const ov = document.querySelector(".fixed.inset-0.z-50");
+    const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
     if (ov) [...ov.querySelectorAll("button")].pop()?.click();
   });
   await wait(400);
@@ -1192,6 +1210,105 @@ const courtTab = async (name) => {
   await closeOverlay();
 }
 
+/* Three peoples further out than the Albion five, each doing something none of
+   the others do: a wood that makes ground rather than taking it, a people who
+   hold water, and the purest form of the raiding holdout. */
+{
+  await closeOverlay();
+  const seats = await page.evaluate(() => [[33, 90], [62, 46], [47, 60]]
+    .map(([c, r]) => { const h = window.__ccHex(c, r); return `${h.name}:${h.owner}:${h.feature}`; }));
+  check("three more peoples hold seats of their own",
+    seats.join(" ") === "Fontainebleau Holt:holtfolk:holt Stockholm Reef:fentaken:reefmere Aalborg Staithe:combers:staithe",
+    seats.join("  "));
+
+  for (const [id, who, said] of [["holtfolk", "Wick of the Long Ride", "Ask for a ride cut"],
+                                 ["fentaken", "Sedge", "Ask them to carry"],
+                                 ["combers", "Hald Rope", "Pay the tithe"]]) {
+    await closeOverlay();
+    await page.evaluate((i) => window.__ccTest.meet(i), id);
+    let sc = null;
+    for (let i = 0; i < 8 && !sc; i++) {
+      await wait(300);
+      sc = await page.evaluate((w) => {
+        const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].find((x) => x.innerText.includes(w));
+        if (!ov) return null;
+        return { opts: [...ov.querySelectorAll(".cc-origin")].map((b) => b.innerText.split("\n")[0]) };
+      }, who);
+    }
+    check(`${id} come out to look at you and have four answers`,
+      !!sc && sc.opts.length === 4, sc ? sc.opts[0] : "no scene");
+    await page.evaluate((t) => {
+      const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
+      const o = ov && [...ov.querySelectorAll(".cc-origin")].find((b) => b.innerText.includes(t));
+      if (o) o.click();
+    }, said);
+    await wait(250); await click("So it is said"); await wait(350);
+  }
+  const standing = await page.evaluate(() => window.__ccWild().pacts || null);
+  check("an arrangement with one of them stands in the ledger",
+    /holtRide/.test(JSON.stringify(standing)) && /comberTithe/.test(JSON.stringify(standing)),
+    JSON.stringify(standing));
+  await closeOverlay();
+}
+
+/* The narrows are the one stretch on the map whose story is not what the
+   Collapse left but what everybody before it left. */
+{
+  await closeOverlay();
+  const told = [];
+  for (const [c, r, title] of [[21, 85, "The Somme Floor"], [21, 86, "Crecy Wood"]]) {
+    /* Surveyed, and with somebody of yours standing on it — ground nobody has
+       been within sight of reads as uncharted however well surveyed it is. */
+    await page.evaluate((x, y) => { window.__ccTest.put(x, y); window.__ccTest.see(x, y); }, c, r);
+    await wait(350);
+    await page.evaluate((x, y) => window.__ccPick(x, y), c, r); await wait(450);
+    const t = await page.evaluate(() => document.body.innerText);
+    told.push(`${title}:${new RegExp(title).test(t) ? "told" : "silent"}`);
+  }
+  check("the narrows carry a story of the wars fought over them",
+    told.every((x) => x.endsWith(":told")), told.join(" "));
+  const words = await page.evaluate(() => document.body.innerText);
+  check("and the story is trenchwork and craters, not another ruin",
+    /trenchwork|firing step|crater/i.test(words),
+    (words.match(/trenchwork|firing step|crater[a-z]*/i) || ["nothing of the kind"])[0]);
+}
+
+/* A realm is the most consequential thing on the map and used to arrive as a
+   line in the log while a charcoal burner got a painting. Meeting one opens
+   the same scene a people on the road opens — and because a realm has no toll
+   to sell you, what an answer buys is a signed term or a war. */
+{
+  await closeOverlay();
+  await page.evaluate(() => window.__ccTest.meet("karst")); await wait(600);
+  const scene = await page.evaluate(() => {
+    const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")]
+      .find((x) => /The Karst League/.test(x.innerText));
+    if (!ov) return null;
+    return { text: ov.innerText, opts: [...ov.querySelectorAll(".cc-origin")].map((b) => b.innerText.split("\n")[0]) };
+  });
+  check("meeting a realm opens a scene, not a line in the log",
+    !!scene && scene.opts.length === 4, scene ? scene.opts.join(" / ") : "no scene");
+  check("a realm's scene names the one who came out to look at you",
+    !!scene && /Factor Ludo Mesic/.test(scene.text) && /free cities/.test(scene.text),
+    (scene?.text.match(/Factor[^\n]*/) || [])[0] || "nobody spoke");
+
+  // Signing at the meeting is the real thing, with a term on it.
+  const before = await page.evaluate(() => window.__ccWild().diplo);
+  await page.evaluate(() => {
+    const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")]
+      .find((x) => /The Karst League/.test(x.innerText));
+    const o = [...ov.querySelectorAll(".cc-origin")].find((b) => /Take his terms/.test(b.innerText));
+    if (o) o.click();
+  });
+  await wait(300);
+  await click("So it is said"); await wait(450);
+  const after = await page.evaluate(() => window.__ccWild().diplo);
+  check("what you say at the meeting is a signed term, not a mood",
+    !before.accords.some((x) => x.startsWith("karst:")) && after.accords.some((x) => x.startsWith("karst:truce")),
+    after.accords.join(" ") || "nothing signed");
+  await closeOverlay();
+}
+
 /* ------------------------------ THE ENVOYS --------------------------------
    The rival realms used to be a single switch: declare war, or pay forty scrap
    and hope. There is a ladder now, and the whole point of it is that each rung
@@ -1219,7 +1336,7 @@ const openRivals = async () => {
 };
 {
   await closeOverlay();
-  await page.evaluate(() => window.__ccTest.meet("lyon")); await wait(300);
+  await page.evaluate(() => window.__ccTest.meet("lyon", true)); await wait(300);
   const onScreen = await openRivals();
   const card = await page.evaluate(() => document.body.innerText);
   check("a rival realm is somebody you can deal with", onScreen && /Send an envoy with a gift/.test(card),
@@ -1278,7 +1395,7 @@ for (let i = 0; i < 200 && seasons < 40; i++) {
        whatever the last button on the overlay is, which is the mildest of them. */
     if (!(await click("Count the cost"))) {
       await page.evaluate(() => {
-        const ov = document.querySelector(".fixed.inset-0.z-50");
+        const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
         if (ov) [...ov.querySelectorAll("button")].pop()?.click();
       });
     }
