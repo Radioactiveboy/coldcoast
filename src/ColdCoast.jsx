@@ -744,6 +744,7 @@ const LANDMARKS = {
   "75,55": "Riga Deep",
   "16,59": "Glasgow Rust",
   "19,59": "Edinburgh Crag",
+  "47,60": "Aalborg Staithe",
   "52,59": "Kobenhavn Sill",
   "103,59": "Muskova Drift",
   "22,61": "Newcastle Slag",
@@ -762,6 +763,8 @@ const LANDMARKS = {
   "35,72": "Amsterdam Bed",
   "54,72": "Berlin Vault",
   "70,74": "Warszawa Stack",
+  "21,85": "The Somme Floor",
+  "21,86": "Crecy Wood",
   "19,77": "Cardiff Tide",
   "20,77": "Bristol Weir",
   "25,77": "Lunden",
@@ -776,6 +779,7 @@ const LANDMARKS = {
   "65,93": "Budapest Span",
   "45,97": "The Innsbruck Door",
   "51,98": "Venezia Silt",
+  "33,90": "Fontainebleau Holt",
   "35,99": "Lyon Terraces",
   "45,100": "Milan Foundry",
   "41,102": "Torino Works",
@@ -2038,6 +2042,73 @@ const MINORS = {
     fortify: { add: 3, cap: 28, every: 3, company: "pikemen", companyEvery: 11, companyMax: 2 },
     grows: { on: ["h", "p", "f"], every: 4, max: 8, chance: 0.5 },
   },
+  /* Three more peoples, further out than the Albion five and doing three
+     things none of them do. The Holtfolk make ground rather than take it —
+     the wood itself is the thing that grows. The Fentaken hold water, which
+     nobody else on the map does, and are the only people you meet who are not
+     quite people any more. The Combers are the pure form of the raiding
+     holdout: no walls worth the name, nothing to sell, and a range that
+     covers the whole eastern half of the Dogger flats. */
+  holtfolk: {
+    name: "The Holtfolk of Fontainebleau", short: "Holtfolk", color: "#4f7a3a",
+    at: [33, 90], seatName: "Fontainebleau Holt", defBonus: 38, regard: 44,
+    feature: "holt", building: "wall",
+    blurb:
+      "Forty thousand people living inside a wood that has had three hundred years to decide where its paths go. They coppice it, burn it for charcoal, eat out of it, and have never in living memory let anybody cut a ride through it who was not from it.",
+    trait:
+      "They do not raid and they do not trade much. What they do is grow: every few years the laid thorn is further out than it was, and the ground it took is wood now. A column that goes into the holt is fighting the holt.",
+    guardName: "The Holt Wardens",
+    garrison: [
+      ["hunters", "iron", "leather"],
+      ["hunters", "iron", "leather"],
+      ["spearmen", "iron", "leather"],
+      ["axemen", "iron", "hide"],
+    ],
+    // The thorn is thicker every few years, and so is the wood behind it.
+    fortify: { add: 3, cap: 30, every: 3, company: "hunters", companyEvery: 10, companyMax: 3 },
+    grows: { on: ["f"], every: 3, max: 14, chance: 0.6 },
+  },
+  fentaken: {
+    name: "The Fentaken of Stockholm Reef", short: "Fentaken", color: "#4aa3c9",
+    at: [62, 46], seatName: "Stockholm Reef", defBonus: 30, regard: 38,
+    feature: "reefmere", building: "fishery",
+    blurb:
+      "When the sills closed, the Balt went fresh and then went shallow, and the people who stayed in it went in after it. Three hundred years down in the weed and the eel runs has done something to them that they do not consider a misfortune and nobody else has a word for.",
+    trait:
+      "They hold water the way other peoples hold hills, and they are the only ones who can. Their ground goes out along the fresh every few years, they will ferry anything for iron, and what comes out of the mere at night is not a warband in any sense you were taught.",
+    guardName: "The Reef Weirwatch",
+    garrison: [
+      ["bowmen", "iron", "leather"],
+      ["spearmen", "iron", "leather"],
+      ["hunters", "iron", "hide"],
+      ["hunters", "iron", "hide"],
+    ],
+    raids: { bands: 2, reach: 7, after: 14, chance: 0.34,
+             units: ["hunters", "spearmen", "hunters"] },
+    grows: { on: ["l", "c"], every: 3, max: 12, chance: 0.55 },
+  },
+  combers: {
+    name: "The Combers of Aalborg Staithe", short: "Combers", color: "#c2724a",
+    at: [47, 60], seatName: "Aalborg Staithe", defBonus: 22, regard: 20,
+    feature: "staithe", building: "muster",
+    blurb:
+      "A harbour that was left forty feet above its own water, and the people who worked out first what that meant. They keep light boats on wheels under the landing and they run them out onto the silt with the wind behind, and they have been doing it for six generations.",
+    trait:
+      "They make nothing, grow nothing and hold nothing but the staithe. Everything they have came off somebody crossing the flats, and the flats are very wide — their bands work the whole eastern half of them and think nothing of a fortnight out.",
+    guardName: "The Staithe Crews",
+    garrison: [
+      ["riders", "iron", "leather"],
+      ["axemen", "iron", "leather"],
+      ["axemen", "iron", "hide"],
+      ["hunters", "iron", "hide"],
+    ],
+    /* The widest reach of any people on the map, because the whole point of
+       them is the distance: a sail-cart with the wind behind it crosses in a
+       day what a column walks in four. They start late, so the opening
+       twenty seasons are still Albion's argument. */
+    raids: { bands: 4, reach: 18, after: 12, chance: 0.5,
+             units: ["riders", "axemen", "hunters"], hunt: ["dogger"] },
+  },
   wasters: {
     name: "The Wasters", short: "Wasters", color: "#b5793f", defBonus: 10, roaming: true,
     blurb: "Nobody's people. They hold a ruin until it is emptied and then they walk to the next one.",
@@ -2085,6 +2156,12 @@ const FEATURES = {
               desc: "Eight feet of thorn on a bank with a ditch under it, running field to field to field across the whole neck of the peninsula. It was built to keep cattle in. It does other things now." },
   eyrie:    { name: "The Wight watch",   yield: { scrap: 2 }, sight: 2, def: 10,
               desc: "Eight hundred feet of old island standing out of the mud. From the top you can see everything crossing, days before it arrives." },
+  holt:     { name: "The standing wood",  yield: { fuel: 4, food: 2, men: 1 }, def: 30,
+              desc: "Coppice worked on a twenty-year round, rides cut to no pattern anybody but the holt knows, and a belt of laid thorn four hundred years in the making. There is no line of sight in it longer than a bowshot and every one of those is somebody's." },
+  reefmere: { name: "The living reef",    yield: { food: 6, men: 2 }, sight: 1, def: 20,
+              desc: "The old town on the middle hill, and under it a mile of flooded streets worked like a fishery — weed frames, eel runs and pens down to the third storey. Most of the people who work it are only sometimes above the water." },
+  staithe:  { name: "The dry staithe",    yield: { scrap: 4, metal: 1 }, sight: 1, def: 14,
+              desc: "Eleven hundred metres of harbour landing standing forty feet over a floor of silt, with the cranes still on it and a rack of light boats underneath on wheels. Everything that crosses the eastern rim is watched from it." },
   /* What a place's story leaves behind. These do more than yield: `sight`
      carries your sight further, `def` is a wall, `move` makes the hex a
      road, `supply` and `carry` pull the supply line in for whoever stands
@@ -2108,6 +2185,13 @@ const FEATURES = {
   dock:       { name: "The Ram dock",        yield: { scrap: 2, food: 2 }, def: 10, desc: "A dry dock with its gates hung: a fortress with a floor." },
   market:     { name: "The Bar market",      yield: { scrap: 2, food: 2 }, sight: 1, desc: "Everyone comes. Everyone leaves owing you, and telling you things." },
   wainwrights:{ name: "The Keel wainwrights", yield: { scrap: 1 }, carry: 2, desc: "Shipwrights with no sea, building the best carts on the coast." },
+  /* What three wars in a row leave in the ground. The narrows have been fought
+     over by everyone who ever wanted Albion or wanted out of it, and the
+     leavings are worth having if you are prepared to go and get them. */
+  ironfield: { name: "The iron harvest", yield: { powder: 3, metal: 2, scrap: 2 },
+              desc: "Ordnance, plate and wire, ploughed up a field at a time by people who have learned exactly which of it can be moved. Nothing here was made for you and all of it works." },
+  oldlines:  { name: "The old lines",     yield: { scrap: 1 }, def: 30, sight: 1,
+              desc: "Four systems of trenchwork cut across each other under two centuries of birch, with concrete at the junctions and a firing step somebody has swept. Whoever holds the wood holds every approach to it." },
 };
 
 // on: terrains this encounter suits. null means anywhere.
@@ -4916,6 +5000,14 @@ export default function ColdCoast() {
       armies: g.armies.map((a) => (a.id === mine.id ? { ...a, c, r, mp: a.maxMp } : a)),
       sel: { armyId: mine.id, k: key(c, r) },
     };
+  });
+
+  // For the smoke test only: ground is surveyed, without walking to it and
+  // rolling an encounter on the way.
+  if (typeof window !== "undefined") window.__ccSee = (c, r) => setGame((g) => {
+    const k = key(c, r);
+    if (!g.provinces[k]) return g;
+    return { ...g, provinces: { ...g.provinces, [k]: { ...g.provinces[k], explored: true } } };
   });
 
   /* For the smoke test only: an advance is understood, and a finished building
@@ -8973,6 +9065,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
       learn: (id) => window.__ccLearn && window.__ccLearn(id),
       raise: (c, r, id, lvl, fork) => window.__ccRaise && window.__ccRaise(c, r, id, lvl, fork),
       stock: (type) => window.__ccStock && window.__ccStock(type),
+      see: (c, r) => window.__ccSee && window.__ccSee(c, r),
     };
     if (typeof window !== "undefined") window.__ccWild = () => {
       const game = gameRef.current;
@@ -9000,6 +9093,9 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           .map((p) => `${p.name}:${p.hard}:${game.armies.filter((a) => a.c === p.c && a.r === p.r)
             .reduce((n, a) => n + a.units.length, 0)}`),
         regard: Object.entries(game.regard || {}).map(([k, v]) => `${k}:${v}`),
+        // The standing arrangements, which are otherwise only legible by
+        // reading the ledger line by line.
+        pacts: Object.entries(game.pacts || {}).map(([k, v]) => `${k}:${v}`),
         /* Whether the rival realms are actually keeping armies in the field, or
            quietly turning into empty maps. A realm that never musters is not a
            rival, and there is no way to see it from the map: you find out by
@@ -15155,6 +15251,11 @@ function Codex({ onClose }) {
             <p className="mt-2"><span className="cc-text-f2c97a">The court</span> is who is waiting and what a realm does once. Four posts — quartermaster, master of the works, marshal, envoy — can be filled from the hall, and a post takes the person: they are not available for a warband until you release them. What the post is worth depends on their habits and on whether they still believe in you. Beside them sit the decisions: a dyke, a general muster, a burning of the old rolls. Not edicts, which you can take back next winter. These are done once and stay done.</p>
             <p className="mt-2"><span className="cc-text-f2c97a">The household</span> sits under the armoury, and it is the one part of the court you cannot go and get. Three places at the warlord's own fire, filled by people who turned up — after a field, after an accord, after a wall went up, or simply after enough seasons — each with a face, a reason and something they are worth. Nobody here is hired and nobody comes twice: send one away, or let one go later, and that is the end of them. The empty places are shown because one of them is going to be walked into.</p>
             <p className="mt-2"><span className="cc-text-f2c97a">The way</span> is how a hundred thousand people bury their dead, feed their children and decide who is allowed through the gate. Four slots, empty at the start on purpose, and taking a tradition into an empty one costs nothing but the saying of it. Putting one where another already stood is a reform: it costs scrap, and every court on the coast hears about it.</p>
+          </div>
+          <div>
+            <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Who else is out there</div>
+            <p>Eight peoples hold ground of their own and none of them are a realm. Six are within reach of Albion in the first twenty seasons and each does one thing: Bridgerton fortifies, Holk ploughs the flats, the Skinless raid the silt, Red-Ruth digs in and will not treat, Rune crusades, Kernev grows a hedge. Two more are a long way out and worth the walk — the Holtfolk of Fontainebleau, who make ground rather than take it, and the Fentaken of Stockholm Reef, who hold water, which nobody else can. The Combers of Aalborg Staithe are the ninth and they do nothing but take: sail-carts on the dry floor, and no part of the eastern flats they do not consider theirs.</p>
+            <p className="mt-2">Meeting any of them is a scene with four answers, and so is meeting one of the six great realms — that used to be a line in the log. A realm has no toll to sell you, so what an answer buys is a standing with them, a signed accord with a term on it, or a war that starts the day you met.</p>
           </div>
           <div>
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Tracks, fires and walls</div>

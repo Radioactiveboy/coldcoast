@@ -8,6 +8,47 @@
 
    Keyed by hex, the same way LANDMARKS is. */
 export const STORIES = {
+  /* --------------------------- THE NARROWS --------------------------------
+     Two hexes on the French shore of the dry Channel, and the only ground on
+     the map where the story is not what the Collapse left but what everybody
+     before it left. Every people who ever wanted Albion, or wanted out of it,
+     came through here, and they all dug. The strata are legible: you can walk
+     from a bank thrown up with spades to a concrete junction to a crater field
+     in the space of an afternoon, and the newest of it is older than anyone's
+     grandmother's grandmother.
+     ---------------------------------------------------------------------- */
+  "21,85": { // The Somme Floor
+    title: "The Somme Floor",
+    intro: "Where the river came down onto the Channel bed there is a plain of silt with a shape to it that is not a river's. Craters, in ranks, four and five deep and overlapping, running east to west until the haze takes them. Between them the ground rings hollow, and there is wire — miles of it, rusted to a thread and still perfectly capable of taking a horse's leg off.",
+    steps: [
+      { text: "Nobody who lives near it will cross it, and they have very specific reasons that nobody will say out loud. Stand a warband on it and find out what the reasons are.",
+        need: { seasons: 2 }, action: "Camp on the floor",
+        done: "The reasons are that it goes off. Two craters open in the first season from nothing anybody did, and your people learn to read the ground the way the locals do: by the colour of what grows on it." },
+      { text: "Under the silt there is ordnance, plate and drawn wire in quantities nobody has an honest word for. Working it wants people who understand what a charge is before they hit it.",
+        need: { tech: "saltpetre" }, action: "Set the powder men to it",
+        done: "They go out in threes with a rope and a pole and they come back with things that have been waiting under two hundred years of river mud for somebody to ask. Two of them do not come back, which your powder men describe, accurately, as a very good rate." },
+      { text: "A harvest is not a haul. It wants a season's rhythm, people who live here, and somebody to say which fields are worked this year and which are left.",
+        need: { hold: true }, action: "Put the floor under the plough",
+        done: "The Somme Floor is worked in strips now, the way it was farmed when it was farmland, and the crop is metal." },
+    ],
+    reward: { feature: "ironfield", text: "The floor gives up powder, metal and scrap every season, and goes on giving it." },
+  },
+  "21,86": { // Crecy Wood
+    title: "Crecy Wood",
+    intro: "Birch and thorn, two centuries of it, on ground that rises and falls in a way no hillside does. What is under the trees is trenchwork: four systems of it, cut across each other at angles that mean they were dug by people who were not on speaking terms, with concrete at the junctions and steel doors in the concrete.",
+    steps: [
+      { text: "The lines are a maze and most of them are fallen in. Somewhere in them is a mapped system rather than a collapsed one, and finding it is a job for people who can move quietly in a wood and read ground.",
+        need: { unit: "hunters" }, action: "Send the hunters into the lines",
+        done: "They are three days in there. What they bring back is a sketch of a firing line eleven hundred metres long with a communication trench behind it, revetted, drained, and swept — swept — and nobody at all in it." },
+      { text: "The concrete junctions are shut with steel and the steel is sound. Opening one properly, rather than by the method that kills the man doing it, wants tools and a season.",
+        need: { scrap: 45 }, action: "Cut the doors",
+        done: "Bunk frames, a water point, a rack for forty rifles and a wall of names scratched in four alphabets, the last of them in a hand that had run out of things to say and wrote the date instead. Nothing in the room has been disturbed." },
+      { text: "It is the best-built defensive position on this coast and it was built by somebody else. Man it, and it is yours.",
+        need: { hold: true }, action: "Stand the wardens in the lines",
+        done: "Crecy Wood has a garrison again after two hundred years. The firing step needed no work at all." },
+    ],
+    reward: { feature: "oldlines", text: "Whoever defends Crecy Wood takes nearly a third more, and the lines see a hex further." },
+  },
   "20,77": { // Bristol Weir
     title: "Bristol Weir",
     intro: "A tidal weir of pre-Collapse concrete, two hundred metres of it, with the river still going through the sluice gates because nobody has told it to stop. The fish traps on the downstream side are somebody's, and recently.",
@@ -203,18 +244,18 @@ export const STORIES = {
     ],
     reward: { feature: "bastion", text: "The Cleft is a bastion: defenders take a further fifth." },
   },
-  "62,46": { // Stockholm Reef
+  "62,46": { // Stockholm Reef — the Fentaken's hill, and what is under it
     title: "Stockholm Reef",
-    intro: "A city of islands that are hills now, in a sea that is a plain. The old town on the middle hill has a wall, and the wall has people on it.",
+    intro: "A city of islands that are hills now, in a sea that is two feet of fresh water over drowned streets. The old town stands out of the middle of it and has a wall. What is worth having is not behind the wall; it is under the water, and it goes down three storeys.",
     steps: [
-      { text: "The people on the wall are archers, and they are good. Send somebody they will not shoot.",
-        need: { unit: "hunters" }, action: "Send the hunters up", done: "They shot at the first one and missed on purpose. They talk to hunters." },
-      { text: "The Reef's bowyers are the best left on the continent. They will teach, for iron.",
-        need: { scrap: 35 }, action: "Pay the bowyers", done: "Six of your people go up the hill and come back a season later drawing to the ear." },
-      { text: "Hold the Reef.",
-        need: { hold: true }, action: "Hold the Reef", done: "Stockholm Reef flies your banner over its wall." },
+      { text: "Whatever the Fentaken did with the flooded quarter, they did it with bows on the wall and nobody else has ever got close enough to see. Send people who can lie still in a reed bed for two days.",
+        need: { unit: "hunters" }, action: "Send the hunters into the reeds", done: "Weed frames on a grid, eel runs in the old street lines, and pens in the windows of the second and third storeys. It is a farm. It is the biggest farm anybody has seen." },
+      { text: "The frames are lashed reed on drums and they rot in four years. Working them needs cord, iron and somebody willing to go under to set the anchors.",
+        need: { scrap: 40 }, action: "Re-lay the frames", done: "Your people set the shallow anchors. The deep ones were already there, and none of your people set them." },
+      { text: "A mere is not held from a wall. It is held by being in it.",
+        need: { hold: true }, action: "Take the reef and the water with it", done: "Stockholm Reef flies your banner, and the frames are worked in your name by whoever is doing the working." },
     ],
-    reward: { feature: "bowyers", text: "The bowyers give recruits every season, and hunters raised here shoot better." },
+    reward: { feature: "bowyers", text: "The reef feeds and musters every season, and the bowyers on the hill teach whoever you send them." },
   },
   "75,55": { // Riga Deep
     title: "Riga Deep",

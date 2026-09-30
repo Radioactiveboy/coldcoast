@@ -75,6 +75,27 @@ export const PACTS = {
     take: { food: 4 },
     spare: true,
   },
+  holtRide: {
+    name: "The holt rides",
+    note: "They cut you a ride through the wood and keep it open, and charcoal and venison come out of it. What they want is iron, and for you to use the ride and nothing else.",
+    give: { fuel: 4, food: 3 },
+    take: { scrap: 3 },
+    pass: true,
+  },
+  reefFerry: {
+    name: "The Reef ferry",
+    note: "They carry your carts over the fresh on rafts they pole themselves, and the weed frames feed whoever is waiting on the far bank. Iron, every season, and nothing said about what does the poling at night.",
+    give: { food: 5, metal: 1 },
+    take: { scrap: 4 },
+    pass: true,
+  },
+  comberTithe: {
+    name: "The staithe tithe",
+    note: "A cut of everything you move across the flats, paid at the staithe whether you moved anything or not. In exchange their boats go round your carts, which is the only guarantee anybody gets out there.",
+    give: {},
+    take: { scrap: 6, food: 3 },
+    spare: true,
+  },
   bretonHedge: {
     name: "The hedge road",
     note: "Gates in the thorn, opened to your banner, and a share of what the fields give. They ask for iron and for the gates to be shut behind you.",
@@ -85,6 +106,196 @@ export const PACTS = {
 };
 
 export const FIRST_MEET = {
+
+  /* --------------------- THREE FURTHER OUT --------------------------------
+     A wood that has been deciding where its own paths go for three hundred
+     years, a people who went into the water when the Balt went fresh and did
+     not entirely come back, and the crews who worked out first what a harbour
+     forty feet above its own floor is good for.
+     ---------------------------------------------------------------------- */
+  holtfolk: {
+    who: "holtfolk",
+    kicker: "The wood stops being a wood",
+    title: "The Holtfolk of Fontainebleau",
+    where: "Fontainebleau Holt, in the Gallian forest",
+    scene: [
+      "Your riders are two days into good open woodland when it changes character in the space of about forty paces. The undergrowth stops. The trees go over to standing timber on a spacing somebody chose. There is a ride ahead, dead straight, and it is swept.",
+      "They follow it for an hour and it brings them out against eight feet of laid thorn on a bank with a ditch under it, running away in both directions until the wood closes over it. There is no gate. There are, when your men stop and look properly, a great many people standing perfectly still about thirty paces inside the wood on either side of them.",
+    ],
+    lore: [
+      "Nobody outside the holt knows how many of them there are. What is known is that the wood is not where it was: Gallian carters who have kept to the same road for forty years say it is four hours longer through the trees than it was when they started, and every one of those hours was planted.",
+      "They take nothing from anybody. They coppice on a twenty-year round, burn charcoal, keep pigs in the mast and shoot everything they eat. What they will not have, under any circumstances anyone has yet found, is a straight line cut through the holt by somebody who is not of it.",
+    ],
+    voice: {
+      name: "Wick of the Long Ride",
+      title: "who speaks for the thorn",
+      said: "\"You will have noticed that you did not find us. Everyone notices it afterwards and nobody notices it at the time. Now: you want through, or you want the wood, and those are not the same conversation. Be careful which one you start.\"",
+    },
+    options: [
+      {
+        id: "ride",
+        label: "Ask for a ride cut, and pay for it in iron",
+        note: "They keep it open and swept. What comes out of the wood comes down it.",
+        need: { scrap: 45 },
+        res: { scrap: -45 },
+        regard: 22,
+        pact: "holtRide",
+        outcome:
+          "It takes them a season and they cut it on their own line, which wanders for no reason your carters can see and turns out, in a wet spring, to be the only dry way through. Charcoal and salt venison start coming east before the year is out, and nothing at all is said about how the wood knows when your carts are on it.",
+      },
+      {
+        id: "leave",
+        label: "Turn the column round and leave the thorn alone",
+        note: "Nothing asked, nothing taken, and the ride goes back to being a ride.",
+        regard: 20,
+        outcome:
+          "Your riders back out the way they came, which takes the rest of the day, and nobody follows them and nobody says anything. A fortnight later a basket of smoked meat and four bundles of arrow-shaft are found at the picket line at Fontainebleau's edge, left in the night by somebody nobody saw arrive or leave.",
+      },
+      {
+        id: "timber",
+        label: "Tell Wick you have come for the timber",
+        note: "Standing oak on a spacing somebody chose. It is worth a great deal.",
+        regard: -30,
+        res: { scrap: 50, fuel: 30 },
+        harden: 16,
+        addGarrison: "hunters",
+        outcome:
+          "You get one season of felling out of the eaves of it and it is very good timber. Then the rides stop going where the map says, the thorn appears across the track behind your waggons in a single night, and your foresters start not coming back in ones and twos. What the holt costs to take, it costs more now.",
+      },
+      {
+        id: "burn",
+        label: "Say you will burn a firebreak through it",
+        note: "The fastest road through a wood is the one that is not a wood.",
+        regard: -46,
+        anger: 2,
+        harden: 22,
+        outcome:
+          "Wick looks at your man for a long moment and then says, in the mildest voice imaginable, that people have said that before and that the holt is larger now than it was when they said it. The thorn is doubled within the year and the wardens start walking your border, at night, counting.",
+      },
+    ],
+  },
+  fentaken: {
+    who: "fentaken",
+    kicker: "Something under the weed",
+    title: "The Fentaken of Stockholm Reef",
+    where: "Stockholm Reef, out in the fresh Balt",
+    scene: [
+      "The Balt is not a sea any more and not a lake either. It is four hundred miles of shallow fresh water two feet deep over drowned streets, running to reed and weed frames as far as anybody can see, and the old town stands out of the middle of it on a hill that used to be an island.",
+      "Your riders are working along the edge of it when a line of poles comes out of the water forty yards off — eleven of them, upright, each with a person behind it. None of them came up for air on the way. They stand in the shallows and look at your column and do not come any closer, and the one in the middle says, quite clearly and in a voice that is fine except for the pauses, that the water here is spoken for.",
+    ],
+    lore: [
+      "The sills closed, the salt went, and the Balt became the biggest body of fresh water anybody had ever seen. The people who did not leave it worked it instead: eel runs, weed frames, pens in the flooded storeys, and a great deal of time spent under.",
+      "Three hundred years of that has told. They are longer in the hand and the foot than they should be, they do not take cold, and they can stay down a length of time your outriders will describe to you afterwards and expect not to be believed. They do not regard any of this as having gone wrong.",
+    ],
+    voice: {
+      name: "Sedge",
+      title: "who comes up to talk",
+      said: "\"You are dry people. That is not an insult, it is a description, and it is most of what is wrong between us before anybody says anything. We do not want your fields. We want the water, all of it, and nobody standing in it who has not asked.\"",
+    },
+    options: [
+      {
+        id: "ferry",
+        label: "Ask them to carry your carts over the fresh",
+        note: "Rafts, poled by whoever is poling. Iron every season and no questions after dark.",
+        need: { scrap: 50 },
+        res: { scrap: -50 },
+        regard: 24,
+        pact: "reefFerry",
+        outcome:
+          "The rafts are a foot of lashed reed over drums and they should not carry a loaded cart, and they do. The poling is done by people your drovers see clearly in the morning and less clearly at dusk, and after the third crossing your drovers stop looking. The weed frames feed whoever is waiting on the far bank, which turns out to be a considerable number of people.",
+      },
+      {
+        id: "ask",
+        label: "Ask leave to water, and wait in the shallows to be given it",
+        note: "Standing in their water to ask about their water. It costs a whole day.",
+        regard: 26,
+        outcome:
+          "Your man walks out to his knees and stands there, and Sedge lets him stand for most of an afternoon before answering, which your man understands afterwards was not rudeness but the question being properly considered. Leave is given for the whole of your column and for anybody carrying your colours, and Sedge asks his name twice so as to have it right.",
+      },
+      {
+        id: "nets",
+        label: "Cut the weed frames and take what is in the pens",
+        note: "Six hundred yards of them, and the pens are full.",
+        regard: -36,
+        res: { food: 80, men: 10 },
+        harden: 14,
+        addGarrison: "bowmen",
+        outcome:
+          "You take eighty cartloads of good eel and weed and it is the easiest foraging your people have ever done, because nobody comes out of the water to stop it. Nobody comes out of the water for eleven days. On the twelfth the pickets on the shore are gone, and there is nothing on the bank to say which way they went.",
+      },
+      {
+        id: "drain",
+        label: "Tell Sedge the sills can be opened again",
+        note: "It is even true. It would take a generation and it would empty the Balt.",
+        regard: -50,
+        anger: 2,
+        harden: 20,
+        outcome:
+          "It is the only thing anybody has ever said to the Fentaken that made them move quickly. The line of poles is gone before your man has finished the sentence, all eleven at once and without a sound, and the water where they were standing is flat inside three seconds. Your outriders do not sleep well for a week and cannot say why.",
+      },
+    ],
+  },
+  combers: {
+    who: "combers",
+    kicker: "A sail, on dry land",
+    title: "The Combers of Aalborg Staithe",
+    where: "Aalborg Staithe, on the eastern rim of the flats",
+    scene: [
+      "Your outriders see a sail. They are eleven miles from the nearest water of any kind, out on hard silt with the wind at their backs, and there is a sail coming across it at the speed of a galloping horse and not slowing down.",
+      "It is a boat on cartwheels with a crew of nine, and it goes past them at two hundred yards without altering course, close enough that the man at the steering oar can be seen counting: horses, carts, how many are armed. Then it puts about into the wind, which a thing like that should not be able to do, and works away east towards a line of cranes standing on the horizon over nothing at all.",
+    ],
+    lore: [
+      "Aalborg was a harbour. It is now eleven hundred metres of landing stage standing forty feet above a plain, with its cranes still on it and a rack of light hulls underneath on wheels, and the people who kept it worked out inside a generation that a dry sea with a wind over it is not a barrier, it is a road.",
+      "They make nothing and grow nothing. Everything at the staithe came off somebody crossing the flats — and because a sail-cart does in a day what a column walks in four, there is no part of the eastern flats they do not consider theirs, and very little of the western.",
+    ],
+    voice: {
+      name: "Hald Rope",
+      title: "who keeps the tally at the staithe",
+      said: "\"Everything that goes over that floor is ours before it starts moving, and the only question is whether we collect it from you or from whoever takes it off you. You would be astonished how many people need that put to them twice.\"",
+    },
+    options: [
+      {
+        id: "tithe",
+        label: "Pay the tithe at the staithe",
+        note: "A cut every season whether you cross or not. Their boats go round your carts.",
+        regard: 22,
+        pact: "comberTithe",
+        outcome:
+          "Hald scratches your mark into the tally board with about forty others and tells your man, without being asked, which three of the marks above it are behind on payment — which your man understands is both a courtesy and a demonstration. Nothing of yours is touched on the flats from that season on, and a great deal of everybody else's is.",
+      },
+      {
+        id: "hire",
+        label: "Hire the boats rather than pay them off",
+        note: "Nine crews and their hulls, for a season. They will go where you point them.",
+        need: { scrap: 70, food: 30 },
+        res: { scrap: -70, food: -30, metal: 12 },
+        regard: 14,
+        outcome:
+          "They take the work without a flicker and do it properly, which is the unsettling part: for one season the fastest thing on the flats is working for you, and it comes back loaded with things it will not account for. At the end of the season they stop, on the day, and the tally board goes back to having your mark on the wrong side of it.",
+      },
+      {
+        id: "refuse",
+        label: "Tell Hald the flats belong to nobody",
+        note: "Which is true, and has never once been relevant.",
+        regard: -20,
+        anger: 1,
+        outcome:
+          "He agrees with you. He says it is the correct legal position and that he has heard it argued very well by people whose carts he later took, and he goes back to the tally. Your riders are followed at two miles for the whole of the way home by a sail that never comes closer and never falls behind.",
+      },
+      {
+        id: "burnboats",
+        label: "Burn the hulls under the landing",
+        note: "Nine of them on the rack, dry as tinder, and the crews are out.",
+        regard: -48,
+        res: { scrap: 60 },
+        anger: 3,
+        harden: 18,
+        addGarrison: "riders",
+        outcome:
+          "Nine hulls is one season of building for people who have been building them for six generations, and they are back on the rack by the following autumn. What is not repaired is the tally: your mark is struck off it entirely, which at Aalborg is not an exemption, and every crew on the flats knows the reason.",
+      },
+    ],
+  },
 
   /* ------------------------- THE SIX GREAT REALMS -------------------------
      The peoples on the road got a scene from the start and the realms did not,
