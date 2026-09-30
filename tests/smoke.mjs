@@ -586,7 +586,10 @@ check("the season button says who has not moved", await page.evaluate(() =>
 {
   const before = await page.evaluate(() => document.querySelector("header")?.innerText.split("\n")[1] || "");
   await page.evaluate(() => window.__ccTest.fall()); await wait(500);
-  const scene = await page.evaluate(() => (document.querySelector(".fixed.inset-0.z-50")?.innerText || "").includes("The seat is empty"));
+  /* Read every full-screen panel, not the first: a stale one sits in front of
+     the live one in document order and this check has flaked on it. */
+  const scene = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")]
+    .some((x) => x.innerText.includes("The seat is empty")));
   await click("Give them the seat"); await wait(500);
   const after = await page.evaluate(() => document.querySelector("header")?.innerText.split("\n")[1] || "");
   check("the seat passes to a captain", scene && after !== before && !/Grimhand/.test(after), after.split(" · ")[0]);
@@ -1192,6 +1195,42 @@ const courtTab = async (name) => {
   await closeOverlay();
 }
 
+/* A realm is the most consequential thing on the map and used to arrive as a
+   line in the log while a charcoal burner got a painting. Meeting one opens
+   the same scene a people on the road opens — and because a realm has no toll
+   to sell you, what an answer buys is a signed term or a war. */
+{
+  await closeOverlay();
+  await page.evaluate(() => window.__ccTest.meet("karst")); await wait(600);
+  const scene = await page.evaluate(() => {
+    const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")]
+      .find((x) => /The Karst League/.test(x.innerText));
+    if (!ov) return null;
+    return { text: ov.innerText, opts: [...ov.querySelectorAll(".cc-origin")].map((b) => b.innerText.split("\n")[0]) };
+  });
+  check("meeting a realm opens a scene, not a line in the log",
+    !!scene && scene.opts.length === 4, scene ? scene.opts.join(" / ") : "no scene");
+  check("a realm's scene names the one who came out to look at you",
+    !!scene && /Factor Ludo Mesic/.test(scene.text) && /free cities/.test(scene.text),
+    (scene?.text.match(/Factor[^\n]*/) || [])[0] || "nobody spoke");
+
+  // Signing at the meeting is the real thing, with a term on it.
+  const before = await page.evaluate(() => window.__ccWild().diplo);
+  await page.evaluate(() => {
+    const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")]
+      .find((x) => /The Karst League/.test(x.innerText));
+    const o = [...ov.querySelectorAll(".cc-origin")].find((b) => /Take his terms/.test(b.innerText));
+    if (o) o.click();
+  });
+  await wait(300);
+  await click("So it is said"); await wait(450);
+  const after = await page.evaluate(() => window.__ccWild().diplo);
+  check("what you say at the meeting is a signed term, not a mood",
+    !before.accords.some((x) => x.startsWith("karst:")) && after.accords.some((x) => x.startsWith("karst:truce")),
+    after.accords.join(" ") || "nothing signed");
+  await closeOverlay();
+}
+
 /* ------------------------------ THE ENVOYS --------------------------------
    The rival realms used to be a single switch: declare war, or pay forty scrap
    and hope. There is a ladder now, and the whole point of it is that each rung
@@ -1219,7 +1258,7 @@ const openRivals = async () => {
 };
 {
   await closeOverlay();
-  await page.evaluate(() => window.__ccTest.meet("lyon")); await wait(300);
+  await page.evaluate(() => window.__ccTest.meet("lyon", true)); await wait(300);
   const onScreen = await openRivals();
   const card = await page.evaluate(() => document.body.innerText);
   check("a rival realm is somebody you can deal with", onScreen && /Send an envoy with a gift/.test(card),

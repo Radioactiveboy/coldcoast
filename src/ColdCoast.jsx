@@ -1,11 +1,3 @@
-import lordCullBust from "./assets/lord-cull-bust.webp";
-import lordCullHead from "./assets/lord-cull-head.webp";
-import lordGatemasterBust from "./assets/lord-gatemaster-bust.webp";
-import lordGatemasterHead from "./assets/lord-gatemaster-head.webp";
-import lordGorranBust from "./assets/lord-gorran-bust.webp";
-import lordGorranHead from "./assets/lord-gorran-head.webp";
-import lordGrimhandBust from "./assets/lord-grimhand-bust.webp";
-import lordGrimhandHead from "./assets/lord-grimhand-head.webp";
 import terrainPlains from "./assets/terrain-plains.webp";
 import terrainSiltFlats from "./assets/terrain-siltflats.webp";
 import unitAxemen from "./assets/unit-axemen.webp";
@@ -4974,14 +4966,15 @@ export default function ColdCoast() {
 
   /* For the smoke test only: your riders come over the rim at Red-Ruth. The
      walk there is a dozen seasons and a test cannot wait for it. */
-  if (typeof window !== "undefined") window.__ccMeet = (id) => setGame((g) => ({
+  /* `quiet` lays eyes on them without opening the scene, which is what a test
+     that wants to reach the envoy screen needs — the scene itself is checked
+     on its own, by answering it. */
+  if (typeof window !== "undefined") window.__ccMeet = (id, quiet) => setGame((g) => ({
     ...g,
     met: { ...(g.met || {}), [id]: true },
     regard: { ...(g.regard || {}), [id]: g.regard?.[id] ?? regardStart(id) },
-    /* Only somebody with a scene written for them joins the queue. A realm has
-       no first-contact scene, and one sitting at the head of the queue would
-       show nothing and hold up everybody behind it. */
-    meetings: !FIRST_MEET[id] || (g.meetings || []).includes(id)
+    // Only somebody with a scene written for them joins the queue.
+    meetings: quiet || !FIRST_MEET[id] || (g.meetings || []).includes(id)
       ? g.meetings : [...(g.meetings || []), id],
   }));
   if (typeof window !== "undefined") window.__ccFall = () => setGame((g) => ({
@@ -5268,6 +5261,21 @@ export default function ColdCoast() {
       });
       const pacts = { ...(g.pacts || {}) };
       if (opt.pact) pacts[fid] = opt.pact;
+      /* A realm is not a people on the road: there is no toll to buy and no
+         gate to be let through. What an answer can do instead is sign
+         something with a term on it, or start the war on the spot. Both are
+         the realm-level machinery the envoy screen already uses — this is the
+         same thing said at the moment you first lay eyes on them. */
+      const accords = { ...(g.accords || {}) };
+      const war = { ...g.war };
+      let signed = null;
+      if (opt.accord && ACCORDS[opt.accord] && !isMinor(fid)) {
+        const acc = ACCORDS[opt.accord];
+        accords[fid] = { id: opt.accord, until: g.turn + acc.term, since: g.turn, against: null };
+        delete war[warKey(g.player, fid)];       // every accord holds the peace while it runs
+        signed = acc;
+      }
+      if (opt.war && !isMinor(fid)) war[warKey(g.player, fid)] = true;
       let provinces = g.provinces, armies = g.armies;
       const m = MINORS[fid];
       const k = m?.at ? key(m.at[0], m.at[1]) : null;
@@ -5286,11 +5294,16 @@ export default function ColdCoast() {
         ? { ...g.nations, [fid]: { ...theirs, spite: (theirs.spite || 0) + opt.anger } }
         : g.nations;
       Sound.play(opt.harden ? "horn" : "give");
+      const said = signed
+        ? `${FACTION[fid]?.short || fid}: ${signed.name.toLowerCase()} is signed, ${signed.term} seasons on it.`
+        : opt.war
+          ? `${FACTION[fid]?.short || fid}: it is a war, then, and it started the day you met.`
+          : `${FACTION[fid]?.short || fid}: ${opt.label.toLowerCase()}.`;
       return {
-        ...g, provinces, armies, pacts, regard,
+        ...g, provinces, armies, pacts, regard, accords, war,
         nations: { ...nations, [g.player]: { ...nat, res } },
         meetings: (g.meetings || []).filter((x) => x !== fid),
-        log: [{ turn: g.turn, m: `${FACTION[fid]?.short || fid}: ${opt.label.toLowerCase()}.` }, ...g.log].slice(0, 60),
+        log: [{ turn: g.turn, m: said }, ...g.log].slice(0, 60),
       };
     });
   }
@@ -8951,7 +8964,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
       fall: () => selRef.current && window.__ccFall && window.__ccFall(),
       knock: () => window.__ccKnock && window.__ccKnock(),
       // Walking to Red-Ruth takes a dozen seasons; a test cannot wait for it.
-      meet: (id) => window.__ccMeet && window.__ccMeet(id),
+      meet: (id, quiet) => window.__ccMeet && window.__ccMeet(id, quiet),
       // ...and neither can it wait to storm Wight Mountain.
       break: (id) => window.__ccBreak && window.__ccBreak(id),
       // ...or to walk a warband four hexes to look at something.
@@ -12858,24 +12871,22 @@ function SeatScreen({ game, P, prov, onClose, onEdict, onUpgrade, onWork, onRecr
 
 /* Painted portraits, carried as data URIs because an artifact cannot fetch
    files. Anything not listed here falls back to the drawn bust below. */
-const LORD_ART = {
-  bridgers: {
-    bust: lordGatemasterBust,
-    head: lordGatemasterHead,
-  },
-  skinless: {
-    bust: lordCullBust,
-    head: lordCullHead,
-  },
-  quarrymen: {
-    bust: lordGorranBust,
-    head: lordGorranHead,
-  },
-  dogger: {
-    bust: lordGrimhandBust,
-    head: lordGrimhandHead,
-  },
-};
+/* The painted faces. Keyed by the faction the person speaks for, and picked up
+   the same way the seats and the quarters are: a pair of files dropped in as
+   lord-<faction>-bust.webp and lord-<faction>-head.webp gives that people a
+   face wherever one is drawn, with no code change. They were eight imports and
+   a hand-written map, which meant every new face was three edits and a chance
+   to wire one to the wrong people. */
+const LORD_ART = (() => {
+  const out = {};
+  Object.entries(import.meta.glob("./assets/lord-*-{bust,head}.{webp,png,jpg}",
+    { eager: true, query: "?url", import: "default" })).forEach(([path, src]) => {
+    const m = path.match(/lord-(.+)-(bust|head)\.[a-z]+$/i);
+    if (!m) return;
+    (out[m[1]] = out[m[1]] || {})[m[2]] = src;
+  });
+  return out;
+})();
 
 const lordAlive = (nat) => !nat || !nat.lordDead;
 function commandMul(natId) {
@@ -13718,9 +13729,9 @@ function EncounterScene({ enc, game, P, onAnswer }) {
         </div>
 
         <div ref={scroll} className="overflow-y-auto thin grid gap-3 px-5 py-4">
-          {SEAT_ART[MINORS[enc.who]?.art] && (
+          {SEAT_ART[FACTION[enc.who]?.art] && (
             <div style={{ margin: "-16px -20px 2px" }}>
-              <SeatPlate id={MINORS[enc.who].art} height={210} caption={MINORS[enc.who].seatName} />
+              <SeatPlate id={FACTION[enc.who].art} height={210} caption={FACTION[enc.who].seatName || enc.where} />
             </div>
           )}
           {enc.scene.map((l, i) => (

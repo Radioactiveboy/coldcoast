@@ -85,6 +85,365 @@ export const PACTS = {
 };
 
 export const FIRST_MEET = {
+
+  /* ------------------------- THE SIX GREAT REALMS -------------------------
+     The peoples on the road got a scene from the start and the realms did not,
+     which meant the most consequential thing on the map — another power with a
+     warlord, a levy and an opinion — arrived as a line in the log while a
+     charcoal burner got a painting. These are the same shape as a holdout's
+     scene and answer differently: a realm has no toll to sell you, so what an
+     option buys is a standing with them, a signed truce, or a war on the spot.
+     ---------------------------------------------------------------------- */
+  lyon: {
+    who: "lyon",
+    kicker: "A rider on a graded road",
+    title: "The Concordat of Lyon",
+    where: "the Rhone corridor, where the roads still run",
+    scene: [
+      "Your outriders do not find Lyon. Lyon finds them, on a road that is cambered, ditched and swept, by a man with a satchel who has been waiting at that milestone since the spring on the assumption that somebody would eventually come up it.",
+      "He asks their names. He asks how many they are, who feeds them, and under whose word they ride. He writes the answers down in a hand you could read across a room, gives them a copper tag each with a number stamped on it, and tells them the Concordat will send somebody to your seat before the year is out. Then he goes back to waiting.",
+    ],
+    lore: [
+      "Everything else on this coast lost its paperwork. Lyon did not. There are census rolls in the Rhone valley that run unbroken from before the water went out, and a levy that can be called by name, parish by parish, in a fortnight.",
+      "That is the whole of their power and they know it. A Lyonnais company is not better than yours. There are simply always more of them, they are always where the roll said they would be, and they arrive fed.",
+    ],
+    voice: {
+      name: "Prefect Ansel Vaury",
+      title: "of the Roads and the Roll",
+      said: "\"You are not on any list I hold, which is an untidy state of affairs for both of us. I would rather write you down as a signatory than as a frontier. Either can be arranged. One of them takes longer to undo.\"",
+    },
+    options: [
+      {
+        id: "sign",
+        label: "Put your name on their roll",
+        note: "A signed truce with a term on it, and the road open while it runs.",
+        regard: 18,
+        accord: "truce",
+        outcome:
+          "Vaury produces the document from the satchel already drafted, which suggests he had a fair idea how this would go. It is signed in three places, copied twice, and one copy rides south the same afternoon. You are a line in a ledger in Lyon now, which is a great deal safer than not being one.",
+      },
+      {
+        id: "gift",
+        label: "Send the Prefect back with something for the archive",
+        note: "Scrap, and a written account of your own ground. They value the second more.",
+        need: { scrap: 30 },
+        res: { scrap: -30 },
+        regard: 24,
+        outcome:
+          "The scrap is received politely. The account of your holdings — hexes, hands, what grows where — is received the way another people would receive a chest of silver. It goes into the archive at Lyon under your name, and so, from that day, does everything else they learn about you.",
+      },
+      {
+        id: "refuse",
+        label: "Tell him you are not to be counted",
+        note: "Send the tags back. They will make their own estimate.",
+        regard: -14,
+        outcome:
+          "He takes it without any visible feeling, notes something, and leaves. The estimate the Concordat makes of you in his absence is not a kind one, and you have no way of correcting it, because the only man who was going to ask you has gone home.",
+      },
+      {
+        id: "seize",
+        label: "Take the satchel",
+        note: "Roads, depots, muster points, numbers. Worth having. They will want it back.",
+        regard: -40,
+        res: { scrap: 45 },
+        war: true,
+        anger: 2,
+        outcome:
+          "The satchel is worth every bit of what you thought it was: grades, fords, depot sites and the standing strength of four parishes. It also had a number stamped in the cover, and the Concordat keeps a list of which numbers are out. By the time your riders are home, the roll has been called.",
+      },
+    ],
+  },
+  alpine: {
+    who: "alpine",
+    kicker: "A door in the mountain",
+    title: "The Alpine Compact",
+    where: "under the Alpine Wall, where the doors are",
+    scene: [
+      "There is a valley with nothing in it: no fields, no smoke, no stock. At the head of it is a concrete face with a door in it the size of a barn, and the door is clean. Everything else in the world is three hundred years dirty. That door has been washed.",
+      "It opens far enough for one person, and a woman in a grey coat comes out to a line painted on the ground and stops at it. She does not invite anybody in. She asks, in a flat and careful voice, whether you have any documents.",
+    ],
+    lore: [
+      "What went under the Alps before the water came was not food and not gold. It was the manuals — tolerances, alloys, the powder tables, the machines that make machines — and the people who could read them, sealed in with enough rock over their heads to matter.",
+      "They came out eventually, and they came out able to make a rifle that works. They have never once been interested in holding ground. They are interested in what is written down, where it is, and whether the people who have it know what they have.",
+    ],
+    voice: {
+      name: "Archivist Halde",
+      title: "second of the reading rooms",
+      said: "\"We are not merchants and we are not a threat to you. We hold a library. You may find that a smaller thing than an army. In eighty years you will not.\"",
+    },
+    options: [
+      {
+        id: "trade",
+        label: "Offer them everything your scholars have written",
+        note: "Your own notes, copied out. They pay in kind, and in goodwill.",
+        need: { scrap: 25 },
+        res: { scrap: -25, metal: 12, powder: 6 },
+        regard: 26,
+        outcome:
+          "Halde reads the whole of it standing at the line, which takes until dark. Two of the pages are things the Compact did not have. She says so plainly, which your man understands is the highest thing she has ever said to anyone, and sends out a crate: good steel, dry powder, and a sealed tube nobody will open until it is back at the seat.",
+      },
+      {
+        id: "truce",
+        label: "Propose that neither of you ever come up this valley in arms",
+        note: "A term on it, written down, because that is the only kind they keep.",
+        regard: 14,
+        accord: "truce",
+        outcome:
+          "It is drafted at the line, on a board she carries out for the purpose, in a hand so small your man has to be told what it says. Both copies are dated. The Compact has never broken a dated thing and says so as a matter of record rather than as a boast.",
+      },
+      {
+        id: "look",
+        label: "Say nothing and look at the door",
+        note: "How thick, how hung, how it is powered. She will notice you looking.",
+        regard: -6,
+        outcome:
+          "It is forty centimetres of steel on a screw drive and it is powered, which answers a question nobody had thought to ask. Halde watches your man measuring it with his eyes for a full minute, says \"yes\", and goes back inside. The door shuts on the screw drive, which is a slow and very final noise.",
+      },
+      {
+        id: "storm",
+        label: "Tell her the library has a new owner",
+        note: "There is one door and you are standing at it.",
+        regard: -38,
+        war: true,
+        outcome:
+          "She does not argue and she does not hurry. She steps back over the line, the door begins to close, and somewhere above the valley something that has been silent for three hundred years starts turning. Your riders are off the scree before the first shot and it still takes two of them.",
+      },
+    ],
+  },
+  karst: {
+    who: "karst",
+    kicker: "A caravan that wanted paying",
+    title: "The Karst League",
+    where: "the drained Adriatic, and the free cities along it",
+    scene: [
+      "The first thing of Karst's that anyone meets is a caravan: sixty carts, outriders in four different liveries, and a factor riding in the middle of it under an awning, doing accounts. It is crossing ground nobody holds as if the ground had been bought.",
+      "The factor is delighted to see you. He is delighted in a way that does not stop being unsettling. He would like to know what you have, what you want, what you are short of this winter, and whether you have considered that the League has been financing wars on this coast since before your grandfather was weaned.",
+    ],
+    lore: [
+      "Karst is not one thing. It is eleven free cities strung along the dry Adriatic that agree about tolls and about almost nothing else, and it has grown rich for three centuries on the simple observation that somebody has to sell both sides their powder.",
+      "They will fight, and they are good at it, because a League company is paid, fed and replaced on a schedule. But they would much rather you fought somebody else, on credit, with their carts behind you.",
+    ],
+    voice: {
+      name: "Factor Ludo Mesic",
+      title: "of the Eleven, on the road",
+      said: "\"Everybody I meet begins by telling me they are not for sale. I am never buying. I am extending terms. It is a completely different thing and it is how I have four cities' worth of debtors calling me a friend.\"",
+    },
+    options: [
+      {
+        id: "buy",
+        label: "Buy off the cart while it is in front of you",
+        note: "Metal, powder and rations at a road price, which is a bad price.",
+        need: { scrap: 70 },
+        res: { scrap: -70, metal: 14, powder: 8, food: 40 },
+        regard: 20,
+        outcome:
+          "Mesic sells you the awning's worth on the spot, at terms he describes as generous and everyone present understands are not. What you actually buy is his interest: the League now has a figure for what you are worth, and the figure is high enough to be worth coming back to.",
+      },
+      {
+        id: "terms",
+        label: "Take his terms and sign the truce he has in his bag",
+        note: "He has one drafted. He has one drafted for everybody.",
+        regard: 12,
+        accord: "truce",
+        outcome:
+          "He does have one drafted. He also has one drafted naming you as the party to be fought, and he shows you both, because the League's whole method is to make it perfectly clear which of the two is cheaper. You take the cheaper one.",
+      },
+      {
+        id: "pass",
+        label: "Let the caravan through and take nothing",
+        note: "No toll, no purchase, no questions. Word of it travels with the carts.",
+        regard: 16,
+        outcome:
+          "Sixty carts go over your ground without paying anybody, which has not happened to Mesic in his professional life and visibly unsettles him more than a demand would have. The story reaches four cities before the carts do. It is not gratitude exactly. It is a note in a ledger, and in Karst that is better.",
+      },
+      {
+        id: "rob",
+        label: "Take the carts",
+        note: "Sixty of them, loaded, and the outriders are hirelings.",
+        regard: -42,
+        res: { scrap: 120, metal: 20, food: 60 },
+        war: true,
+        anger: 2,
+        outcome:
+          "The hirelings do the arithmetic and ride off, which is the most Karst thing about the whole affair. Mesic walks. The carts are worth every bit of what they looked like — and the League has never in three hundred years failed to collect on a loss, because a League that failed once would be a League nobody paid.",
+      },
+    ],
+  },
+  boreal: {
+    who: "boreal",
+    kicker: "Tracks in from the ice",
+    title: "The Boreal Clans",
+    where: "the glacier's edge, and everything south of it",
+    scene: [
+      "There are sled tracks across ground that has not had snow on it in four months, which means somebody dragged the sleds the whole way for want of any intention of stopping. They come from the north. They do not go back.",
+      "You find the clans at the end of them, camped on a ridge with the fires banked, everything packed, and a hundred and forty people watching your riders come up the slope without one of them standing to greet it. A woman with a white braid eventually gets up, looks past your man at the country behind him, and asks him what it grows.",
+    ],
+    lore: [
+      "When the cold came down they did not build against it, which is why they are still here. They moved. Three hundred years of moving has left them with no walls, no stores, no seat, and no reason at all to fear a winter that has already been worse.",
+      "The south is not a rival to them. It is a larder with the door propped open, and they have been working their way down it a valley at a time for longer than anyone south of the Keel has been counting.",
+    ],
+    voice: {
+      name: "Sigrun Ninefires",
+      title: "who speaks for the sleds",
+      said: "\"You have good ground. I am not going to pretend I have not noticed. What I will do is tell you plainly that we go where the winter pushes us, and the only question in front of you is whether, when it pushes, you are a friend or a valley.\"",
+    },
+    options: [
+      {
+        id: "feed",
+        label: "Send the winter's rations up the slope",
+        note: "It is a great deal of food and it buys exactly one winter. They will say so.",
+        need: { food: 60 },
+        res: { food: -60 },
+        regard: 30,
+        outcome:
+          "Sigrun has the carts unloaded before she thanks anybody, and thanks them properly afterwards, which your man reports in that order because that is the order it happened. She tells him the debt is for one winter and no more. She also tells him the clans have never once forgotten a winter somebody fed them, and both of those are true at the same time.",
+      },
+      {
+        id: "point",
+        label: "Tell her where the fat valleys are, and they are not yours",
+        note: "Somebody else's granary, described in detail. Somebody else finds out.",
+        regard: 22,
+        also: { lyon: -12, karst: -12 },
+        outcome:
+          "She listens to the description of the Rhone corn and the Karst road-towns with the flat attention of someone checking it against what she already knows. The sleds go south-east in the spring rather than south-west. Two courts work out roughly whose idea that was, and neither of them is wrong.",
+      },
+      {
+        id: "truce",
+        label: "Ask for a season's word and give one back",
+        note: "Not a friendship. A term, with a date on the end of it.",
+        regard: 10,
+        accord: "truce",
+        outcome:
+          "There is nothing to sign, so it is said out loud in front of the fires with everyone listening, which Sigrun explains is harder to get out of than paper. The date is fixed by the moon rather than the calendar and her people are very clear about which moon.",
+      },
+      {
+        id: "warn",
+        label: "Tell her the ridge is as far south as she comes",
+        note: "Say it in front of the fires. Everybody hears it.",
+        regard: -32,
+        anger: 1,
+        outcome:
+          "Nobody argues. Nobody stands up. Sigrun looks at your man for slightly too long and says she will remember where the line was, in a tone that makes clear she means the place rather than the principle. The camp is gone in the morning and the tracks go south.",
+      },
+    ],
+  },
+  horde: {
+    who: "horde",
+    kicker: "Dust on the salt",
+    title: "The Dry Sea Horde",
+    where: "the salt basin where the Black Sea was",
+    scene: [
+      "A column of dust that turns out to be eighty riders, moving at a walk across a floor of cracked salt, each with two spare horses on a line. They have been aware of your outriders for a day and a half and have not altered course by a degree.",
+      "They stop at a well that was a harbour mouth, water the horses, water your riders' horses without being asked, and only then ask who your men are. The whole of it is done in an order somebody decided a long time ago and nobody has seen a reason to change.",
+    ],
+    lore: [
+      "When the Black Sea went down it left a basin of salt four hundred miles across with fresh water under it in the old river mouths. The people who worked that out first own it, and they own it by being the only ones who can cross it.",
+      "They do not hold ground in any way a Lyonnais clerk would recognise. They hold wells. Everything between the wells is theirs by default because nobody else can be out there long enough to argue.",
+    ],
+    voice: {
+      name: "Temur of the Second Well",
+      title: "who carries the water-word",
+      said: "\"We watered your animals before we asked your names. That is not kindness, it is law, and it runs one day. After the day you are whatever you have shown us you are. Most people show us inside the day.\"",
+    },
+    options: [
+      {
+        id: "guest",
+        label: "Keep the guest-law to the letter and water theirs in turn",
+        note: "Your riders know how it is done. Doing it properly is the whole of it.",
+        regard: 26,
+        outcome:
+          "Your man does it right: their horses first, the deep bucket, nothing said while the animals drink. Temur watches every step of it and at the end of it uses your warlord's name for the first time. Eighty riders who did not know you existed at dawn know your banner by dusk, and the Horde is one long conversation.",
+      },
+      {
+        id: "horses",
+        label: "Give them horses, which is the only gift that means anything",
+        note: "Good stock out of your own lines. It costs you a company's worth of mounts.",
+        need: { men: 40, food: 30 },
+        res: { men: -40, food: -30 },
+        regard: 34,
+        outcome:
+          "They go through the animals one at a time, in silence, for an hour. Two are sent back with no explanation and the rest are accepted, and Temur ties his own rein-charm into the mane of the best of them before he leads it away. Your riders are told, at some length, that this was noticed.",
+      },
+      {
+        id: "truce",
+        label: "Ask for the water-word on both your ranges",
+        note: "Their wells, your wards, and nobody's columns on the other's ground.",
+        regard: 12,
+        accord: "truce",
+        outcome:
+          "It is agreed in about four sentences, which after Lyon is disorienting. The Horde's view is that an agreement that takes longer than that is an agreement one party is planning to get out of, and they may be right about that.",
+      },
+      {
+        id: "well",
+        label: "Put men on the well and tell them it is yours now",
+        note: "It is the only water for two days in any direction.",
+        regard: -46,
+        war: true,
+        anger: 2,
+        outcome:
+          "They mount up and go without a word said, which your man mistakes for a result. A well taken from the Horde is not a well. It is a place they will come back to with everyone they have ever watered, for as long as it takes, and they have nothing else to do.",
+      },
+    ],
+  },
+  solar: {
+    who: "solar",
+    kicker: "A light on the southern horizon",
+    title: "The Solar Throne",
+    where: "Iberia, under the mirror fields",
+    scene: [
+      "For three nights your southern pickets report a light on the horizon that is not a fire, does not move, and goes out at a fixed hour. On the fourth day a party comes north out of it: twelve people in white, walking, with a cart of instruments and no visible guard at all.",
+      "They set up on your ground without asking. They take the angle of the sun, the length of a shadow, and the temperature of a bucket of water at three separate hours, and they write all of it down. Only then does one of them turn round and greet your riders as though they had just that moment arrived.",
+    ],
+    lore: [
+      "Iberia is under glass. Square miles of steered mirrors on the meseta throwing sunlight into towers that have not gone out since they were lit, and a court that keeps its calendar, its rank and its scripture off the movement of that light.",
+      "They burn nothing. They have more power at their disposal than everyone else on this coast put together and almost no interest in using it on anybody, which everyone else finds far more alarming than an army.",
+    ],
+    voice: {
+      name: "Reader of Hours Calisto Vela",
+      title: "of the Fourth Tower",
+      said: "\"Your latitude is poor and your sky is worse, and I mean neither as an insult — it is simply what the instruments say. You cannot do here what we do there. What you can do is be south-facing about it, and there is more in that than you think.\"",
+    },
+    options: [
+      {
+        id: "measured",
+        label: "Let them measure everything they want",
+        note: "Your sky, your water, your ground. Nothing they take is worth anything to you.",
+        regard: 28,
+        res: { fuel: 25 },
+        outcome:
+          "They stay eleven days, measure things nobody has thought about since the Collapse, and leave behind a bound sheaf of figures and a crate of burning-oil as what Vela calls the customary courtesy. The figures turn out, two winters later, to say exactly where your fields will fail.",
+      },
+      {
+        id: "trade",
+        label: "Ask what the towers will sell",
+        note: "Not mirrors. They do not sell mirrors. But they sell what mirrors make.",
+        need: { scrap: 60 },
+        res: { scrap: -60, fuel: 40, metal: 10 },
+        regard: 14,
+        outcome:
+          "Not mirrors, no. What comes north is refined oil, drawn metal and a bag of glass beads that are apparently a unit of account in the south, and Vela is faintly amused at having to explain that last part twice.",
+      },
+      {
+        id: "truce",
+        label: "Fix a term with them while the instruments are out",
+        note: "They like a thing with a date on it. The date is the point.",
+        regard: 12,
+        accord: "truce",
+        outcome:
+          "Vela sets the term by the sun rather than the season, which means it expires at an hour rather than in a spring, and has the hour written down in three places. Nobody in your hall entirely understands the notation. Everybody understands that it will be kept exactly.",
+      },
+      {
+        id: "smash",
+        label: "Break the instruments and send them home",
+        note: "Twelve people in white and no guard at all.",
+        regard: -44,
+        res: { metal: 18 },
+        anger: 1,
+        outcome:
+          "It takes four minutes. Vela does not raise her voice once, asks only that the sheaf of readings be returned, is refused, and walks south with eleven others and nothing. The Throne does not declare anything. Eleven seasons later a court that measures time in sunlight is still quite clear about which season this was.",
+      },
+    ],
+  },
   quarrymen: {
     who: "quarrymen",
     kicker: "A meeting on the road",
