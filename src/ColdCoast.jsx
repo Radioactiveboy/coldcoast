@@ -2407,6 +2407,11 @@ function reinforceCost(u, natId, atMuster) {
 }
 /* How many companies will march under one banner. The long muster is a
    clerical advance, not a military one: rolls, billets and who feeds whom. */
+/* What a rival keeps back per company it is short, before it will spend on a
+   shed or a scholar. Roughly what a plain company costs to raise, so a realm
+   three companies down stops building for about three seasons and then has an
+   army again. */
+const MUSTER_RESERVE = 60;
 const BAND_CAP = 8, BAND_CAP_LONG = 10;
 const bandCap = (nat) => (nat?.known?.hosting ? BAND_CAP_LONG : BAND_CAP);
 
@@ -5936,6 +5941,32 @@ export default function ColdCoast() {
         return held[0][1] >= Math.max(1, second) * COALITION.ahead ? held[0][0] : null;
       })();
 
+      /* --- a realm in exile moves its court ---
+         Losing the seat used to be the end of a realm without ever saying so:
+         nothing musters anywhere but a capital or a muster hall, so a realm
+         whose capital had been taken could never raise another company, never
+         take anything back, and sat on its holdings with a full arms rack and
+         nine hundred recruits until somebody walked over it. That is most of
+         why a late-game rival turns out to be an empty map.
+
+         A realm that still holds ground but has no seat left seats itself in
+         the largest thing it does hold. It is marked a refuge, because it is
+         not one of the six great seats of the coast and taking it should not
+         count towards winning the whole thing. */
+      NATION_IDS.forEach((id) => {
+        const held = Object.values(provinces).filter((p) => p.owner === id);
+        if (!held.length || held.some((p) => p.capital)) return;
+        const next = held.slice().sort((a, b) => (b.pop || 0) - (a.pop || 0))[0];
+        const nk = key(next.c, next.r);
+        provinces[nk] = { ...provinces[nk], capital: true, seat: id, refuge: true };
+        if (id === g.player) {
+          newLog.push({ turn: g.turn, m: `The court is carried to ${next.name}. It is not a seat, but it is where the rolls are kept now.` });
+          notice("lord", `Your seat is gone. What is left of the court has set up at ${next.name}.`, nk);
+        } else {
+          newLog.push({ turn: g.turn, m: `${NATIONS[id].short} have no seat left. What remains of their court is at ${next.name}.` });
+        }
+      });
+
       // --- AI turns ---
       NATION_IDS.forEach((id) => {
         if (id === g.player) return;
@@ -5944,8 +5975,28 @@ export default function ColdCoast() {
         const myProv = Object.values(provinces).filter((p) => p.owner === id);
         if (!myProv.length) return;
 
+        /* What this realm will not spend on sheds. A rival that has lost its
+           companies has exactly one priority, and the order here used to put
+           building and research ahead of the muster unconditionally — so a
+           realm that had been in a war spent every season's scrap on a shed,
+           never afforded a company again, and quietly stopped being a rival.
+           Walking into an industrialised capital and finding nobody home was
+           that, and nothing else. */
+        const hostCo = armies.filter((a) => a.owner === id && a.units.length)
+          .reduce((n, a) => n + a.units.length, 0);
+        /* How much of a host a realm of this size thinks it ought to have, and
+           what it holds back to get there. Both are deliberately modest: a
+           realm that spends everything on companies stops settling ground,
+           and a coast of armed realms holding one hex each is no better a
+           game than a coast of rich ones holding no companies. Three
+           companies' worth is the most it will ever sit on. */
+        const wantCo = Math.min(bandCap(nations[id]), 2 + Math.floor(myProv.length / 5));
+        const shortBy = Math.max(0, wantCo - hostCo);
+        const reserve = Math.min(shortBy, 3) * MUSTER_RESERVE;
+        const spare = res.scrap - reserve;
+
         // build
-        if (res.scrap > 90 / style.build) {
+        if (spare > 90 / style.build) {
           // Prefer somewhere with room. The AI pays the same escalating price
           // for a second worksite on the same ground that the player does.
           /* Rivals improve what they have as well as raising new things, and
@@ -5961,7 +6012,7 @@ export default function ColdCoast() {
           }));
           if (grow.length && Math.random() < 0.55) {
             const g2 = grow[Math.floor(Math.random() * grow.length)];
-            if (res.scrap >= g2.o.scrap) {
+            if (spare >= g2.o.scrap) {
               nations[id] = { ...nations[id], res: { ...res, scrap: res.scrap - g2.o.scrap } };
               const k2 = key(g2.p.c, g2.p.r);
               provinces[k2] = {
@@ -5984,7 +6035,7 @@ export default function ColdCoast() {
               .filter(([, b]) => !b.on || b.on.includes(target.t));
             const [bid, b] = opts[Math.floor(Math.random() * opts.length)] || [];
             const price = b ? buildCost(b.scrap, buildsOf(target).length) : 0;
-            if (bid && res.scrap >= price) {
+            if (bid && spare >= price) {
               nations[id] = { ...nations[id], res: { ...res, scrap: res.scrap - price } };
               provinces[key(target.c, target.r)] = {
                 ...target, builds: [...buildsOf(target), { id: bid, left: b.turns }] };
@@ -5992,49 +6043,89 @@ export default function ColdCoast() {
           }
         }
 
-        // recruit, with the best kit this realm knows how to make
+        /* --- the muster ---
+           A realm used to pick exactly one company — its finest, in the finest
+           kit it knew how to make — and if it could not afford that one thing
+           it raised nothing at all. Since the finest kit is priced in metal and
+           a realm that has been fighting has no metal, that is a realm with a
+           full arms rack, a thousand recruits and no army, for ever. It walks
+           down its own list now: best company first, and if the good kit is out
+           of reach, the plain kit, and if the good company is out of reach, a
+           worse one. Spearmen in hide are still a company. */
         const r2 = nations[id].res;
         const nat2 = nations[id];
         // Whatever it has learned to raise, weighted a little by temperament.
         const open2 = unitsFor(nat2);
         const want = id === "horde" ? ["riders", "technicals"] : id === "boreal" ? ["axemen", "riders"]
           : id === "alpine" ? ["ironclad", "vaultguard"] : id === "solar" ? ["riflemen", "musketeers"] : [];
-        // Ranked worst to best; the AI takes from the end. Baggage sits at the
-        // front deliberately — a cart is not something a realm recruits when
-        // it is deciding what to put in the field.
+        // Ranked worst to best. Baggage sits at the front deliberately — a cart
+        // is not something a realm recruits when deciding what to put in a line.
         const order = ["baggage", "spearmen", "hunters", "axemen", "bowmen", "pikemen", "riders", "ironclad",
                        "line", "musketeers", "technicals", "guncrew", "riflemen", "vaultguard"];
         const pool = open2.slice().sort((a, b) => order.indexOf(a) - order.indexOf(b));
         const liked = pool.filter((u) => want.includes(u));
-        const type = (liked.length && Math.random() < 0.6 ? liked : pool).pop() || "spearmen";
+        // Best first. What it would like, if it would, and then everything else.
+        const tries = (liked.length && Math.random() < 0.6 ? liked.slice().reverse() : [])
+          .concat(pool.slice().reverse());
         const bw = gradesFor(nat2, WEAPON_GRADES).slice(-1)[0].id;
         const ba = gradesFor(nat2, ARMOUR_GRADES).slice(-1)[0].id;
-        const cost = unitCost(type, id, nat2, bw, ba);
-        const rack = (nat2.arms || {})[type] || 0;
+        // Good kit, then whatever a people with no metal can still put together.
+        const kits = [[bw, ba], [WEAPON_GRADES[0].id, ARMOUR_GRADES[0].id]]
+          .filter(([w2, a2], i) => i === 0 || w2 !== bw || a2 !== ba);
         // The AI musters from its seat, and pays the same in people the player
         // does. Letting it raise companies out of nowhere would quietly hand it
         // every province the player has to spend to fill.
         const seatP = myProv.find((p) => p.capital);
         const seatK = seatP ? key(seatP.c, seatP.r) : null;
         const seatPop = seatK ? (provinces[seatK].pop || 0) : 0;
-        const popCost = popCostOf(UNITS[type].size);
-        if (rack >= UNITS[type].size && (r2.metal || 0) >= cost.metal && seatK && seatPop >= popCost
-            && r2.scrap > cost.scrap * (1.6 / style.host) && r2.men > cost.men * (1.4 / style.host)) {
-          const host = armies.find((a) => a.owner === id && a.units.length < bandCap(nations[id]));
-          const u = makeUnit(type, id, Math.random().toString(36).slice(2), bw, ba);
+        /* A realm with a host in the field can afford to be choosy about when
+           it raises another company. A realm with nothing standing cannot. */
+        const keen = shortBy > 0 ? 1.15 : 1.6 / style.host;
+        const keenMen = shortBy > 0 ? 1.3 : 1.4 / style.host;
+        /* And it keeps a claim's worth of recruits in hand while it has anybody
+           standing at all. Companies and settlers come out of the same pool, and
+           a realm that put every recruit into the line stopped taking ground
+           entirely — which is its own way of not being a rival. */
+        const menFloor = hostCo > 0 ? claimCost(provinces, id).men : 0;
+        /* A realm does not raise companies it cannot feed. Rations are what
+           settles new ground as well as what keeps a line standing, so a realm
+           that musters down to an empty granary stops expanding — and a coast
+           of armed realms holding one hex each is not a better game than the
+           one this set out to fix. */
+        const fed = (r2.food || 0) > claimCost(provinces, id).food * 2;
+        let pick = null;
+        if (seatK && (fed || hostCo === 0)) for (const t of tries) {
+          const rack = (nat2.arms || {})[t] || 0;
+          if (rack < UNITS[t].size) continue;
+          const popCost = popCostOf(UNITS[t].size);
+          if (seatPop < popCost) continue;
+          for (const [w2, a2] of kits) {
+            const cost = unitCost(t, id, nat2, w2, a2);
+            if ((r2.metal || 0) < cost.metal) continue;
+            if (!(r2.scrap > cost.scrap * keen) || !(r2.men > cost.men * keenMen)) continue;
+            if (r2.men - cost.men < menFloor) continue;
+            pick = { t, w2, a2, cost, rack, popCost };
+            break;
+          }
+          if (pick) break;
+        }
+        if (pick) {
+          const host = armies.find((a) => a.owner === id && a.units.length
+            && a.units.length < bandCap(nations[id]));
+          const u = makeUnit(pick.t, id, Math.random().toString(36).slice(2), pick.w2, pick.a2);
           if (host) host.units.push(u);
           else {
-            const cap = myProv.find((p) => p.capital) || myProv[0];
             armies.push({
               id: `ai${id}${Math.random().toString(36).slice(2, 6)}`, owner: id,
-              c: cap.c, r: cap.r, name: `${NATIONS[id].short} Host`,
+              c: seatP.c, r: seatP.r, name: `${NATIONS[id].short} Host`,
               units: [u], mp: 0, maxMp: baseMove(id),
             });
           }
-          provinces[seatK] = { ...provinces[seatK], pop: Math.max(0, seatPop - popCost) };
+          provinces[seatK] = { ...provinces[seatK], pop: Math.max(0, seatPop - pick.popCost) };
           nations[id] = { ...nations[id],
-            res: { ...r2, scrap: r2.scrap - cost.scrap, metal: (r2.metal || 0) - cost.metal, men: r2.men - cost.men },
-            arms: { ...(nat2.arms || {}), [type]: rack - UNITS[type].size } };
+            res: { ...r2, scrap: r2.scrap - pick.cost.scrap, metal: (r2.metal || 0) - pick.cost.metal,
+                   men: r2.men - pick.cost.men },
+            arms: { ...(nat2.arms || {}), [pick.t]: pick.rack - UNITS[pick.t].size } };
         }
 
         // research
@@ -6045,8 +6136,48 @@ export default function ColdCoast() {
           if (open.length) {
             const pick = open[Math.floor(Math.random() * open.length)];
             const t = TECHS[pick];
-            nations[id] = { ...nr, res: { ...nr.res, scrap: nr.res.scrap - t.scrap },
-              research: { id: pick, left: researchTurns(id, t, nr) } };
+            // Scholars were being paid out of money the realm did not have —
+            // and, once the muster has a claim on it, out of the muster's.
+            if (nr.res.scrap - reserve >= t.scrap) {
+              nations[id] = { ...nr, res: { ...nr.res, scrap: nr.res.scrap - t.scrap },
+                research: { id: pick, left: researchTurns(id, t, nr) } };
+            }
+          }
+        }
+
+        /* --- and the companies are brought back up to strength ---
+           Nothing did this before. The player has had a reinforce button since
+           the first week; a rival had nothing at all, so every field a rival
+           fought took men off it for good and every company ground down to the
+           five-man floor and was deleted. Over a long game that turned the
+           whole coast into empty capitals with full granaries.
+
+           One company a season, the worst-off first, and only where it is
+           standing on ground the realm holds — the same rule the player plays
+           by. It is paid for out of the same purse as the muster, so a realm
+           short of both replaces what it has before it raises what it has not. */
+        {
+          let worst = null;
+          armies.forEach((a) => {
+            if (a.owner !== id || !a.units.length) return;
+            const on = provinces[key(a.c, a.r)];
+            if (!on || on.owner !== id) return;               // no resupply in the field
+            a.units.forEach((u) => {
+              const frac = u.str / Math.max(1, u.max);
+              // Not worth a muster for a handful of men; a company that has
+              // lost a third of itself is.
+              if (frac > 0.7) return;
+              if (!worst || frac < worst.frac) worst = { u, frac, at: musteringGround(on) };
+            });
+          });
+          if (worst) {
+            const rc = reinforceCost(worst.u, id, worst.at);
+            const r4 = nations[id].res;
+            if (rc && r4.scrap >= rc.scrap && r4.men - rc.men >= menFloor) {
+              worst.u.str = worst.u.max;
+              nations[id] = { ...nations[id],
+                res: { ...r4, scrap: r4.scrap - rc.scrap, men: r4.men - rc.men } };
+            }
           }
         }
 
@@ -7070,7 +7201,7 @@ export default function ColdCoast() {
       NATION_IDS.forEach((id) => { counts[id] = heldNow[id] || 0; });
       const landTotal = Object.keys(provinces).length;
       const seatsHeld = Object.values(provinces).filter(
-        (p) => p.capital && p.seat !== g.player && !isMinor(p.seat) && p.owner === g.player).length;
+        (p) => p.capital && !p.refuge && p.seat !== g.player && !isMinor(p.seat) && p.owner === g.player).length;
       let over = g.over;
       if (counts[g.player] === 0) over = { win: false, why: "Your last holding is gone. The flag comes down." };
       else if (seatsHeld >= 4) over = { win: true, why: `Four rival seats fly your banner. Nobody left can contest the coast.` };
@@ -8733,6 +8864,29 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
   // to address a hex by, so expose one hook for tests to drive selection.
   useEffect(() => {
     if (typeof window !== "undefined") window.__ccPick = (c, r) => selRef.current(c, r);
+    // For probes: the shape of the ground in a box, as one character a hex.
+    if (typeof window !== "undefined") window.__ccScan = (c0, r0, w, h) => {
+      const out = [];
+      for (let r = r0; r < r0 + h; r++) {
+        let line = String(r).padStart(3, " ") + " ";
+        for (let c = c0; c < c0 + w; c++) {
+          const p = gameRef.current.provinces[key(c, r)];
+          line += p ? (p.capital ? "@" : p.t) : " ";
+        }
+        out.push(line);
+      }
+      return out.join("\n");
+    };
+    // For probes: what is actually on a hex, without walking a warband to it.
+    if (typeof window !== "undefined") window.__ccHex = (c, r) => {
+      const p = gameRef.current.provinces[key(c, r)];
+      if (!p) return null;
+      return { k: key(c, r), t: p.t, land: TERRAIN[p.t]?.land, name: p.name || null,
+        terrain: TERRAIN[p.t]?.name, owner: p.owner || null, feature: p.feature || null,
+        lair: p.lair || null, capital: !!p.capital, pop: Math.round(p.pop || 0),
+        near: neighbours(c, r).map(([x, y]) => { const q = gameRef.current.provinces[key(x, y)];
+          return q ? `${x},${y}:${q.t}${q.name ? `:${q.name}` : ""}${q.owner ? `:${q.owner}` : ""}` : `${x},${y}:-`; }) };
+    };
     if (typeof window !== "undefined") window.__ccHeard = () => Sound.heard();
     /* For the smoke test: how much of the wild is actually holding something.
        There is no way to check the spawn rate by playing — you would have to
@@ -8833,6 +8987,29 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           .map((p) => `${p.name}:${p.hard}:${game.armies.filter((a) => a.c === p.c && a.r === p.r)
             .reduce((n, a) => n + a.units.length, 0)}`),
         regard: Object.entries(game.regard || {}).map(([k, v]) => `${k}:${v}`),
+        /* Whether the rival realms are actually keeping armies in the field, or
+           quietly turning into empty maps. A realm that never musters is not a
+           rival, and there is no way to see it from the map: you find out by
+           walking into a capital and meeting nobody. */
+        // Where the ground actually went, which is the only way to tell a coast
+        // of small realms from a coast one realm has eaten.
+        land: (() => {
+          const by = {};
+          all.forEach((p) => { if (TERRAIN[p.t]?.land) by[p.owner || "-"] = (by[p.owner || "-"] || 0) + 1; });
+          return Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(" ");
+        })(),
+        hosts: NATION_IDS.map((id) => {
+          const n = game.nations[id] || {};
+          const mine = game.armies.filter((a) => a.owner === id && a.units.length);
+          const plan = craftPlan(n, game.provinces, id);
+          const rack = Object.entries(n.arms || {}).filter(([, v]) => v > 0)
+            .map(([t, v]) => `${t}=${v}`).join(",");
+          return `${id} bands:${mine.length} co:${mine.reduce((x, a) => x + a.units.length, 0)}`
+            + ` hands:${plan.hands}/${plan.assigned} rack:${rack || "-"}`
+            + ` crafts:${Object.entries(n.crafts || {}).filter(([, v]) => v > 0).map(([t, v]) => `${t}=${v}`).join(",") || "-"}`
+            + ` scrap:${Math.round(n.res?.scrap || 0)} men:${Math.round(n.res?.men || 0)} metal:${Math.round(n.res?.metal || 0)}`
+            + ` hex:${Object.values(game.provinces).filter((p) => p.owner === id).length}`;
+        }),
         /* What has been raised on your own ground and what it actually does:
            which hexes are roads that would otherwise be hard going, which
            carry your eyes further, and which walls have anybody on them. */
