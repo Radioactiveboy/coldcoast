@@ -52,7 +52,7 @@ import { startingPop, popRecruits, popSlots, popRank, popCostOf, popCeiling, pop
    northern Adriatic are dry silt plains. The Black Sea is a shrinking salt lake.
    ========================================================================== */
 
-const UI_CSS = `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+const UI_CSS = `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=Cinzel:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
 html,body{height:100%;margin:0;padding:0;background:#080c10}
 #root{min-height:100%;display:flex;flex-direction:column}
 .cc-app{height:100vh;min-height:100vh;overflow:hidden;flex:1 1 auto}
@@ -65,6 +65,16 @@ html,body{height:100%;margin:0;padding:0;background:#080c10}
 .cc-root{color:#ffffff;background:#080c10;font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif}
 .cc-root *{border-color:inherit}
 .disp{font-family:'Barlow Condensed','Inter',system-ui,sans-serif;font-weight:600;letter-spacing:.01em}
+/* Barlow Condensed is a clean modern grotesque and it does the work of every
+   button, chip and panel header in the game. Titles are a different job: the
+   name of a place, a people or a screen wants to look cut rather than set.
+   Cinzel is an inscriptional Roman face, so it takes the large display sizes
+   and nothing else — anything under nineteen pixels stays condensed, where
+   Cinzel's wide lowercase would cost legibility it cannot pay back. */
+.disp.cc-text-19px,.disp.cc-text-20px,.disp.cc-text-21px,.disp.cc-text-22px,
+.disp.cc-text-24px,.disp.cc-text-26px,.disp.cc-text-28px,.disp.cc-text-34px,
+.disp.cc-text-40px,.disp.cc-text-64px{
+  font-family:'Cinzel','Barlow Condensed',Georgia,serif;font-weight:600;letter-spacing:.005em}
 .num{font-family:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;font-variant-numeric:tabular-nums}
 .hexcell{transition:filter .12s ease}
 .hexcell:hover{filter:brightness(1.35)}
@@ -78,9 +88,9 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-overmap{position:relative;z-index:1;background:transparent}
 .cc-cell{cursor:pointer;transition:filter .13s ease}
 .cc-cell:hover{filter:brightness(1.3) saturate(1.1)}
-.cc-maplabel{font-family:'Barlow Condensed','Inter',sans-serif;font-weight:600;font-size:13px;letter-spacing:.18em}
+.cc-maplabel{font-family:'Cinzel','Barlow Condensed',serif;font-weight:600;font-size:12px;letter-spacing:.17em}
 .cc-placelabel{font-family:'Barlow Condensed','Inter',sans-serif;font-weight:500;font-size:9.5px;letter-spacing:.06em}
-.cc-seatlabel{font-family:'Barlow Condensed','Inter',sans-serif;font-weight:700;font-size:12px;letter-spacing:.09em}
+.cc-seatlabel{font-family:'Cinzel','Barlow Condensed',serif;font-weight:700;font-size:11px;letter-spacing:.07em}
 .cc-armycount{font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:600;font-size:8.4px}
 .cc-compass{font-family:'Barlow Condensed','Inter',sans-serif;font-size:10.5px;letter-spacing:.12em}
 .cc-sigilwatermark{position:absolute;right:14px;top:12px;opacity:.13;pointer-events:none}
@@ -5045,6 +5055,16 @@ export default function ColdCoast() {
     return { ...g, provinces: { ...g.provinces, [k]: { ...g.provinces[k], explored: true } } };
   });
 
+  /* For the smoke test only: somebody is waiting in the hall. Whether a given
+     run of the campaign has produced a candidate by now is luck, and the thing
+     being checked is what a post does to one, not the luck. */
+  if (typeof window !== "undefined") window.__ccHall = () => setGame((g) => {
+    const n = g.nations[g.player];
+    const hall = [...(n.hall || []), makeCaptain(g.player, `t${g.turn}${(n.hall || []).length}`,
+      namesInUse(n, g.armies, g.player))];
+    return { ...g, nations: { ...g.nations, [g.player]: { ...n, hall } } };
+  });
+
   /* For the smoke test only: an advance is understood, and a finished building
      appears on ground you hold. Roads, watch fires and walls are thirty seasons
      of ordinary play away from the opening position, and what they do is worth
@@ -9112,6 +9132,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
       raise: (c, r, id, lvl, fork) => window.__ccRaise && window.__ccRaise(c, r, id, lvl, fork),
       stock: (type) => window.__ccStock && window.__ccStock(type),
       see: (c, r) => window.__ccSee && window.__ccSee(c, r),
+      hall: () => window.__ccHall && window.__ccHall(),
     };
     if (typeof window !== "undefined") window.__ccWild = () => {
       const game = gameRef.current;

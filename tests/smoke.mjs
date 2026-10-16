@@ -939,7 +939,19 @@ let ac = 25, ar = 77;
     at ? `${before} -> ${mid}` : "no marker in hand");
   if (mid < before) ac = 24;
 }
+/* The walk to the lair is about the walk, not about wherever the right-click
+   test happened to leave the column — and when that test was thrown off, this
+   loop spent thirty-four seasons picking at an empty hex. Put the host on a
+   known hex and read its real position each step rather than assuming one. */
+await page.evaluate(() => window.__ccTest.put(24, 77)); await wait(350);
+ac = 24;
 for (let step = 0; step < 34 && ac > 20; step++) {
+  const at = await page.evaluate(() => {
+    const a = window.__ccSiege().mine.map((x) => x.split(":")[0]);
+    return a.length ? a[0] : null;
+  });
+  if (at) { const [c, r] = at.split(",").map(Number); ac = c; ar = r; }
+  if (ac <= 20) break;
   await page.evaluate((c, r) => window.__ccPick(c, r), ac, ar);
   await wait(120);
   await page.evaluate((c, r) => window.__ccPick(c, r), ac - 1, ar);
@@ -1162,6 +1174,11 @@ const courtTab = async (name) => {
 };
 {
   await closeOverlay();
+  /* A post, a decision and a piece of armour are all priced, and whether this
+     run has a captain idle and sixty scrap spare by now is luck. Stock both so
+     a failure here means the court is broken, not that the campaign was poor. */
+  await page.evaluate(() => { window.__ccTest.stock("spearmen"); window.__ccTest.hall(); });
+  await wait(300);
   const opened = await page.evaluate(() => {
     const x = document.querySelector('[aria-label="Court"]');
     if (x) { x.click(); return true; }
