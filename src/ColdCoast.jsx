@@ -10,7 +10,8 @@ import {
   Flag, Sparkles, Play, Anvil, Boxes, Lock,
 } from "lucide-react";
 import { TECHS, TECH_IDS, TECH_TIERS, TIER_OF, tierGate, tierOpen, tierNeeds } from "./data/techs.js";
-import { ICONS, ICON_AUTHORS, unitIcon, techIcon, slotIcon } from "./data/gameicons.js";
+import { ICONS, ICON_AUTHORS, unitIcon, techIcon, slotIcon,
+         featureIcon, buildingIcon } from "./data/gameicons.js";
 import { MAP_NAMES } from "./data/places.js";
 import { SECTORS, SECTOR_NAME, ADJACENT, POSTURES, POSTURE_IDS, GROUND, groundFor,
          FORMATIONS, FORMATION_IDS, FLANK_DEAL, FLANK_MORALE, SHAKEN_NEAR, SHAKEN_SECTOR,
@@ -51,7 +52,7 @@ import { startingPop, popRecruits, popSlots, popRank, popCostOf, popCeiling, pop
    northern Adriatic are dry silt plains. The Black Sea is a shrinking salt lake.
    ========================================================================== */
 
-const UI_CSS = `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+const UI_CSS = `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=Cinzel:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
 html,body{height:100%;margin:0;padding:0;background:#080c10}
 #root{min-height:100%;display:flex;flex-direction:column}
 .cc-app{height:100vh;min-height:100vh;overflow:hidden;flex:1 1 auto}
@@ -64,6 +65,16 @@ html,body{height:100%;margin:0;padding:0;background:#080c10}
 .cc-root{color:#ffffff;background:#080c10;font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif}
 .cc-root *{border-color:inherit}
 .disp{font-family:'Barlow Condensed','Inter',system-ui,sans-serif;font-weight:600;letter-spacing:.01em}
+/* Barlow Condensed is a clean modern grotesque and it does the work of every
+   button, chip and panel header in the game. Titles are a different job: the
+   name of a place, a people or a screen wants to look cut rather than set.
+   Cinzel is an inscriptional Roman face, so it takes the large display sizes
+   and nothing else — anything under nineteen pixels stays condensed, where
+   Cinzel's wide lowercase would cost legibility it cannot pay back. */
+.disp.cc-text-19px,.disp.cc-text-20px,.disp.cc-text-21px,.disp.cc-text-22px,
+.disp.cc-text-24px,.disp.cc-text-26px,.disp.cc-text-28px,.disp.cc-text-34px,
+.disp.cc-text-40px,.disp.cc-text-64px{
+  font-family:'Cinzel','Barlow Condensed',Georgia,serif;font-weight:600;letter-spacing:.005em}
 .num{font-family:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;font-variant-numeric:tabular-nums}
 .hexcell{transition:filter .12s ease}
 .hexcell:hover{filter:brightness(1.35)}
@@ -77,9 +88,9 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-overmap{position:relative;z-index:1;background:transparent}
 .cc-cell{cursor:pointer;transition:filter .13s ease}
 .cc-cell:hover{filter:brightness(1.3) saturate(1.1)}
-.cc-maplabel{font-family:'Barlow Condensed','Inter',sans-serif;font-weight:600;font-size:13px;letter-spacing:.18em}
+.cc-maplabel{font-family:'Cinzel','Barlow Condensed',serif;font-weight:600;font-size:12px;letter-spacing:.17em}
 .cc-placelabel{font-family:'Barlow Condensed','Inter',sans-serif;font-weight:500;font-size:9.5px;letter-spacing:.06em}
-.cc-seatlabel{font-family:'Barlow Condensed','Inter',sans-serif;font-weight:700;font-size:12px;letter-spacing:.09em}
+.cc-seatlabel{font-family:'Cinzel','Barlow Condensed',serif;font-weight:700;font-size:11px;letter-spacing:.07em}
 .cc-armycount{font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:600;font-size:8.4px}
 .cc-compass{font-family:'Barlow Condensed','Inter',sans-serif;font-size:10.5px;letter-spacing:.12em}
 .cc-sigilwatermark{position:absolute;right:14px;top:12px;opacity:.13;pointer-events:none}
@@ -951,6 +962,40 @@ function UnitMark({ type, size = 22, lit }) {
     <svg viewBox="0 0 512 512" width={size} height={size} aria-hidden="true"
       style={{ display: "block", flexShrink: 0, color: lit ? "#8fe3d6" : "#7e939f" }}>
       <path d={ic.d} fill="currentColor" />
+    </svg>
+  );
+}
+
+/* A building on a district card. Ten of them are drawn by hand as little
+   elevations; the three raised last — a track, a watch fire and a palisade —
+   never got one and were rendering as an empty box. Anything without a
+   drawing falls back to its game-icons mark rather than to nothing. */
+function BuildArt({ id, w = 30, h = 27, col }) {
+  if (BUILD_ART[id]) {
+    return (
+      <svg viewBox="-11 -12 22 20" width={w} height={h} className="shrink-0">
+        <g fill={col} stroke="#0a1015" strokeWidth="0.9" strokeLinejoin="round" strokeLinecap="round">
+          {BUILD_ART[id]}
+        </g>
+      </svg>
+    );
+  }
+  return (
+    <span className="shrink-0 flex items-center justify-center" style={{ width: w, height: h }}>
+      <Glyph icon={buildingIcon(id)} size={Math.round(h * 0.82)} col={col} />
+    </span>
+  );
+}
+
+/* The mark for a thing on the ground or raised on it. A feature and a
+   building were both a line of text, which meant a fuel seep, a watch fire and
+   the Dover gate all looked the same in the same panel at a glance. */
+function Glyph({ icon, size = 20, col = "#8fe3d6", className }) {
+  if (!icon) return null;
+  return (
+    <svg viewBox="0 0 512 512" width={size} height={size} aria-hidden="true" className={className}
+      style={{ display: "block", flexShrink: 0, color: col }}>
+      <path d={icon.d} fill="currentColor" />
     </svg>
   );
 }
@@ -2675,7 +2720,7 @@ function upgradeState(game, P, prov) {
 const Sound = (() => {
   let ctx = null, master = null, musicBus = null, sfxBus = null, ambBus = null;
   let noiseBuf = null, playing = false, timer = null, voices = [];
-  let wantMusic = true, wantSfx = true;
+  let wantMusic = true, wantSfx = true, lastCue = null;
   let amb = null, ambTimer = null, field = null;
   let scene = { season: "spring", coast: false, forge: false, ruins: false };
 
@@ -2723,6 +2768,54 @@ const Sound = (() => {
     o.start(t); o.stop(t + dur + 0.05);
   }
 
+  /* ----------------------------- THE HORNS --------------------------------
+     Every people on this coast sounded the same horn, which is a strange thing
+     in a game whose whole argument is that they are not each other. A horn is
+     a tube and a reed: what differs is how long the tube is, what the reed is
+     made of, and what the second note is. That is all this table holds, and it
+     is enough that you can tell who is coming before you read the card.
+
+     `bend` slides the fundamental, which is what a sail-horn and a bone pipe
+     both do and a brass one does not. `rasp` is breath in the tube. */
+  const HORNS = {
+    _:          { base: 116, fifth: 1.50, type: "sawtooth", len: 1.5, rasp: 0.03 },
+    // Albion and the mud. Working horns off working vessels, mostly.
+    dogger:     { base: 104, fifth: 1.50, third: 2.00, type: "sawtooth", len: 1.7, rasp: 0.05 },
+    bridgers:   { base: 78,  fifth: 1.50, type: "sawtooth", len: 2.3, rasp: 0.06 },
+    holk:       { base: 92,  fifth: 1.33, type: "sawtooth", len: 2.0, rasp: 0.07 },
+    quarrymen:  { base: 330, fifth: 1.00, type: "square",   len: 1.6, rasp: 0.02 },
+    skinless:   { base: 392, fifth: 1.06, type: "triangle", len: 1.3, rasp: 0.09 },
+    bretons:    { base: 147, fifth: 1.20, third: 1.50, type: "square", len: 1.5, rasp: 0.05 },
+    // Further out.
+    holtfolk:   { base: 131, fifth: 1.50, type: "triangle", len: 1.9, rasp: 0.04 },
+    fentaken:   { base: 58,  fifth: 1.12, type: "sine",     len: 2.8, bend: 0.86, rasp: 0.02 },
+    combers:    { base: 69,  fifth: 1.50, type: "sawtooth", len: 2.6, bend: 0.94, rasp: 0.08 },
+    // The six, who can afford instruments.
+    lyon:       { base: 175, fifth: 1.50, third: 2.00, type: "square", len: 1.2, rasp: 0.01 },
+    alpine:     { base: 220, fifth: 1.33, type: "sine",    len: 1.4, rasp: 0.00 },
+    karst:      { base: 196, fifth: 1.50, third: 1.25, type: "square", len: 1.3, rasp: 0.02 },
+    boreal:     { base: 87,  fifth: 1.50, type: "sawtooth", len: 2.4, rasp: 0.06 },
+    horde:      { base: 123, fifth: 1.50, type: "sawtooth", len: 1.6, rasp: 0.05 },
+    solar:      { base: 262, fifth: 1.50, third: 2.00, type: "sine",  len: 2.0, rasp: 0.00 },
+  };
+  function hornFor(id) {
+    const h = HORNS[id] || HORNS._;
+    tone(h.base, h.len, h.type, 0.055, 0, h.bend ? h.base * h.bend : undefined);
+    if (h.fifth !== 1) tone(h.base * h.fifth, h.len * 0.9, h.type, 0.030, 0.06);
+    if (h.third) tone(h.base * h.third, h.len * 0.7, "triangle", 0.018, 0.12);
+    if (h.rasp) noise(h.len * 0.55, "bandpass", h.base * 4, 2, h.rasp, 0.02);
+  }
+
+  /* A struck bell is not a note. It is a fundamental with partials hung off it
+     that do not belong to the same harmonic series, which is why a bell sounds
+     like an argument and a horn does not. Rune has eleven of them and rings an
+     hour that is not on anybody's clock, so the strikes are deliberately not
+     evenly spaced. */
+  function bell(freq, at, gain = 0.05) {
+    [[1, 1], [2.0, 0.55], [2.4, 0.45], [3.0, 0.3], [4.5, 0.16]].forEach(([m, g]) =>
+      tone(freq * m, 3.4 / (1 + m * 0.4), "sine", gain * g, at));
+  }
+
   const FX = {
     click:   () => { noise(0.05, "highpass", 1800, 1, 0.05); },
     tick:    () => { tone(880, 0.05, "square", 0.02); },
@@ -2742,6 +2835,9 @@ const Sound = (() => {
     give:    () => { tone(220, 1.2, "sawtooth", 0.05, 0, 82); noise(0.7, "bandpass", 620, 2, 0.05, 0.05); },
     flanked: () => { tone(65, 1.4, "sawtooth", 0.055, 0, 49); tone(98, 1.2, "triangle", 0.03, 0.08, 73); },
     chase:   () => { for (let i = 0; i < 8; i++) noise(0.11, "lowpass", 240 - i * 14, 1, 0.05, i * 0.065); },
+    // The bells of Rune, which are the one sound on this coast with a creed.
+    bells:   () => { [[196, 0], [262, 0.52], [165, 1.15], [233, 1.5], [196, 2.3], [147, 2.72]]
+                       .forEach(([f, at]) => bell(f, at, 0.055)); },
     win:     () => { [220, 277.2, 329.6, 440].forEach((f, i) => tone(f, 2.2, "sawtooth", 0.05, i * 0.16)); },
     lose:    () => { [220, 207.7, 174.6, 146.8].forEach((f, i) => tone(f, 2.4, "sawtooth", 0.05, i * 0.22)); },
   };
@@ -2958,8 +3054,19 @@ const Sound = (() => {
     play(name) {
       if (!wantSfx || !ok() || !FX[name]) return;
       if (ctx.state === "suspended") ctx.resume();
+      lastCue = name;
       try { FX[name](); } catch (e) {}
     },
+    /* Whose horn it is. The Domesayers answer with the bells instead, which is
+       the only thing they have ever answered anything with. */
+    horn(id) {
+      if (!wantSfx || !ok()) return;
+      if (ctx.state === "suspended") ctx.resume();
+      lastCue = id === "domesayers" ? "bells" : `horn:${HORNS[id] ? id : "_"}`;
+      try { if (id === "domesayers") FX.bells(); else hornFor(id); } catch (e) {}
+    },
+    // There is no way to hear a headless browser; this is how a test knows.
+    lastCue() { return lastCue; },
     music(on) {
       wantMusic = on;
       if (!ensure()) return;
@@ -5010,6 +5117,16 @@ export default function ColdCoast() {
     return { ...g, provinces: { ...g.provinces, [k]: { ...g.provinces[k], explored: true } } };
   });
 
+  /* For the smoke test only: somebody is waiting in the hall. Whether a given
+     run of the campaign has produced a candidate by now is luck, and the thing
+     being checked is what a post does to one, not the luck. */
+  if (typeof window !== "undefined") window.__ccHall = () => setGame((g) => {
+    const n = g.nations[g.player];
+    const hall = [...(n.hall || []), makeCaptain(g.player, `t${g.turn}${(n.hall || []).length}`,
+      namesInUse(n, g.armies, g.player))];
+    return { ...g, nations: { ...g.nations, [g.player]: { ...n, hall } } };
+  });
+
   /* For the smoke test only: an advance is understood, and a finished building
      appears on ground you hold. Roads, watch fires and walls are thirty seasons
      of ordinary play away from the opening position, and what they do is worth
@@ -7048,12 +7165,23 @@ export default function ColdCoast() {
         }
         const said = g.coalition || null;
         let coalition = said;
-        if (leader && leader !== said) {
-          coalition = leader;
-          newLog.push({ turn: g.turn, m: leader === g.player
+        /* Worked out again here rather than reused from the top of the season.
+           The courts are announcing what the coast looks like once everybody
+           has moved — the one computed before the realms took their turns is
+           what the realms themselves acted on, which is right for them and a
+           season out of date for this. */
+        const nowLeader = (() => {
+          const held = NATION_IDS.map((id) => [id, heldNow[id] || 0]).sort((a, b) => b[1] - a[1]);
+          if (!held.length || held[0][1] < COALITION.minHold) return null;
+          const second = held[1] ? held[1][1] : 0;
+          return held[0][1] >= Math.max(1, second) * COALITION.ahead ? held[0][0] : null;
+        })();
+        if (nowLeader && nowLeader !== said) {
+          coalition = nowLeader;
+          newLog.push({ turn: g.turn, m: nowLeader === g.player
             ? "Word comes back from three courts at once: you are the thing on this coast that needs settling. They are not wrong."
-            : `${nations[leader].short} is further ahead than anyone is comfortable with, and the courts have started saying so out loud.` });
-        } else if (!leader && said) {
+            : `${nations[nowLeader].short} is further ahead than anyone is comfortable with, and the courts have started saying so out loud.` });
+        } else if (!nowLeader && said) {
           coalition = null;
           newLog.push({ turn: g.turn, m: said === g.player
             ? "The coast stops talking about you. Somebody else is closer than they were."
@@ -8993,6 +9121,9 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           return q ? `${x},${y}:${q.t}${q.name ? `:${q.name}` : ""}${q.owner ? `:${q.owner}` : ""}` : `${x},${y}:-`; }) };
     };
     if (typeof window !== "undefined") window.__ccHeard = () => Sound.heard();
+    // Which cue was sounded last, so a test can check that a people announces
+    // itself with its own horn rather than with everybody's.
+    if (typeof window !== "undefined") window.__ccHeardCue = () => Sound.lastCue();
     /* For the smoke test: how much of the wild is actually holding something.
        There is no way to check the spawn rate by playing — you would have to
        walk into every wood on the continent. */
@@ -9066,6 +9197,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
       raise: (c, r, id, lvl, fork) => window.__ccRaise && window.__ccRaise(c, r, id, lvl, fork),
       stock: (type) => window.__ccStock && window.__ccStock(type),
       see: (c, r) => window.__ccSee && window.__ccSee(c, r),
+      hall: () => window.__ccHall && window.__ccHall(),
     };
     if (typeof window !== "undefined") window.__ccWild = () => {
       const game = gameRef.current;
@@ -9900,12 +10032,8 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair, o
               return (
                 <div key={i} className={`cc-slot ${b.damaged ? "cc-slothurt" : "cc-slotfull"}`}>
                   <div className="flex items-start gap-2">
-                    <svg viewBox="-11 -12 22 20" width="30" height="27" className="shrink-0">
-                      <g fill={b.left ? "#8ea6b4" : b.damaged ? "#c69884" : "#d8ba8c"}
-                        stroke="#0a1015" strokeWidth="0.9" strokeLinejoin="round" strokeLinecap="round">
-                        {BUILD_ART[b.id]}
-                      </g>
-                    </svg>
+                    <BuildArt id={b.id}
+                      col={b.left ? "#8ea6b4" : b.damaged ? "#c69884" : "#d8ba8c"} />
                     <div className="min-w-0 flex-1">
                       <div className="cc-text-13d5px cc-text-e5eef3 leading-tight">
                         {step.name}<LevelPips lvl={b.becomes ? b.becomes.lvl : (b.lvl || 1)} />
@@ -9962,10 +10090,7 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair, o
                       onClick={() => { onBuild(key(prov.c, prov.r), bid); setPick(null); }}
                       className={`cc-pickcard ${why || poor ? "cc-pickoff" : ""}`}>
                       <div className="flex items-center gap-2">
-                        <svg viewBox="-11 -12 22 20" width="26" height="24" className="shrink-0">
-                          <g fill={why || poor ? "#5f7889" : "#d8ba8c"} stroke="#0a1015" strokeWidth="0.9"
-                            strokeLinejoin="round" strokeLinecap="round">{BUILD_ART[bid]}</g>
-                        </svg>
+                        <BuildArt id={bid} w={26} h={24} col={why || poor ? "#5f7889" : "#d8ba8c"} />
                         <span className="cc-text-13px flex-1 text-left">{b.name}</span>
                         <span className="num cc-text-11d5px cc-text-c9a37a">{cost} · {b.turns}w</span>
                       </div>
@@ -10220,8 +10345,13 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
 
       {selProv.owner && selProv.feature && (
         <Section title="On the ground">
-          <div className="cc-text-13d5px cc-text-f2c97a">{FEATURES[selProv.feature].name}</div>
-          <div className="cc-text-12d5px cc-text-93a9b5 mt-0.5">{FEATURES[selProv.feature].desc}</div>
+          <div className="flex items-start gap-2">
+            <Glyph icon={featureIcon(selProv.feature)} size={26} col="#f2c97a" />
+            <div className="min-w-0 flex-1">
+              <div className="cc-text-13d5px cc-text-f2c97a">{FEATURES[selProv.feature].name}</div>
+              <div className="cc-text-12d5px cc-text-93a9b5 mt-0.5">{FEATURES[selProv.feature].desc}</div>
+            </div>
+          </div>
           <div className="flex flex-wrap gap-1 mt-1.5">
             {Object.entries(FEATURES[selProv.feature].yield).map(([k, v]) => (
               <span key={k} className="cc-text-11d5px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">
@@ -10288,6 +10418,8 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
             return (
               <div key={bld.id} className={i ? "mt-2.5 pt-2.5 border-t cc-border-25313a" : ""}>
                 <div className="flex items-baseline gap-2">
+                  <Glyph icon={buildingIcon(bld.id)} size={19}
+                    col={left ? "#6f8794" : bld.damaged ? "#e09a8a" : "#8fe3d6"} />
                   <span className="cc-text-13d5px flex-1">{bd.name}</span>
                   {bld.damaged && !left && <span className="cc-text-12px cc-text-e0644a">damaged</span>}
                   {left > 0 && (
@@ -10454,9 +10586,12 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
         return (
           <Section title="Surveyed">
             {selProv.feature ? (
-              <div className="mb-2">
-                <div className="cc-text-13d5px cc-text-f2c97a">{FEATURES[selProv.feature].name}</div>
-                <div className="cc-text-12d5px cc-text-93a9b5">{FEATURES[selProv.feature].desc}</div>
+              <div className="mb-2 flex items-start gap-2">
+                <Glyph icon={featureIcon(selProv.feature)} size={24} col="#f2c97a" />
+                <div className="min-w-0 flex-1">
+                  <div className="cc-text-13d5px cc-text-f2c97a">{FEATURES[selProv.feature].name}</div>
+                  <div className="cc-text-12d5px cc-text-93a9b5">{FEATURES[selProv.feature].desc}</div>
+                </div>
               </div>
             ) : (
               <div className="cc-text-13px cc-text-c6d6de mb-2">Nothing here but the ground itself.</div>
@@ -10539,8 +10674,9 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
                     className={`text-left px-2.5 py-2 rounded border cc-text-13px transition-colors ${afford
                       ? "cc-border-31454f cc-hover-border-3d6470 cc-hover-bg-152029"
                       : "cc-border-25313a opacity-40 cursor-not-allowed"}`}>
-                    <div className="flex justify-between items-baseline">
-                      <span>{b.name}</span>
+                    <div className="flex items-baseline gap-2">
+                      <Glyph icon={buildingIcon(bid)} size={18} col="#8fe3d6" />
+                      <span className="flex-1">{b.name}</span>
                       <span className="num cc-text-12d5px cc-text-c9a37a">{price} scrap · {b.turns}w</span>
                     </div>
                     <div className="cc-text-12px cc-text-93a9b5 mt-0.5">{b.desc}</div>
@@ -13801,6 +13937,8 @@ const resWord = (k) => RES_META.find((r) => r.k === k)?.label.toLowerCase() || k
 function EncounterScene({ enc, game, P, onAnswer }) {
   const [taken, setTaken] = useState(null);
   const scroll = useRef(null);
+  // Whoever has come out to look at you is heard before they are read.
+  useEffect(() => { Sound.horn(enc.who); }, [enc.who]);
   const fac = FACTION[enc.who] || {};
   const nat = game.nations[P];
   const opt = taken && enc.options.find((o) => o.id === taken);
@@ -14404,6 +14542,8 @@ function RetainerScene({ id, game, P, onAnswer }) {
 
 function WarhornScene({ who, game, P, onClose }) {
   const m = MINORS[who];
+  // Theirs, not a horn. The scene is called Warhorns sound; it should.
+  useEffect(() => { if (m) Sound.horn(who); }, [who, m]);
   if (!m) return null;
   const pact = (game.pacts || {})[who];
   const regard = game.regard?.[who];
@@ -15278,7 +15418,7 @@ function Codex({ onClose }) {
           <div className="pt-2 border-t cc-border-28363f">
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Credits</div>
             <p className="cc-text-13px cc-text-93a9b5">
-              Company and advance icons by {ICON_AUTHORS.join(", ")} from{" "}
+              Company, advance, building and landmark icons by {ICON_AUTHORS.join(", ")} from{" "}
               <span className="cc-text-c3d5de">game-icons.net</span>, used under the
               Creative Commons Attribution 3.0 licence.
             </p>

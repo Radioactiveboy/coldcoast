@@ -30,9 +30,15 @@ page.on("console", (m) => {
 });
 
 let failures = 0;
+/* Page errors used to surface only in the very last check, so a run that
+   wedged in the middle printed thirty failures and never said why. Any new
+   one is reported the moment the next check goes past it, which is almost
+   always the check that just broke. */
+let seenErrors = 0;
 const check = (name, ok, note = "") => {
   console.log(`${ok ? "  pass  " : "  FAIL  "}${name}${note ? `  ${note}` : ""}`);
   if (!ok) failures++;
+  while (seenErrors < errors.length) console.log(`        ! ${errors[seenErrors++]}`);
 };
 const click = (re) =>
   page.evaluate((r) => {
@@ -90,6 +96,10 @@ const closeOverlay = async () => {
 /* A people can walk into your sight at the end of any season, and meeting them
    stops the game until you have said something back. Say the neutral thing and
    carry on, the way a player would when they are busy with something else. */
+/* Whether a chapter card has been seen and answered at any point. The march
+   loops dismiss them to get at the map, so the chapter check cannot rely on
+   one still being open by the time it runs. */
+let sawChapter = false;
 const clearScenes = async () => {
   for (let i = 0; i < 6; i++) {
     /* Somebody at the fire is modal in the same way, and turning them away is
@@ -106,6 +116,23 @@ const clearScenes = async () => {
       return false;
     });
     if (fire) { await wait(350); continue; }
+    /* Warhorns and chapter cards have one way out and nothing else in the
+       suite answered them, so one left standing swallowed every click aimed
+       at the map behind it — which is what had been stalling the march to the
+       lair, intermittently, for as long as the chapter happened to land in
+       the middle of it. Seeing a chapter is remembered rather than thrown
+       away, because a later check is about exactly that. */
+    const oneWayOut = await page.evaluate(() => {
+      const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")]
+        .find((x) => /Warhorns sound|The state of the coast/.test(x.innerText));
+      if (!ov) return null;
+      const chapter = /The state of the coast/.test(ov.innerText);
+      const b = [...ov.querySelectorAll("button")]
+        .find((x) => /Stand the wards to|Read on/.test(x.textContent));
+      if (b) { b.click(); return { chapter }; }
+      return null;
+    });
+    if (oneWayOut) { if (oneWayOut.chapter) sawChapter = true; await wait(350); continue; }
     /* A habit hardening is modal the same way a first meeting is, and it has to
        be answered rather than dismissed — so a test that does not answer it
        plays the rest of the game behind it. */
@@ -486,6 +513,11 @@ await clearScenes();
 await clearScenes();
 {
   await page.evaluate(() => window.__ccTest.meet("domesayers")); await wait(450);
+  /* Rune does not blow a horn. Eleven bells and an hour that is not on
+     anybody's clock is the whole of what they have ever answered with. */
+  check("Rune answers with the bells and not with a horn",
+    (await page.evaluate(() => window.__ccHeardCue())) === "bells",
+    await page.evaluate(() => window.__ccHeardCue()));
   const sc = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"));
   check("Rune has a scene of its own",
     /Domesayers of Rune/.test(sc) && /The Reader/.test(sc) && /eleven of them/.test(sc),
@@ -918,7 +950,19 @@ let ac = 25, ar = 77;
     at ? `${before} -> ${mid}` : "no marker in hand");
   if (mid < before) ac = 24;
 }
+/* The walk to the lair is about the walk, not about wherever the right-click
+   test happened to leave the column — and when that test was thrown off, this
+   loop spent thirty-four seasons picking at an empty hex. Put the host on a
+   known hex and read its real position each step rather than assuming one. */
+await page.evaluate(() => window.__ccTest.put(24, 77)); await wait(350);
+ac = 24;
 for (let step = 0; step < 34 && ac > 20; step++) {
+  const at = await page.evaluate(() => {
+    const a = window.__ccSiege().mine.map((x) => x.split(":")[0]);
+    return a.length ? a[0] : null;
+  });
+  if (at) { const [c, r] = at.split(",").map(Number); ac = c; ar = r; }
+  if (ac <= 20) break;
   await page.evaluate((c, r) => window.__ccPick(c, r), ac, ar);
   await wait(120);
   await page.evaluate((c, r) => window.__ccPick(c, r), ac - 1, ar);
@@ -935,7 +979,14 @@ for (let step = 0; step < 34 && ac > 20; step++) {
   if (await inBattle()) await fightOut();
   await clearScenes();
 }
-check("the host can march to the lair", ac === 20, `stopped at ${ac},${ar}`);
+const blocked = ac === 20 ? "" : await page.evaluate(() => {
+  const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
+  if (ov) return "a panel is in the way: " + ov.innerText.split("\n").filter((x) => x.trim())[0];
+  const a = document.querySelector("aside");
+  return "panel says: " + (a ? a.innerText.replace(/\n+/g, " / ").slice(0, 120) : "nothing");
+});
+check("the host can march to the lair", ac === 20,
+  `stopped at ${ac},${ar}${blocked ? ` — ${blocked}` : ""}`);
 
 /* Supply. Five hexes west of Lunden is past the end of any line the player
    has at this point, and the panel has to say so plainly — this is the number
@@ -1134,6 +1185,11 @@ const courtTab = async (name) => {
 };
 {
   await closeOverlay();
+  /* A post, a decision and a piece of armour are all priced, and whether this
+     run has a captain idle and sixty scrap spare by now is luck. Stock both so
+     a failure here means the court is broken, not that the campaign was poor. */
+  await page.evaluate(() => { window.__ccTest.stock("spearmen"); window.__ccTest.hall(); });
+  await wait(300);
   const opened = await page.evaluate(() => {
     const x = document.querySelector('[aria-label="Court"]');
     if (x) { x.click(); return true; }
@@ -1221,6 +1277,7 @@ const courtTab = async (name) => {
     seats.join(" ") === "Fontainebleau Holt:holtfolk:holt Stockholm Reef:fentaken:reefmere Aalborg Staithe:combers:staithe",
     seats.join("  "));
 
+  const heardHorns = [];
   for (const [id, who, said] of [["holtfolk", "Wick of the Long Ride", "Ask for a ride cut"],
                                  ["fentaken", "Sedge", "Ask them to carry"],
                                  ["combers", "Hald Rope", "Pay the tithe"]]) {
@@ -1237,6 +1294,10 @@ const courtTab = async (name) => {
     }
     check(`${id} come out to look at you and have four answers`,
       !!sc && sc.opts.length === 4, sc ? sc.opts[0] : "no scene");
+    /* And they are heard before they are read. Every people used to sound the
+       same horn, which rather gave away that they were the same table row. */
+    const cue = await page.evaluate(() => window.__ccHeardCue());
+    heardHorns.push(cue);
     await page.evaluate((t) => {
       const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
       const o = ov && [...ov.querySelectorAll(".cc-origin")].find((b) => b.innerText.includes(t));
@@ -1244,6 +1305,10 @@ const courtTab = async (name) => {
     }, said);
     await wait(250); await click("So it is said"); await wait(350);
   }
+  check("each of them is heard before it is read, and none of them alike",
+    heardHorns.length === 3 && new Set(heardHorns).size === 3
+      && heardHorns.every((c) => /^horn:/.test(c)),
+    heardHorns.join(" "));
   const standing = await page.evaluate(() => window.__ccWild().pacts || null);
   check("an arrangement with one of them stands in the ledger",
     /holtRide/.test(JSON.stringify(standing)) && /comberTithe/.test(JSON.stringify(standing)),
@@ -1336,6 +1401,10 @@ const openRivals = async () => {
 };
 {
   await closeOverlay();
+  /* Every rung on the ladder is priced, and whether this particular run of the
+     campaign happens to be solvent by now is not what is being checked. Fill
+     the purse so a refusal means they said no, not that you could not ask. */
+  await page.evaluate(() => window.__ccTest.stock("spearmen")); await wait(250);
   await page.evaluate(() => window.__ccTest.meet("lyon", true)); await wait(300);
   const onScreen = await openRivals();
   const card = await page.evaluate(() => document.body.innerText);
@@ -1499,8 +1568,9 @@ check("forty seasons pass", seasons === 40, `${seasons}${seasons < 40 ? ` — ${
     `${rg(b2, "bretons")} -> ${rg(a2, "bretons")}`);
 }
 /* Read every full-screen panel, not the first one: several can be in the
-   document at once and the stale one comes first in document order. */
-check("the first chapter was written", await page.evaluate(() =>
+   document at once and the stale one comes first in document order. And one
+   answered earlier, to get at the map behind it, counts — it was written. */
+check("the first chapter was written", sawChapter || await page.evaluate(() =>
   [...document.querySelectorAll(".fixed.inset-0.z-50")]
     .some((x) => /The state of the coast/.test(x.innerText))));
 await click("Read on"); await wait(300);
