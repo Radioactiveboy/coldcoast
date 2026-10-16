@@ -30,9 +30,15 @@ page.on("console", (m) => {
 });
 
 let failures = 0;
+/* Page errors used to surface only in the very last check, so a run that
+   wedged in the middle printed thirty failures and never said why. Any new
+   one is reported the moment the next check goes past it, which is almost
+   always the check that just broke. */
+let seenErrors = 0;
 const check = (name, ok, note = "") => {
   console.log(`${ok ? "  pass  " : "  FAIL  "}${name}${note ? `  ${note}` : ""}`);
   if (!ok) failures++;
+  while (seenErrors < errors.length) console.log(`        ! ${errors[seenErrors++]}`);
 };
 const click = (re) =>
   page.evaluate((r) => {
@@ -507,6 +513,11 @@ await clearScenes();
 await clearScenes();
 {
   await page.evaluate(() => window.__ccTest.meet("domesayers")); await wait(450);
+  /* Rune does not blow a horn. Eleven bells and an hour that is not on
+     anybody's clock is the whole of what they have ever answered with. */
+  check("Rune answers with the bells and not with a horn",
+    (await page.evaluate(() => window.__ccHeardCue())) === "bells",
+    await page.evaluate(() => window.__ccHeardCue()));
   const sc = await page.evaluate(() => [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n"));
   check("Rune has a scene of its own",
     /Domesayers of Rune/.test(sc) && /The Reader/.test(sc) && /eleven of them/.test(sc),
@@ -1266,6 +1277,7 @@ const courtTab = async (name) => {
     seats.join(" ") === "Fontainebleau Holt:holtfolk:holt Stockholm Reef:fentaken:reefmere Aalborg Staithe:combers:staithe",
     seats.join("  "));
 
+  const heardHorns = [];
   for (const [id, who, said] of [["holtfolk", "Wick of the Long Ride", "Ask for a ride cut"],
                                  ["fentaken", "Sedge", "Ask them to carry"],
                                  ["combers", "Hald Rope", "Pay the tithe"]]) {
@@ -1282,6 +1294,10 @@ const courtTab = async (name) => {
     }
     check(`${id} come out to look at you and have four answers`,
       !!sc && sc.opts.length === 4, sc ? sc.opts[0] : "no scene");
+    /* And they are heard before they are read. Every people used to sound the
+       same horn, which rather gave away that they were the same table row. */
+    const cue = await page.evaluate(() => window.__ccHeardCue());
+    heardHorns.push(cue);
     await page.evaluate((t) => {
       const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
       const o = ov && [...ov.querySelectorAll(".cc-origin")].find((b) => b.innerText.includes(t));
@@ -1289,6 +1305,10 @@ const courtTab = async (name) => {
     }, said);
     await wait(250); await click("So it is said"); await wait(350);
   }
+  check("each of them is heard before it is read, and none of them alike",
+    heardHorns.length === 3 && new Set(heardHorns).size === 3
+      && heardHorns.every((c) => /^horn:/.test(c)),
+    heardHorns.join(" "));
   const standing = await page.evaluate(() => window.__ccWild().pacts || null);
   check("an arrangement with one of them stands in the ledger",
     /holtRide/.test(JSON.stringify(standing)) && /comberTithe/.test(JSON.stringify(standing)),

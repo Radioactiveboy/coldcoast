@@ -2720,7 +2720,7 @@ function upgradeState(game, P, prov) {
 const Sound = (() => {
   let ctx = null, master = null, musicBus = null, sfxBus = null, ambBus = null;
   let noiseBuf = null, playing = false, timer = null, voices = [];
-  let wantMusic = true, wantSfx = true;
+  let wantMusic = true, wantSfx = true, lastCue = null;
   let amb = null, ambTimer = null, field = null;
   let scene = { season: "spring", coast: false, forge: false, ruins: false };
 
@@ -2768,6 +2768,54 @@ const Sound = (() => {
     o.start(t); o.stop(t + dur + 0.05);
   }
 
+  /* ----------------------------- THE HORNS --------------------------------
+     Every people on this coast sounded the same horn, which is a strange thing
+     in a game whose whole argument is that they are not each other. A horn is
+     a tube and a reed: what differs is how long the tube is, what the reed is
+     made of, and what the second note is. That is all this table holds, and it
+     is enough that you can tell who is coming before you read the card.
+
+     `bend` slides the fundamental, which is what a sail-horn and a bone pipe
+     both do and a brass one does not. `rasp` is breath in the tube. */
+  const HORNS = {
+    _:          { base: 116, fifth: 1.50, type: "sawtooth", len: 1.5, rasp: 0.03 },
+    // Albion and the mud. Working horns off working vessels, mostly.
+    dogger:     { base: 104, fifth: 1.50, third: 2.00, type: "sawtooth", len: 1.7, rasp: 0.05 },
+    bridgers:   { base: 78,  fifth: 1.50, type: "sawtooth", len: 2.3, rasp: 0.06 },
+    holk:       { base: 92,  fifth: 1.33, type: "sawtooth", len: 2.0, rasp: 0.07 },
+    quarrymen:  { base: 330, fifth: 1.00, type: "square",   len: 1.6, rasp: 0.02 },
+    skinless:   { base: 392, fifth: 1.06, type: "triangle", len: 1.3, rasp: 0.09 },
+    bretons:    { base: 147, fifth: 1.20, third: 1.50, type: "square", len: 1.5, rasp: 0.05 },
+    // Further out.
+    holtfolk:   { base: 131, fifth: 1.50, type: "triangle", len: 1.9, rasp: 0.04 },
+    fentaken:   { base: 58,  fifth: 1.12, type: "sine",     len: 2.8, bend: 0.86, rasp: 0.02 },
+    combers:    { base: 69,  fifth: 1.50, type: "sawtooth", len: 2.6, bend: 0.94, rasp: 0.08 },
+    // The six, who can afford instruments.
+    lyon:       { base: 175, fifth: 1.50, third: 2.00, type: "square", len: 1.2, rasp: 0.01 },
+    alpine:     { base: 220, fifth: 1.33, type: "sine",    len: 1.4, rasp: 0.00 },
+    karst:      { base: 196, fifth: 1.50, third: 1.25, type: "square", len: 1.3, rasp: 0.02 },
+    boreal:     { base: 87,  fifth: 1.50, type: "sawtooth", len: 2.4, rasp: 0.06 },
+    horde:      { base: 123, fifth: 1.50, type: "sawtooth", len: 1.6, rasp: 0.05 },
+    solar:      { base: 262, fifth: 1.50, third: 2.00, type: "sine",  len: 2.0, rasp: 0.00 },
+  };
+  function hornFor(id) {
+    const h = HORNS[id] || HORNS._;
+    tone(h.base, h.len, h.type, 0.055, 0, h.bend ? h.base * h.bend : undefined);
+    if (h.fifth !== 1) tone(h.base * h.fifth, h.len * 0.9, h.type, 0.030, 0.06);
+    if (h.third) tone(h.base * h.third, h.len * 0.7, "triangle", 0.018, 0.12);
+    if (h.rasp) noise(h.len * 0.55, "bandpass", h.base * 4, 2, h.rasp, 0.02);
+  }
+
+  /* A struck bell is not a note. It is a fundamental with partials hung off it
+     that do not belong to the same harmonic series, which is why a bell sounds
+     like an argument and a horn does not. Rune has eleven of them and rings an
+     hour that is not on anybody's clock, so the strikes are deliberately not
+     evenly spaced. */
+  function bell(freq, at, gain = 0.05) {
+    [[1, 1], [2.0, 0.55], [2.4, 0.45], [3.0, 0.3], [4.5, 0.16]].forEach(([m, g]) =>
+      tone(freq * m, 3.4 / (1 + m * 0.4), "sine", gain * g, at));
+  }
+
   const FX = {
     click:   () => { noise(0.05, "highpass", 1800, 1, 0.05); },
     tick:    () => { tone(880, 0.05, "square", 0.02); },
@@ -2787,6 +2835,9 @@ const Sound = (() => {
     give:    () => { tone(220, 1.2, "sawtooth", 0.05, 0, 82); noise(0.7, "bandpass", 620, 2, 0.05, 0.05); },
     flanked: () => { tone(65, 1.4, "sawtooth", 0.055, 0, 49); tone(98, 1.2, "triangle", 0.03, 0.08, 73); },
     chase:   () => { for (let i = 0; i < 8; i++) noise(0.11, "lowpass", 240 - i * 14, 1, 0.05, i * 0.065); },
+    // The bells of Rune, which are the one sound on this coast with a creed.
+    bells:   () => { [[196, 0], [262, 0.52], [165, 1.15], [233, 1.5], [196, 2.3], [147, 2.72]]
+                       .forEach(([f, at]) => bell(f, at, 0.055)); },
     win:     () => { [220, 277.2, 329.6, 440].forEach((f, i) => tone(f, 2.2, "sawtooth", 0.05, i * 0.16)); },
     lose:    () => { [220, 207.7, 174.6, 146.8].forEach((f, i) => tone(f, 2.4, "sawtooth", 0.05, i * 0.22)); },
   };
@@ -3003,8 +3054,19 @@ const Sound = (() => {
     play(name) {
       if (!wantSfx || !ok() || !FX[name]) return;
       if (ctx.state === "suspended") ctx.resume();
+      lastCue = name;
       try { FX[name](); } catch (e) {}
     },
+    /* Whose horn it is. The Domesayers answer with the bells instead, which is
+       the only thing they have ever answered anything with. */
+    horn(id) {
+      if (!wantSfx || !ok()) return;
+      if (ctx.state === "suspended") ctx.resume();
+      lastCue = id === "domesayers" ? "bells" : `horn:${HORNS[id] ? id : "_"}`;
+      try { if (id === "domesayers") FX.bells(); else hornFor(id); } catch (e) {}
+    },
+    // There is no way to hear a headless browser; this is how a test knows.
+    lastCue() { return lastCue; },
     music(on) {
       wantMusic = on;
       if (!ensure()) return;
@@ -9059,6 +9121,9 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           return q ? `${x},${y}:${q.t}${q.name ? `:${q.name}` : ""}${q.owner ? `:${q.owner}` : ""}` : `${x},${y}:-`; }) };
     };
     if (typeof window !== "undefined") window.__ccHeard = () => Sound.heard();
+    // Which cue was sounded last, so a test can check that a people announces
+    // itself with its own horn rather than with everybody's.
+    if (typeof window !== "undefined") window.__ccHeardCue = () => Sound.lastCue();
     /* For the smoke test: how much of the wild is actually holding something.
        There is no way to check the spawn rate by playing — you would have to
        walk into every wood on the continent. */
@@ -13872,6 +13937,8 @@ const resWord = (k) => RES_META.find((r) => r.k === k)?.label.toLowerCase() || k
 function EncounterScene({ enc, game, P, onAnswer }) {
   const [taken, setTaken] = useState(null);
   const scroll = useRef(null);
+  // Whoever has come out to look at you is heard before they are read.
+  useEffect(() => { Sound.horn(enc.who); }, [enc.who]);
   const fac = FACTION[enc.who] || {};
   const nat = game.nations[P];
   const opt = taken && enc.options.find((o) => o.id === taken);
@@ -14475,6 +14542,8 @@ function RetainerScene({ id, game, P, onAnswer }) {
 
 function WarhornScene({ who, game, P, onClose }) {
   const m = MINORS[who];
+  // Theirs, not a horn. The scene is called Warhorns sound; it should.
+  useEffect(() => { if (m) Sound.horn(who); }, [who, m]);
   if (!m) return null;
   const pact = (game.pacts || {})[who];
   const regard = game.regard?.[who];
