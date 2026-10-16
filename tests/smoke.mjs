@@ -90,6 +90,10 @@ const closeOverlay = async () => {
 /* A people can walk into your sight at the end of any season, and meeting them
    stops the game until you have said something back. Say the neutral thing and
    carry on, the way a player would when they are busy with something else. */
+/* Whether a chapter card has been seen and answered at any point. The march
+   loops dismiss them to get at the map, so the chapter check cannot rely on
+   one still being open by the time it runs. */
+let sawChapter = false;
 const clearScenes = async () => {
   for (let i = 0; i < 6; i++) {
     /* Somebody at the fire is modal in the same way, and turning them away is
@@ -106,6 +110,23 @@ const clearScenes = async () => {
       return false;
     });
     if (fire) { await wait(350); continue; }
+    /* Warhorns and chapter cards have one way out and nothing else in the
+       suite answered them, so one left standing swallowed every click aimed
+       at the map behind it — which is what had been stalling the march to the
+       lair, intermittently, for as long as the chapter happened to land in
+       the middle of it. Seeing a chapter is remembered rather than thrown
+       away, because a later check is about exactly that. */
+    const oneWayOut = await page.evaluate(() => {
+      const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")]
+        .find((x) => /Warhorns sound|The state of the coast/.test(x.innerText));
+      if (!ov) return null;
+      const chapter = /The state of the coast/.test(ov.innerText);
+      const b = [...ov.querySelectorAll("button")]
+        .find((x) => /Stand the wards to|Read on/.test(x.textContent));
+      if (b) { b.click(); return { chapter }; }
+      return null;
+    });
+    if (oneWayOut) { if (oneWayOut.chapter) sawChapter = true; await wait(350); continue; }
     /* A habit hardening is modal the same way a first meeting is, and it has to
        be answered rather than dismissed — so a test that does not answer it
        plays the rest of the game behind it. */
@@ -935,7 +956,14 @@ for (let step = 0; step < 34 && ac > 20; step++) {
   if (await inBattle()) await fightOut();
   await clearScenes();
 }
-check("the host can march to the lair", ac === 20, `stopped at ${ac},${ar}`);
+const blocked = ac === 20 ? "" : await page.evaluate(() => {
+  const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")].pop();
+  if (ov) return "a panel is in the way: " + ov.innerText.split("\n").filter((x) => x.trim())[0];
+  const a = document.querySelector("aside");
+  return "panel says: " + (a ? a.innerText.replace(/\n+/g, " / ").slice(0, 120) : "nothing");
+});
+check("the host can march to the lair", ac === 20,
+  `stopped at ${ac},${ar}${blocked ? ` — ${blocked}` : ""}`);
 
 /* Supply. Five hexes west of Lunden is past the end of any line the player
    has at this point, and the panel has to say so plainly — this is the number
@@ -1336,6 +1364,10 @@ const openRivals = async () => {
 };
 {
   await closeOverlay();
+  /* Every rung on the ladder is priced, and whether this particular run of the
+     campaign happens to be solvent by now is not what is being checked. Fill
+     the purse so a refusal means they said no, not that you could not ask. */
+  await page.evaluate(() => window.__ccTest.stock("spearmen")); await wait(250);
   await page.evaluate(() => window.__ccTest.meet("lyon", true)); await wait(300);
   const onScreen = await openRivals();
   const card = await page.evaluate(() => document.body.innerText);
@@ -1499,8 +1531,9 @@ check("forty seasons pass", seasons === 40, `${seasons}${seasons < 40 ? ` — ${
     `${rg(b2, "bretons")} -> ${rg(a2, "bretons")}`);
 }
 /* Read every full-screen panel, not the first one: several can be in the
-   document at once and the stale one comes first in document order. */
-check("the first chapter was written", await page.evaluate(() =>
+   document at once and the stale one comes first in document order. And one
+   answered earlier, to get at the map behind it, counts — it was written. */
+check("the first chapter was written", sawChapter || await page.evaluate(() =>
   [...document.querySelectorAll(".fixed.inset-0.z-50")]
     .some((x) => /The state of the coast/.test(x.innerText))));
 await click("Read on"); await wait(300);

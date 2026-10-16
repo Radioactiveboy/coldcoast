@@ -10,7 +10,8 @@ import {
   Flag, Sparkles, Play, Anvil, Boxes, Lock,
 } from "lucide-react";
 import { TECHS, TECH_IDS, TECH_TIERS, TIER_OF, tierGate, tierOpen, tierNeeds } from "./data/techs.js";
-import { ICONS, ICON_AUTHORS, unitIcon, techIcon, slotIcon } from "./data/gameicons.js";
+import { ICONS, ICON_AUTHORS, unitIcon, techIcon, slotIcon,
+         featureIcon, buildingIcon } from "./data/gameicons.js";
 import { MAP_NAMES } from "./data/places.js";
 import { SECTORS, SECTOR_NAME, ADJACENT, POSTURES, POSTURE_IDS, GROUND, groundFor,
          FORMATIONS, FORMATION_IDS, FLANK_DEAL, FLANK_MORALE, SHAKEN_NEAR, SHAKEN_SECTOR,
@@ -951,6 +952,40 @@ function UnitMark({ type, size = 22, lit }) {
     <svg viewBox="0 0 512 512" width={size} height={size} aria-hidden="true"
       style={{ display: "block", flexShrink: 0, color: lit ? "#8fe3d6" : "#7e939f" }}>
       <path d={ic.d} fill="currentColor" />
+    </svg>
+  );
+}
+
+/* A building on a district card. Ten of them are drawn by hand as little
+   elevations; the three raised last — a track, a watch fire and a palisade —
+   never got one and were rendering as an empty box. Anything without a
+   drawing falls back to its game-icons mark rather than to nothing. */
+function BuildArt({ id, w = 30, h = 27, col }) {
+  if (BUILD_ART[id]) {
+    return (
+      <svg viewBox="-11 -12 22 20" width={w} height={h} className="shrink-0">
+        <g fill={col} stroke="#0a1015" strokeWidth="0.9" strokeLinejoin="round" strokeLinecap="round">
+          {BUILD_ART[id]}
+        </g>
+      </svg>
+    );
+  }
+  return (
+    <span className="shrink-0 flex items-center justify-center" style={{ width: w, height: h }}>
+      <Glyph icon={buildingIcon(id)} size={Math.round(h * 0.82)} col={col} />
+    </span>
+  );
+}
+
+/* The mark for a thing on the ground or raised on it. A feature and a
+   building were both a line of text, which meant a fuel seep, a watch fire and
+   the Dover gate all looked the same in the same panel at a glance. */
+function Glyph({ icon, size = 20, col = "#8fe3d6", className }) {
+  if (!icon) return null;
+  return (
+    <svg viewBox="0 0 512 512" width={size} height={size} aria-hidden="true" className={className}
+      style={{ display: "block", flexShrink: 0, color: col }}>
+      <path d={icon.d} fill="currentColor" />
     </svg>
   );
 }
@@ -7048,12 +7083,23 @@ export default function ColdCoast() {
         }
         const said = g.coalition || null;
         let coalition = said;
-        if (leader && leader !== said) {
-          coalition = leader;
-          newLog.push({ turn: g.turn, m: leader === g.player
+        /* Worked out again here rather than reused from the top of the season.
+           The courts are announcing what the coast looks like once everybody
+           has moved — the one computed before the realms took their turns is
+           what the realms themselves acted on, which is right for them and a
+           season out of date for this. */
+        const nowLeader = (() => {
+          const held = NATION_IDS.map((id) => [id, heldNow[id] || 0]).sort((a, b) => b[1] - a[1]);
+          if (!held.length || held[0][1] < COALITION.minHold) return null;
+          const second = held[1] ? held[1][1] : 0;
+          return held[0][1] >= Math.max(1, second) * COALITION.ahead ? held[0][0] : null;
+        })();
+        if (nowLeader && nowLeader !== said) {
+          coalition = nowLeader;
+          newLog.push({ turn: g.turn, m: nowLeader === g.player
             ? "Word comes back from three courts at once: you are the thing on this coast that needs settling. They are not wrong."
-            : `${nations[leader].short} is further ahead than anyone is comfortable with, and the courts have started saying so out loud.` });
-        } else if (!leader && said) {
+            : `${nations[nowLeader].short} is further ahead than anyone is comfortable with, and the courts have started saying so out loud.` });
+        } else if (!nowLeader && said) {
           coalition = null;
           newLog.push({ turn: g.turn, m: said === g.player
             ? "The coast stops talking about you. Somebody else is closer than they were."
@@ -9900,12 +9946,8 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair, o
               return (
                 <div key={i} className={`cc-slot ${b.damaged ? "cc-slothurt" : "cc-slotfull"}`}>
                   <div className="flex items-start gap-2">
-                    <svg viewBox="-11 -12 22 20" width="30" height="27" className="shrink-0">
-                      <g fill={b.left ? "#8ea6b4" : b.damaged ? "#c69884" : "#d8ba8c"}
-                        stroke="#0a1015" strokeWidth="0.9" strokeLinejoin="round" strokeLinecap="round">
-                        {BUILD_ART[b.id]}
-                      </g>
-                    </svg>
+                    <BuildArt id={b.id}
+                      col={b.left ? "#8ea6b4" : b.damaged ? "#c69884" : "#d8ba8c"} />
                     <div className="min-w-0 flex-1">
                       <div className="cc-text-13d5px cc-text-e5eef3 leading-tight">
                         {step.name}<LevelPips lvl={b.becomes ? b.becomes.lvl : (b.lvl || 1)} />
@@ -9962,10 +10004,7 @@ function DistrictPanel({ game, P, prov, onClose, onBuild, onImprove, onRepair, o
                       onClick={() => { onBuild(key(prov.c, prov.r), bid); setPick(null); }}
                       className={`cc-pickcard ${why || poor ? "cc-pickoff" : ""}`}>
                       <div className="flex items-center gap-2">
-                        <svg viewBox="-11 -12 22 20" width="26" height="24" className="shrink-0">
-                          <g fill={why || poor ? "#5f7889" : "#d8ba8c"} stroke="#0a1015" strokeWidth="0.9"
-                            strokeLinejoin="round" strokeLinecap="round">{BUILD_ART[bid]}</g>
-                        </svg>
+                        <BuildArt id={bid} w={26} h={24} col={why || poor ? "#5f7889" : "#d8ba8c"} />
                         <span className="cc-text-13px flex-1 text-left">{b.name}</span>
                         <span className="num cc-text-11d5px cc-text-c9a37a">{cost} · {b.turns}w</span>
                       </div>
@@ -10220,8 +10259,13 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
 
       {selProv.owner && selProv.feature && (
         <Section title="On the ground">
-          <div className="cc-text-13d5px cc-text-f2c97a">{FEATURES[selProv.feature].name}</div>
-          <div className="cc-text-12d5px cc-text-93a9b5 mt-0.5">{FEATURES[selProv.feature].desc}</div>
+          <div className="flex items-start gap-2">
+            <Glyph icon={featureIcon(selProv.feature)} size={26} col="#f2c97a" />
+            <div className="min-w-0 flex-1">
+              <div className="cc-text-13d5px cc-text-f2c97a">{FEATURES[selProv.feature].name}</div>
+              <div className="cc-text-12d5px cc-text-93a9b5 mt-0.5">{FEATURES[selProv.feature].desc}</div>
+            </div>
+          </div>
           <div className="flex flex-wrap gap-1 mt-1.5">
             {Object.entries(FEATURES[selProv.feature].yield).map(([k, v]) => (
               <span key={k} className="cc-text-11d5px rounded px-1.5 py-0.5 border cc-border-3d5a4a cc-text-9fd6b4">
@@ -10288,6 +10332,8 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
             return (
               <div key={bld.id} className={i ? "mt-2.5 pt-2.5 border-t cc-border-25313a" : ""}>
                 <div className="flex items-baseline gap-2">
+                  <Glyph icon={buildingIcon(bld.id)} size={19}
+                    col={left ? "#6f8794" : bld.damaged ? "#e09a8a" : "#8fe3d6"} />
                   <span className="cc-text-13d5px flex-1">{bd.name}</span>
                   {bld.damaged && !left && <span className="cc-text-12px cc-text-e0644a">damaged</span>}
                   {left > 0 && (
@@ -10454,9 +10500,12 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
         return (
           <Section title="Surveyed">
             {selProv.feature ? (
-              <div className="mb-2">
-                <div className="cc-text-13d5px cc-text-f2c97a">{FEATURES[selProv.feature].name}</div>
-                <div className="cc-text-12d5px cc-text-93a9b5">{FEATURES[selProv.feature].desc}</div>
+              <div className="mb-2 flex items-start gap-2">
+                <Glyph icon={featureIcon(selProv.feature)} size={24} col="#f2c97a" />
+                <div className="min-w-0 flex-1">
+                  <div className="cc-text-13d5px cc-text-f2c97a">{FEATURES[selProv.feature].name}</div>
+                  <div className="cc-text-12d5px cc-text-93a9b5">{FEATURES[selProv.feature].desc}</div>
+                </div>
               </div>
             ) : (
               <div className="cc-text-13px cc-text-c6d6de mb-2">Nothing here but the ground itself.</div>
@@ -10539,8 +10588,9 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
                     className={`text-left px-2.5 py-2 rounded border cc-text-13px transition-colors ${afford
                       ? "cc-border-31454f cc-hover-border-3d6470 cc-hover-bg-152029"
                       : "cc-border-25313a opacity-40 cursor-not-allowed"}`}>
-                    <div className="flex justify-between items-baseline">
-                      <span>{b.name}</span>
+                    <div className="flex items-baseline gap-2">
+                      <Glyph icon={buildingIcon(bid)} size={18} col="#8fe3d6" />
+                      <span className="flex-1">{b.name}</span>
                       <span className="num cc-text-12d5px cc-text-c9a37a">{price} scrap · {b.turns}w</span>
                     </div>
                     <div className="cc-text-12px cc-text-93a9b5 mt-0.5">{b.desc}</div>
@@ -15278,7 +15328,7 @@ function Codex({ onClose }) {
           <div className="pt-2 border-t cc-border-28363f">
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Credits</div>
             <p className="cc-text-13px cc-text-93a9b5">
-              Company and advance icons by {ICON_AUTHORS.join(", ")} from{" "}
+              Company, advance, building and landmark icons by {ICON_AUTHORS.join(", ")} from{" "}
               <span className="cc-text-c3d5de">game-icons.net</span>, used under the
               Creative Commons Attribution 3.0 licence.
             </p>
