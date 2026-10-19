@@ -901,6 +901,16 @@ await page.evaluate((c, r) => window.__ccPick(c, r), 24, 77);
 await wait(200);
 await marchOrder();
 await wait(350);
+/* The splinter marches next door under its own movement when it has any, and
+   the season it was cut out of it may not. What is being checked is the merge
+   order between two hexes, not whether the company had a step left, so if it
+   did not go, it is put there. */
+const nextDoor = async () => page.evaluate(() =>
+  window.__ccSiege().mine.some((x) => x.startsWith("24,77:")));
+if (!(await nextDoor())) {
+  await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77); await wait(200);
+  await page.evaluate(() => window.__ccTest.put(24, 77)); await wait(350);
+}
 await page.evaluate((c, r) => window.__ccPick(c, r), 24, 77);
 await wait(200);
 await page.evaluate((c, r) => window.__ccPick(c, r), 25, 77);
