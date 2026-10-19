@@ -62,6 +62,55 @@ html,body{height:100%;margin:0;padding:0;background:#080c10}
    screen shorter than ~1050px. Do not put cc-app and cc-page on one element —
    cc-app wins, because UI_CSS is injected after base.css. */
 .cc-page{min-height:100vh;height:auto;overflow-y:auto;flex:1 1 auto}
+/* ------------------------------- TEXTURE -----------------------------------
+   Every surface in this game was a flat fill, which reads as the wireframe of
+   a game rather than as a thing made of materials. These are the materials,
+   and like the audio they are synthesised rather than sampled: three noise
+   fields baked into data URIs. They cost nothing over the wire, need no
+   network and no files, and tile at whatever size the browser asks for.
+
+   Each one sits UNDER the fill as a blended background layer rather than over
+   the content as an overlay, so nothing is ever read through a texture and no
+   element needs a stacking context it did not already have. The strengths
+   were chosen by looking at the thing at the size it is actually used: enough
+   that a panel has a surface, not enough that anybody notices it is there.
+
+   The feature sizes are deliberately a few pixels rather than one. Noise at a
+   single pixel looks right at exactly 100% and turns into moire the moment
+   anything scales it — a zoomed map, a high-DPI screen, a browser at 110% —
+   and a texture that only survives one zoom level is worse than no texture. */
+.cc-root{
+  --cc-grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.5' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)' opacity='0.4'/%3E%3C/svg%3E");
+  --cc-tooth:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='t'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.34' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23t)' opacity='0.5'/%3E%3C/svg%3E");
+  --cc-brushed:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='128'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.005 0.22' numOctaves='1' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='320' height='128' filter='url(%23b)' opacity='0.22'/%3E%3C/svg%3E");
+}
+/* The header and the warband bar are the two pieces of chrome that frame the
+   map, and both are plate in the fiction. Streaked noise reads as brushed
+   metal at a glance and as nothing at all if you look straight at it. */
+/* Laid over the fill rather than blended into it. Both of these sit on a
+   near-black, and soft-light against near-black is arithmetic that returns
+   near-black — the streaks were there and invisible. */
+header.cc-plate,.cc-warbar{background-image:var(--cc-brushed)}
+/* The right-hand panel is the longest-lived surface on screen, so it gets the
+   finest grain and a light fall-off from the top rather than a hard edge. */
+aside.cc-sidetex{
+  background-image:var(--cc-grain),linear-gradient(180deg,rgba(143,227,214,.035),rgba(0,0,0,0) 160px);
+  background-blend-mode:soft-light,normal}
+/* Full-screen panels: the card itself, and the inner boxes on it. */
+.cc-bg-0d141a{background-image:var(--cc-grain);background-blend-mode:soft-light}
+.cc-bg-131f27{background-image:var(--cc-grain);background-blend-mode:soft-light}
+/* A scene is a thing somebody wrote down, so it gets paper tooth instead of
+   grain — coarser, and warm rather than neutral. */
+.cc-scenetex{background-image:var(--cc-tooth);background-blend-mode:soft-light}
+/* The dimmed map behind an overlay was flat black at 78%, which is the one
+   place a texture is doing real work: it stops the blur reading as a greyed
+   screenshot. */
+.cc-scrim{background-color:rgba(5,9,12,.78);background-image:var(--cc-grain);
+  background-blend-mode:soft-light;backdrop-filter:blur(3px)}
+/* Cards you click. Faint enough to survive being next to forty of themselves. */
+.cc-origin,.cc-pickcard,.cc-slot,.cc-sector,.cc-notice{
+  background-image:var(--cc-grain);background-blend-mode:soft-light}
+
 .cc-root{color:#ffffff;background:#080c10;font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif}
 .cc-root *{border-color:inherit}
 .disp{font-family:'Barlow Condensed','Inter',system-ui,sans-serif;font-weight:600;letter-spacing:.01em}
@@ -7704,7 +7753,7 @@ export default function ColdCoast() {
               }))} />
           )}
         </div>
-        <aside className="w-full cc-lg-w-352px shrink-0 border-t cc-lg-border-t-0 cc-lg-border-l cc-border-28363f cc-bg-0d141af2 flex flex-col min-h-0 cc-max-h-46vh cc-lg-max-h-none">
+        <aside className="cc-sidetex w-full cc-lg-w-352px shrink-0 border-t cc-lg-border-t-0 cc-lg-border-l cc-border-28363f cc-bg-0d141af2 flex flex-col min-h-0 cc-max-h-46vh cc-lg-max-h-none">
           <Sidebar
             game={game} P={P} nat={nat} sight={sight} selProv={selProv} selArmy={selArmy} atWar={atWar}
             onBuild={build} onRecruitOpen={(k) => setGame((g) => ({ ...g, recruit: k }))}
@@ -7874,7 +7923,7 @@ const RES_META = [
 
 function TopBar({ nat, income, turn, owned, armies, idle, pop, missions, onEnd, onCodex, sound, onSound, onLords, onSave, saveFailed, onScreen, onRoster }) {
   return (
-    <header className="shrink-0 border-b cc-border-28363f cc-bg-0a1015a90 backdrop-blur px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
+    <header className="cc-plate shrink-0 border-b cc-border-28363f cc-bg-0a1015a90 backdrop-blur px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-2">
       <div className="flex items-center gap-2.5 pr-5 border-r cc-border-28363f">
         {/* The court, at the top left, because that is where three decades of
             strategy games have taught everybody to look for their own face. */}
@@ -13759,7 +13808,7 @@ function SurveyModal({ sv, prov, onChoose, onClose }) {
   const gains = res ? Object.entries(res.res || {}).filter(([, v]) => v !== 0) : [];
   return (
     <Overlay onClose={res ? onClose : undefined}>
-      <div className="cc-w-620px cc-max-w-94vw rounded-lg border cc-border-31454f cc-bg-0d141a overflow-hidden">
+      <div className="cc-scenetex cc-w-620px cc-max-w-94vw rounded-lg border cc-border-31454f cc-bg-0d141a overflow-hidden">
         {prov && <TerrainArt t={prov.t} height={132} corner />}
         <div className="px-5 py-3 border-b cc-border-28363f"
           style={{ background: "linear-gradient(90deg,#14202a,#0d141a)" }}>
@@ -13952,7 +14001,7 @@ function EncounterScene({ enc, game, P, onAnswer }) {
   }, [taken]);
   return (
     <Overlay>
-      <div className="cc-w-680px cc-max-w-94vw cc-max-h-90vh rounded-lg border cc-border-8a6f36 cc-bg-0d141a overflow-hidden flex flex-col">
+      <div className="cc-scenetex cc-w-680px cc-max-w-94vw cc-max-h-90vh rounded-lg border cc-border-8a6f36 cc-bg-0d141a overflow-hidden flex flex-col">
         <div className="px-5 py-3.5 border-b cc-border-28363f flex items-center gap-3 shrink-0"
           style={{ background: `linear-gradient(90deg,${mix(fac.color || "#8a6f36", "#0d141a", 0.72)},#0d141a)` }}>
           <Sigil id={enc.who} size={20} color={fac.color} />
@@ -14089,7 +14138,7 @@ function EncounterScene({ enc, game, P, onAnswer }) {
 function ChapterScene({ chapter, onClose }) {
   return (
     <Overlay onClose={onClose}>
-      <div className="cc-w-620px cc-max-w-94vw rounded-lg border cc-border-31454f cc-bg-0d141a overflow-hidden">
+      <div className="cc-scenetex cc-w-620px cc-max-w-94vw rounded-lg border cc-border-31454f cc-bg-0d141a overflow-hidden">
         <div className="px-5 py-3.5 border-b cc-border-28363f flex items-center gap-3"
           style={{ background: "linear-gradient(90deg,#14202a,#0d141a)" }}>
           <Flag size={18} className="cc-text-8fe3d6" />
@@ -14498,7 +14547,7 @@ function RetainerScene({ id, game, P, onAnswer }) {
   const room = HOUSEHOLD_SLOTS - (nat.household || []).length;
   return (
     <Overlay onClose={() => onAnswer(id, false)}>
-      <div className="cc-w-660px cc-max-w-94vw rounded-lg border cc-border-31454f cc-bg-0d141a overflow-hidden">
+      <div className="cc-scenetex cc-w-660px cc-max-w-94vw rounded-lg border cc-border-31454f cc-bg-0d141a overflow-hidden">
         <div className="px-5 py-3.5 border-b cc-border-28363f flex items-center gap-3"
           style={{ background: "linear-gradient(90deg,#14202a,#0d141a)" }}>
           <svg viewBox="0 0 512 512" width="24" height="24" aria-hidden="true" style={{ color: "#8fe3d6" }}>
@@ -14549,7 +14598,7 @@ function WarhornScene({ who, game, P, onClose }) {
   const regard = game.regard?.[who];
   return (
     <Overlay onClose={onClose}>
-      <div className="cc-w-620px cc-max-w-94vw rounded-lg border cc-border-5a3230 cc-bg-0d141a overflow-hidden">
+      <div className="cc-scenetex cc-w-620px cc-max-w-94vw rounded-lg border cc-border-5a3230 cc-bg-0d141a overflow-hidden">
         <div className="px-5 py-3.5 border-b cc-border-2a1f1c flex items-center gap-3"
           style={{ background: "linear-gradient(90deg,#1e1210,#0d141a)" }}>
           <Sigil id={who} size={20} color={m.color} />
@@ -14605,7 +14654,7 @@ function MilestoneScene({ id, game, P, onChoose }) {
   const nat = game.nations[P];
   return (
     <Overlay>
-      <div className="cc-w-660px cc-max-w-94vw rounded-lg border cc-border-8a6f36 cc-bg-0d141a overflow-hidden">
+      <div className="cc-scenetex cc-w-660px cc-max-w-94vw rounded-lg border cc-border-8a6f36 cc-bg-0d141a overflow-hidden">
         <div className="px-5 py-3.5 border-b cc-border-2a1f1c flex items-center gap-3"
           style={{ background: "linear-gradient(90deg,#1e1710,#0d141a)" }}>
           <LordPortrait id={P} className="cc-lordthumb" small />
@@ -15448,8 +15497,7 @@ function GameOver({ over, onRestart }) {
 
 function Overlay({ children, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(5,9,12,.78)", backdropFilter: "blur(3px)" }}
+    <div className="cc-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={(e) => { if (onClose && e.target === e.currentTarget) onClose(); }}>
       {children}
     </div>
