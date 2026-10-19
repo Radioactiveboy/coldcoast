@@ -571,6 +571,185 @@ await clearScenes();
   await click("So it is said"); await wait(400);
 }
 
+/* ------------------------------- STANCES ----------------------------------
+   A warband used to have exactly one verb — walk somewhere — so a season was
+   only ever a question of which hex. What is checked here is that the other
+   four orders are real: that each takes effect the moment it is given, that
+   each costs something you can point at, and that the one the holdouts have
+   been using on you since the first season now runs the other way too.
+
+   It runs here rather than at the end because it wants warbands at something
+   like full strength on their own ground, and late in a hundred-season
+   campaign there may be none left; and after the opening regard checks rather
+   than before them, because a raid costs the people whose ground it was seven
+   regard and two of those checks are about what a people thinks of you before
+   you have done anything. Every figure is compared against the same
+   warband in column rather than against a constant: a captain's habits are
+   folded into the same numbers, so what a stance is worth is the difference
+   it makes, not the number it lands on.
+   ------------------------------------------------------------------------ */
+{
+  await closeOverlay();
+  const stances = () => page.evaluate(() => window.__ccWild().stances);
+  const chips = () => page.evaluate(() => [...document.querySelectorAll(".cc-stancebtn")]
+    .map((b) => `${b.textContent}${b.classList.contains("cc-stanceon") ? "*" : ""}${b.disabled ? "!" : ""}`));
+  const order = (name) => page.evaluate((n) => {
+    const b = [...document.querySelectorAll(".cc-stancebtn")].find((x) => x.textContent === n);
+    if (!b || b.disabled) return false;
+    b.click();
+    return true;
+  }, name);
+  let holding = null;
+  const held = async () => (await stances()).find((x) => x.startsWith(`${holding}@`)) || "";
+  const mp = (x) => +((x.match(/:mp(\d+)\//) || [])[1] || -1);
+  const hexOf = (x) => (x.match(/@(\d+),(\d+)(?::banner)?:/) || []).slice(1).map(Number);
+  const mods = (x) => ((x.split(":").find((pt) => /^[\d.]+\/[\d.]+\/[\d.]+\/[\d.]+$/.test(pt)) || "")
+    .split("/").map(Number));
+  const strOf = (id) => page.evaluate((who) =>
+    +(window.__ccWild().bands.find((x) => x.includes(`:${who}:`)) || ":0").split(":").pop(), id);
+
+  /* Whichever warband can actually be given an order, and never the one the
+     warlord is riding with. Men on a wall are the wall and are never asked,
+     so the candidates come off the debug line, which already leaves them out.
+     The banner is skipped by hand: forcing its march costs it men and nerve
+     going into the opening field, and a warlord who falls there takes the
+     court, the succession and twenty checks below here with him. */
+  const takeHold = async () => {
+    for (const row of await stances()) {
+      if (/:banner:/.test(row)) continue;
+      const at = (row.match(/@(\d+),(\d+)(?::banner)?:/) || []).slice(1).map(Number);
+      if (at.length !== 2) continue;
+      await page.evaluate(([c, r]) => window.__ccPick(c, r), at);
+      await wait(400);
+      if ((await chips()).length === 5) { holding = row.split("@")[0]; return at; }
+    }
+    return null;
+  };
+  const stood = await takeHold();
+  const atHome = await chips();
+  check("a warband has five orders and may not be turned loose at home",
+    !!stood && atHome.length === 5 && atHome.some((x) => /^Column\*/.test(x))
+      && atHome.includes("Raiding!"),
+    atHome.join(" ") || "no orders on screen");
+
+  const column = await held();
+  const [cDealt, cTaken, cMorale, cFlank] = mods(column);
+
+  // Forcing the march: two hexes in hand NOW, and it is paid for twice.
+  const forced = await order("Forced"); await wait(400);
+  const onForced = await held();
+  const [fDealt, , fMorale] = mods(onForced);
+  check("forcing the march puts two hexes in hand the moment it is ordered",
+    !!forced && mp(onForced) === mp(column) + 2 && fDealt < cDealt && fMorale > cMorale,
+    `${mp(column)} → ${mp(onForced)} movement, ${mods(column).join("/")} → ${mods(onForced).join("/")}`);
+
+  const strWas = await strOf(holding);
+  await click("End (spring|summer|autumn|winter)"); await wait(800);
+  await clearScenes();
+  if (await inBattle()) await fightOut();
+  const after = await held();
+  check("and it is paid for in men, and in a hex given back for as long as it is held",
+    (await strOf(holding)) < strWas && /tired_men/.test(after) && /forced_march_\+2/.test(after),
+    `${strWas} → ${await strOf(holding)} strong, allowance from ${(after.match(/:why\[(.*?)\]/) || [])[1] || "nothing"}`);
+
+  // Digging in: the movement goes into the ground and does not come back out.
+  await takeHold();
+  const base = await held();
+  const dug = await order("Dug in"); await wait(400);
+  const onDug = await held();
+  check("digging in puts the movement in the ground and hardens them",
+    !!dug && mp(onDug) === 0 && mods(onDug)[1] < mods(base)[1] && mods(onDug)[2] < mods(base)[2],
+    `${mp(base)} → ${mp(onDug)} movement, ${mods(base).join("/")} → ${mods(onDug).join("/")}`);
+
+  // Lying up: off everybody's map, and murderous to walk into.
+  const lay = await order("Lying up"); await wait(400);
+  const onLay = await held();
+  check("lying up takes them off the map and sharpens the ambush",
+    !!lay && /:hidden/.test(onLay) && mp(onLay) === 0
+      && mods(onLay)[3] > mods(base)[3] && mods(onLay)[0] > mods(base)[0],
+    onLay.replace(/^[^:]+:/, "") || "nothing");
+
+  /* And the verb the holdouts have been using on you. It wants the nearest
+     country belonging to somebody you are unavoidably at war with — a holdout,
+     or whoever is squatting the nearest ruin — because walking to some is a
+     dozen seasons and the raid is the thing under test, not the walk. */
+  /* Read off the list that carries everybody, set down or not: a few peoples
+     start out already pleased with you, so an absent entry is not fifty. */
+  const regardOf = async (id) => {
+    const rows = await page.evaluate(() => window.__ccWild().regardAll);
+    const row = rows.find((x) => x.startsWith(`${id}:`));
+    return row ? +row.split(":")[1] : null;
+  };
+  /* Whoever is squatting the nearest ruin for preference, and failing that any
+     ground that is not somebody's seat: a holdout's own seat is the subject of
+     a dozen checks further down this file, and a warband parked on it for the
+     rest of the run changes every one of them. */
+  const near = await page.evaluate(() => {
+    const rows = window.__ccWild().raidGround;
+    return rows.find((x) => x.includes(":wasters:")) || rows.find((x) => !x.endsWith(":seat")) || null;
+  });
+  if (!near) {
+    check("a warband on somebody else's country may be turned loose on it", false,
+      "nobody near enough to be at war with");
+  } else {
+    const at = near.split(":")[0].split(",").map(Number);
+    const victim = near.split(":")[1];
+    await page.evaluate(([c, r]) => { window.__ccTest.see(c, r); window.__ccTest.put(c, r); }, at);
+    await wait(500);
+    await takeHold();
+    const away = await chips();
+    const rode = await order("Raiding"); await wait(400);
+    check("a warband on somebody else's country may be turned loose on it",
+      !away.includes("Raiding!") && !!rode && /:raid:/.test(await held()),
+      `${near} — ${away.join(" ")}`);
+    const theirs = () => page.evaluate(([c, r]) => window.__ccHex(c, r).pop, at);
+    const popWas = await theirs();
+    const builtWas = await page.evaluate(([c, r]) => window.__ccHex(c, r).builds || null, at);
+    const regWas = await regardOf(victim);
+    await click("End (spring|summer|autumn|winter)"); await wait(900);
+    await clearScenes();
+    if (await inBattle()) await fightOut();
+    const said = await page.evaluate(() =>
+      [...document.querySelectorAll(".cc-notice")].map((x) => x.innerText.replace(/\n/g, " ")).join(" | "));
+    const line = (said.match(/have been loose on[^|]*/) || [])[0] || "";
+    /* Either they carried the place off or they wrecked what was standing on
+       it; both are the raid resolving, and which one is a roll. */
+    check("a raid strips the ground it is standing on",
+      /carry off \d+ scrap and \d+ rations/.test(line) || /out of use/.test(line),
+      line || `nothing said — their ${popWas} people, ${builtWas || "no works"}`);
+    const regNow = await regardOf(victim);
+    check("and whoever it belonged to hears about it",
+      regWas !== null && regNow !== null && regNow < regWas, `${victim} ${regWas} → ${regNow}`);
+  }
+  await closeOverlay();
+  /* Put the opening position back the way the suite found it. The raiding
+     warband is brought home and taken off the order, because a column of
+     yours left standing on somebody else's country is a different position
+     for every check below this one, and put back in hand on its own ground,
+     which is where the next check expects to find one. */
+  if (stood) {
+    const out = (await stances()).find((x) => /:raid:/.test(x));
+    if (out) {
+      await page.evaluate(([c, r]) => window.__ccPick(c, r), hexOf(out));
+      await wait(350);
+      await page.evaluate(([c, r]) => window.__ccTest.put(c, r), stood);
+      await wait(400);
+      await order("Column");
+      await wait(300);
+    }
+    /* ...and nobody is left lying in a treeline for the rest of the run. */
+    for (const row of await stances()) {
+      if (/:column:/.test(row) || /:banner:/.test(row)) continue;
+      await page.evaluate(([c, r]) => window.__ccPick(c, r), hexOf(row));
+      await wait(300);
+      await order("Column");
+      await wait(250);
+    }
+    await page.evaluate(([c, r]) => window.__ccPick(c, r), stood);
+    await wait(400);
+  }
+}
+
 /* Someone comes to the hall, and can be heard and answered. */
 await clearScenes();
 await page.evaluate(() => window.__ccTest.knock()); await wait(300);
@@ -1302,13 +1481,22 @@ const people = () => page.evaluate(() => window.__ccWild().people);
   await wait(300);
 
   // A season on the record is not won or lost. It simply passes.
-  const yearsWas = (await people()).hall.map((x) => x.match(/y(\d+)/)[1]).join(",");
+  const years = async () => {
+    const m = new Map();
+    (await people()).hall.forEach((x) => m.set(x.match(/#(\S+?):L/)[1], +x.match(/y(\d+)/)[1]));
+    return m;
+  };
+  const yearsWas = await years();
   await click("End (winter|spring|summer|autumn)"); await wait(900);
   await clearScenes();
-  const yearsNow = (await people()).hall.map((x) => x.match(/y(\d+)/)[1]).join(",");
+  const yearsNow = await years();
+  /* Keyed on the captain rather than their place in the list: a man can be
+     given a command or walk in off the road mid-season, and an index is not a
+     person. Only the ones who were in the hall before and after are asked. */
+  const both = [...yearsWas.keys()].filter((id) => yearsNow.has(id));
   check("a winter under your banner goes on a captain's record",
-    yearsWas !== yearsNow && yearsNow.split(",").every((y, i) => +y === +yearsWas.split(",")[i] + 1),
-    `${yearsWas} → ${yearsNow}`);
+    both.length > 0 && both.every((id) => yearsNow.get(id) === yearsWas.get(id) + 1),
+    both.map((id) => `${yearsWas.get(id)}→${yearsNow.get(id)}`).join(" ") || "nobody in the hall either side");
 
   /* Five fields is five battles this captain stood in, and whether a given run
      has given one of them five by now is the campaign's business, not this

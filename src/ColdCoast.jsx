@@ -23,6 +23,7 @@ import { CAPTAIN_NAMES, TRAITS, BORN_TRAITS, TRAIT_CLASH, LOYALTY, HONOUR_AT, HO
          HALL, appointCost, MARKS, MARK_IDS, markDue,
          WOUNDS, WOUND_IDS, WOUND_CHANCE,
          BONDS, BOND, bondKind } from "./data/captains.js";
+import { STANCES, STANCE_IDS, RAID } from "./data/stances.js";
 import { ORIGINS, ORIGIN_IDS } from "./data/origins.js";
 import { RANKS, rankOf, nextRank, XP_FIELD, XP_WON } from "./data/ranks.js";
 import { DISTRICT_POOL, SEAT_DISTRICTS, DISTRICT_COUNT } from "./data/districts.js";
@@ -547,6 +548,14 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-warbtngold:hover:not(:disabled){border-color:#f2c97a;background:#241d10}
 .cc-warbtngreen{border-color:#4a6b45;color:#d7ecc9;background:#1a2a1b}
 .cc-warbtngreen:hover:not(:disabled){border-color:#7fb06a;background:#22381f}
+/* What the warband is doing with the season, in a strip over the bar, read
+   left to right from the cheapest order to the loudest one. */
+.cc-stancerow{display:flex;gap:4px;align-self:flex-start;flex-wrap:wrap}
+.cc-stancebtn{padding:3px 10px;border:1px solid #22303a;border-radius:6px;font-size:11.5px;
+  color:#93a9b5;background:rgba(11,18,25,.94);transition:border-color .12s,color .12s,background .12s}
+.cc-stancebtn:hover:not(:disabled){border-color:#3d6470;color:#e5eef3}
+.cc-stancebtn:disabled{opacity:.38}
+.cc-stanceon{color:#f0e2b8;border-color:#8a6f36;background:rgba(26,22,16,.96)}
 .cc-wartabs{display:flex;gap:4px;align-self:flex-start;flex-wrap:wrap}
 .cc-wartab{padding:3px 10px;border:1px solid #22303a;border-radius:6px;font-size:11.5px;
   color:#93a9b5;background:rgba(11,18,25,.94);transition:border-color .12s,color .12s}
@@ -557,6 +566,7 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 @media (max-width:860px){
   .cc-warbar{position:fixed;left:0;right:0;bottom:0;width:auto;transform:none;z-index:40;align-items:stretch;gap:0}
   .cc-wartabs{align-self:stretch;padding:0 8px 4px}
+  .cc-stancerow{align-self:stretch;padding:0 8px 4px}
   .cc-warbody{flex-wrap:wrap;border-radius:0;border-left:0;border-right:0;border-bottom:0;max-height:62vh;overflow-y:auto}
   .cc-warhead{width:100%;border-right:0;border-bottom:1px solid #22303a}
   .cc-waracts{width:100%;border-left:0;border-top:1px solid #22303a;flex-direction:row;flex-wrap:wrap}
@@ -3451,6 +3461,25 @@ const warKey = (a, b) => [a, b].sort().join("|");
 /* A column only moves as fast as its slowest cart. One baggage train costs a
    point of movement; a second one is not free either, but it does not cost
    twice — the drovers are already going at the pace of the waggons. */
+/* What a warband is doing with the season. Every army that predates stances is
+   in column, which is what every army used to be unconditionally. */
+const stanceOf = (army) => STANCES[army?.stance] || STANCES.column;
+/* A warband lying up is off the road with no fires. Nobody reading a map sees
+   it; whoever marches onto the hex finds out. Men on a wall cannot hide — they
+   ARE the thing being looked at. */
+const lyingUp = (army) => !!stanceOf(army).hidden && !army.garrison;
+/* A stance reaches the line of battle through the same keys a habit does. */
+const STANCE_FIELD = ["dealt", "taken", "morale", "flank", "ranged"];
+/* Ground a warband may actually be turned loose on. Your own country is not
+   raidable and neither is a neutral's: the point of the order is that it is an
+   act of war you are already committed to. */
+function raidable(game, army) {
+  const on = game.provinces[key(army.c, army.r)];
+  if (!on || !on.owner || on.owner === army.owner) return null;
+  const at = isMinor(on.owner) || !!game.war[warKey(army.owner, on.owner)];
+  return at ? on : null;
+}
+
 const cartDrag = (army) => Math.min(2, army.units.reduce((n, u) =>
   n + (u.str > 0 ? (UNITS[u.type]?.slow || 0) : 0), 0));
 
@@ -3462,13 +3491,23 @@ function moveAllowance(game, army) {
   const edMove = ed.move || 0;
   const lordMove = lordMul(army.owner, nat).move || 0;
   const cartMove = -cartDrag(army);
+  const st = stanceOf(army);
+  const stMove = st.move || 0;
   const sign = (n) => `${n > 0 ? "+" : "\u2212"}${Math.abs(n)}`;
   const from = [];
   if (seaMove) from.push(`${sea.name.toLowerCase()} ${sign(seaMove)}`);
   if (edMove) from.push(`${ed.name.toLowerCase()} ${sign(edMove)}`);
   if (lordMove) from.push(`your warlord ${sign(lordMove)}`);
   if (cartMove) from.push(`the carts ${sign(cartMove)}`);
-  const total = Math.max(1, (army.maxMp || 0) + seaMove + edMove + lordMove + cartMove);
+  if (st.still) from.push(`${st.name.toLowerCase()} — they do not march`);
+  else if (stMove) from.push(`${st.name.toLowerCase()} ${sign(stMove)}`);
+  // The hex a forced march gives back for as long as it is held.
+  if (st.tires) from.push("tired men \u22121");
+  if (st.still) {
+    return { total: army.mp || 0, note: from.join(", ") };
+  }
+  const total = Math.max(1, (army.maxMp || 0) + seaMove + edMove + lordMove + cartMove
+    + stMove - (st.tires ? 1 : 0));
   // Movement was granted at the end of last season. Change an edict now and
   // these modifiers no longer describe what the warband is carrying — it has
   // more than the sum says, and the change bites at the turn of the season.
@@ -3615,7 +3654,7 @@ function nationIncome(state, natId, turn) {
   const keep = (ed.upkeep || 1) * lord.upkeep;
   state.armies.filter((a) => a.owner === natId).forEach((a) => {
     const sup = supplyOf(state.provinces, state.nations?.[natId], natId, a);
-    const draw = sup.band.draw * (sup.band.d > 0 ? sup.cap.draw : 1);
+    const draw = sup.band.draw * (sup.band.d > 0 ? sup.cap.draw : 1) * (stanceOf(a).draw || 1);
     a.units.forEach((u) => {
       const st = unitStats(u);
       let f = st.food;
@@ -3733,34 +3772,13 @@ function sidePower(units, stance, hasPowder) {
 }
 const FRONTAGE = 340;
 
-const STANCES = {
-  press:    { name: "Press the attack", deal: 1.3,  take: 1.15, morale: 1.0, ranged: 1.0, desc: "Close hard. Wins open ground, bleeds you on bad ground." },
-  hold:     { name: "Hold the line",    deal: 0.85, take: 0.8,  morale: 0.9,  ranged: 1.0, desc: "Give up tempo to keep your companies together." },
-  volley:   { name: "Volley fire",      deal: 1.0,  take: 1.0,  morale: 1.0,  ranged: 1.4, melee: 0.5, powder: 2, ignoresGround: 0.5, desc: "Shell them rather than storm them. Halves their ground advantage and burns double powder. Useless without guns." },
-  withdraw: { name: "Break off",        deal: 0.4,  take: 1.4,  morale: 1.15,  ranged: 0.5, desc: "Quit the field and eat one parting volley." },
-};
-
-/* The short labels under each order in the battle screen. Every stance is a
-   trade and this is the trade, in the fewest words that still say which way it
-   runs. Note the polarity on morale: the multiplier scales how much nerve a
-   company LOSES, so under one is the good direction — the same reading the
-   warlord screen already uses when it says "nerve holds -12%". */
-function stanceChips(id) {
-  const s = STANCES[id];
-  if (!s) return [];
-  const pct = (v) => `${v > 1 ? "+" : "\u2212"}${Math.round(Math.abs(v - 1) * 100)}%`;
-  const out = [];
-  if (s.deal && s.deal !== 1) out.push({ t: `${pct(s.deal)} dealt`, good: s.deal > 1 });
-  if (s.take && s.take !== 1) out.push({ t: `${pct(s.take)} taken`, good: s.take < 1 });
-  if (s.ranged && s.ranged !== 1) out.push({ t: `${pct(s.ranged)} shooting`, good: s.ranged > 1 });
-  if (s.melee && s.melee !== 1) out.push({ t: `${pct(s.melee)} in the press`, good: s.melee > 1 });
-  if (s.morale && s.morale !== 1) {
-    out.push({ t: `nerve ${s.morale < 1 ? "holds" : "breaks"} ${pct(s.morale)}`, good: s.morale < 1 });
-  }
-  if (s.ignoresGround) out.push({ t: "halves their ground", good: true });
-  if (s.powder) out.push({ t: `${s.powder}\u00d7 powder`, good: false });
-  return out;
-}
+/* There used to be a second posture table here, and a function that drew chips
+   off it, both left behind when the orders moved to data/battle.js. Neither was
+   reachable and the numbers in it had drifted from the ones the battle actually
+   used — a withdraw order that no longer exists, a hold that gave the wrong
+   figures — so a reader who wired the chips up would have shipped three wrong
+   percentages. The posture buttons say their trade in their tooltip. The name
+   STANCES belongs to the campaign table in data/stances.js now. */
 
 function resolveRound(bt) {
   const b = { ...bt, log: [...bt.log] };
@@ -3949,11 +3967,15 @@ function fieldCommand(army, storming, nat) {
   const lord = army.lord ? commandMul(army.owner) : { dealt: 1, taken: 1, morale: 1 };
   const cap = captainMods(army);
   const realm = realmCommand(nat);
+  // What the warband spent the season doing is on the field with it.
+  const st = stanceOf(army);
+  const s = {};
+  STANCE_FIELD.forEach((k) => { s[k] = st[k] || 1; });
   return {
-    dealt: lord.dealt * cap.dealt * realm.dealt * (storming ? cap.storm * realm.storm : 1),
-    taken: lord.taken * cap.taken * realm.taken,
-    morale: lord.morale * cap.morale * realm.morale,
-    flank: cap.flank * realm.flank, ranged: cap.ranged * realm.ranged,
+    dealt: lord.dealt * cap.dealt * realm.dealt * s.dealt * (storming ? cap.storm * realm.storm : 1),
+    taken: lord.taken * cap.taken * realm.taken * s.taken,
+    morale: lord.morale * cap.morale * realm.morale * s.morale,
+    flank: cap.flank * realm.flank * s.flank, ranged: cap.ranged * realm.ranged * s.ranged,
   };
 }
 
@@ -3977,6 +3999,8 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
   if (isMinor(defender.owner)) defenderBonus += MINORS[defender.owner].defBonus;
   // What a threat at first meeting cost you: they cut the face back and ranged it.
   defenderBonus += prov.hard || 0;
+  // ...and what a warband that spent the season digging did to the same ground.
+  if (!storming) defenderBonus += stanceOf(defender).dug || 0;
   defenderBonus += seatDefence(prov);
   return {
     round: 1,
@@ -3998,8 +4022,10 @@ function makeBattle(provinces, nations, armies, aId, dId, k) {
     aLord: fieldCommand(attacker, !!storming, nations[attacker.owner]),
     dLord: fieldCommand(defender, false, nations[defender.owner]),
     aCommander: !!attacker.lord, dCommander: !!defender.lord,
-    aScout: captainMods(attacker).scout + realmCommand(nations[attacker.owner]).scout,
-    dScout: captainMods(defender).scout + realmCommand(nations[defender.owner]).scout,
+    aScout: captainMods(attacker).scout + realmCommand(nations[attacker.owner]).scout
+      + (stanceOf(attacker).scout || 0),
+    dScout: captainMods(defender).scout + realmCommand(nations[defender.owner]).scout
+      + (stanceOf(defender).scout || 0),
     log: [{
       t: "open",
       m: storming
@@ -4964,6 +4990,29 @@ export default function ColdCoast() {
     Sound.play("march");
     attemptMove(a, t);
   }
+  /* What this warband is for, this season. A stance takes effect the moment it
+     is given rather than at the turn of the season — a column told to force the
+     march has the extra ground in hand now, and pays for it in men at the turn
+     of the season and in a short season after that; a warband told to dig in
+     has put its movement into the ground and does not get it back by changing
+     its mind an hour later. */
+  function setStance(armyId, id) {
+    setGame((g) => {
+      const a = g.armies.find((x) => x.id === armyId);
+      if (!a || a.owner !== P || a.garrison || !STANCES[id] || a.stance === id) return g;
+      const was = stanceOf(a), now = STANCES[id];
+      if (now.needsEnemyGround && !raidable(g, a)) return g;
+      const mp = now.still ? 0
+        : Math.max(0, (a.mp || 0) - (was.still ? 0 : (was.move || 0)) + (now.move || 0));
+      Sound.play("march");
+      return {
+        ...g,
+        armies: g.armies.map((x) => (x.id === armyId ? { ...x, stance: id, mp } : x)),
+        log: [{ turn: g.turn, m: `${a.name} — ${now.name.toLowerCase()}. ${now.desc}` }, ...g.log].slice(0, 60),
+      };
+    });
+  }
+
   function march(armyId, k) {
     const a = game.armies.find((x) => x.id === armyId);
     const t = game.provinces[k];
@@ -5395,7 +5444,14 @@ export default function ColdCoast() {
      or have not. Whether a given campaign has thrown up a pair is a winter in
      eleven, and what wants checking is what the far end of a bond does. */
   if (typeof window !== "undefined") window.__ccTie = (kind) => setGame((g) => {
-    const mine = myCaptains(g).filter((c) => !c.bond);
+    /* Only the two places a bond is actually written — leading a warband, or
+       waiting in the hall. A man in a post counts as still yours for the
+       purpose of keeping a bond alive, but he is not in the field and nothing
+       here can write to him, so tying him would leave a one-ended bond. */
+    const mine = [
+      ...g.armies.filter((a) => a.owner === P && a.captain).map((a) => a.captain),
+      ...((g.nations[P]?.hall) || []),
+    ].filter((c) => !c.bond);
     if (mine.length < 2) return g;
     const [one, two] = mine;
     const tie = (c) => (c.id === one.id ? { ...c, bond: { who: two.id, kind, since: g.turn } }
@@ -6721,7 +6777,10 @@ export default function ColdCoast() {
             if (!opts.length) break;
             const score = (p) => {
               let s = 0;
-              const other = armies.find((z) => z.c === p.c && z.r === p.r && z.owner !== id);
+              /* A warband lying up is not scored for or against, because the
+                 realm cannot see it. The march still finds it, below, which is
+                 the whole of what an ambush is. */
+              const other = armies.find((z) => z.c === p.c && z.r === p.r && z.owner !== id && !lyingUp(z));
               // With most of the continent unclaimed, expansion should out-rank
               // conquest — otherwise everyone dogpiles their nearest neighbour
               // and the empty map goes to waste.
@@ -7145,6 +7204,75 @@ export default function ColdCoast() {
             }
           }
         });
+      }
+
+      /* --- your own bands, off the leash ---
+         The holdouts have been stripping your country since the first season
+         and there has never been a verb for doing it back: you could take
+         somebody's ground or you could leave it alone. A warband standing on
+         the country of somebody you are already at war with, told to raid,
+         works it — the barns, the pens, the carts and whoever is slow getting
+         away from them. It pays in scrap, rations and recruits; all three come
+         off the province and its owner rather than out of the air; and
+         everybody who can see a map hears about it. */
+      {
+        const rnd = ([lo, hi]) => lo + Math.floor(Math.random() * (hi - lo + 1));
+        const stripped = [];
+        armies.filter((a) => a.owner === g.player && !a.garrison && a.stance === "raid")
+          .forEach((a) => {
+            const k = key(a.c, a.r);
+            const on = provinces[k];
+            if (!on || !on.owner || on.owner === g.player) return;
+            if (!(isMinor(on.owner) || war[warKey(g.player, on.owner)])) return;
+            const took = [];
+            /* Something standing is worth more wrecked than carried: a band
+               that finds a works on the ground puts it out of use instead. */
+            const spoil = doneBuilds(on).find((b) => !b.damaged);
+            if (spoil && Math.random() < RAID.wreck) {
+              provinces[k] = { ...on,
+                builds: buildsOf(on).map((b) => (b === spoil ? { ...b, damaged: true } : b)) };
+              took.push(`put the ${buildName(spoil).toLowerCase()} at ${on.name} out of use`);
+            } else {
+              const scrap = rnd(RAID.scrap), food = rnd(RAID.food);
+              const heads = Math.min(rnd(RAID.heads), Math.max(0, Math.floor(on.pop || 0)));
+              const res = { ...nations[g.player].res };
+              res.scrap += scrap; res.food += food; res.men += heads;
+              nations[g.player] = { ...nations[g.player], res };
+              /* It comes off them, not out of the air — and some of the heads
+                 never go home, so ground raided twice pays less for years. */
+              const vn = nations[on.owner];
+              if (vn) {
+                nations[on.owner] = { ...vn, res: { ...vn.res,
+                  scrap: Math.max(0, (vn.res.scrap || 0) - scrap),
+                  food: Math.max(0, (vn.res.food || 0) - food) } };
+              }
+              provinces[k] = { ...on, pop: Math.max(0, (on.pop || 0) - Math.round(heads * RAID.pop)) };
+              took.push(`carry off ${scrap} scrap and ${food} rations from ${on.name}`);
+              if (heads > 0) took.push(`drive ${heads} of its people back with them`);
+            }
+            stripped.push({ name: a.name, who: on.owner, k, what: took.join(", and ") });
+          });
+        if (stripped.length) {
+          const regard = { ...(g.regard || {}) };
+          const hit = new Set(stripped.map((x) => x.who));
+          const move = (id, d) => {
+            regard[id] = Math.max(0, Math.min(100, (regard[id] ?? regardStart(id)) + d));
+          };
+          /* Whose ground it was takes it personally, whether or not you had
+             been introduced — being robbed is its own introduction. Everybody
+             else files it under what your banner is like, and only the ones
+             you have actually met have a file. */
+          hit.forEach((id) => { if (id !== g.player) move(id, RAID.regard); });
+          Object.keys(g.met || {}).forEach((id) => {
+            if (id === g.player || hit.has(id)) return;
+            move(id, RAID.watching);
+          });
+          g = { ...g, regard };
+          stripped.forEach((x) => {
+            newLog.push({ turn: g.turn, m: `${x.name} ${x.what}.` });
+            notice("raid", `${x.name} have been loose on ${nations[x.who]?.short || "their"} ground — they ${x.what}.`, x.k);
+          });
+        }
       }
 
       /* --- the holdouts ---
@@ -7667,7 +7795,8 @@ export default function ColdCoast() {
         const sup = supplyOf(provinces, nat, a.owner, a);
         const ease = nat?.known?.quartering ? QUARTER_EASE : 1;
         const hard = HARD_GROUND[provinces[key(a.c, a.r)]?.t] || 1;
-        const waste = sup.band.waste * hard * cold * ease * sup.cap.waste;
+        const st = stanceOf(a);
+        const waste = sup.band.waste * hard * cold * ease * sup.cap.waste + (st.waste || 0);
         const shake = Math.round(sup.band.morale * ease);
         if (a.owner === g.player && sup.d >= 3) starving.push(a.name);
         /* The captain remembers the season. Fed, they think a little better of
@@ -7702,10 +7831,17 @@ export default function ColdCoast() {
           })),
           // Men on a wall are given no movement, ever. Everything else gets at
           // least a step however bad the season and however heavy the carts.
-          mp: a.garrison ? 0
+          /* Men on a wall are given no movement, ever, and neither is a
+             warband that spent the season in a hole or in a treeline. */
+          mp: a.garrison || st.still ? 0
             : Math.max(1, a.maxMp + ((EDICTS[nations[a.owner]?.edict || "none"] || EDICTS.none).move || 0)
             + lordMul(a.owner, nations[a.owner]).move + seasonOf(g.turn + 1).move - cartDrag(a)
-            - (a.tired ? 1 : 0)),
+            /* A forced march is paid for twice over: once in men at the turn
+               of the season, and once in a hex given back for as long as it is
+               held — which is why two hexes the moment it is ordered settles to
+               one if nobody calls a halt. `tired` is the horse spent running a
+               beaten army down, and is spent in one season. */
+            + (st.move || 0) - (a.tired || st.tires ? 1 : 0)),
         };
       }).map((a) => ({ ...a, units: a.units.filter((u) => u.str > 0) }))
         .filter((a) => a.units.length > 0);
@@ -8021,6 +8157,7 @@ export default function ColdCoast() {
                 onDeselect={deselect} onRename={renameArmy} onCommand={setCommander}
                 onHall={(aid) => setGame((g) => ({ ...g, hall: aid || "open" }))}
                 onReinforce={reinforce} onSplit={splitUnit} onTake={takeCommand} onMerge={mergeInto}
+                onStance={setStance}
                 onDisband={(aid, uid) => setGame((g) => ({
                   ...g,
                   armies: g.armies.map((a) => a.id === aid ? { ...a, units: a.units.filter((u) => u.id !== uid) } : a).filter((a) => a.units.length),
@@ -9505,6 +9642,9 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
       const pSide = b.aNat === gameRef.current.player ? "a" : b.dNat === gameRef.current.player ? "d" : null;
       return {
         round: b.round, over: !!b.over, winner: b.winner || null, stalemate: !!b.stalemate,
+        // What the ground is worth to whoever is standing on it, which is
+        // otherwise only legible as a sentence in the opening line of the log.
+        def: `${b.terrainDef}+${b.defenderBonus}`,
         // What your outriders actually brought back: 0 nothing, 1 numbers, 2 names.
         seen: pSide ? scoutLevel(b[pSide].units, b[`${pSide}Scout`] || 0) : null,
         said: b.lastExchange ? { a: b.lastExchange.aCas, d: b.lastExchange.dCas } : null,
@@ -9563,6 +9703,25 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           .map((p) => `${p.name}:${p.hard}:${game.armies.filter((a) => a.c === p.c && a.r === p.r)
             .reduce((n, a) => n + a.units.length, 0)}`),
         regard: Object.entries(game.regard || {}).map(([k, v]) => `${k}:${v}`),
+        /* ...and what every people on the coast thinks of you whether or not
+           anything has been written down yet, because a few of them start out
+           already pleased and "no entry" is not the same as fifty. */
+        regardAll: NATION_IDS.concat(MINOR_IDS)
+          .filter((id) => id !== game.player)
+          .map((id) => `${id}:${game.regard?.[id] ?? regardStart(id)}`),
+        /* The nearest ground belonging to somebody you are unavoidably at war
+           with, nearest first. A warband has to be standing on country like
+           this before it can be turned loose on it, and finding some by
+           playing is a dozen seasons' walk. */
+        raidGround: (() => {
+          const seat = all.find((q) => q.owner === game.player && q.capital);
+          if (!seat) return [];
+          return all
+            .filter((q) => q.owner && q.owner !== game.player && isMinor(q.owner) && (q.pop || 0) > 60)
+            .sort((x, y) => hexDist(seat.c, seat.r, x.c, x.r) - hexDist(seat.c, seat.r, y.c, y.r))
+            .slice(0, 8)
+            .map((q) => `${key(q.c, q.r)}:${q.owner}:${Math.round(q.pop)}${q.seat || q.capital ? ":seat" : ""}`);
+        })(),
         // The standing arrangements, which are otherwise only legible by
         // reading the ledger line by line.
         pacts: Object.entries(game.pacts || {}).map(([k, v]) => `${k}:${v}`),
@@ -9605,6 +9764,20 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
             seen: seenSet(game.provinces, game.armies, game.player, game.nations).size,
           };
         })(),
+        /* What each of your warbands is doing with the season, what that is
+           worth to it on the field, and whether anybody can see it. */
+        stances: game.armies.filter((a) => a.owner === game.player && !a.garrison)
+          .map((a) => {
+            const st = stanceOf(a);
+            const fc = fieldCommand(a, false, game.nations[game.player]);
+            return `${a.id}@${key(a.c, a.r)}${a.lord ? ":banner" : ""}:${a.stance || "column"}`
+              + `:mp${a.mp}/${moveAllowance(game, a).total}`
+              + `:${["dealt", "taken", "morale", "flank"].map((k) => fc[k].toFixed(2)).join("/")}`
+              + `${st.hidden ? ":hidden" : ""}${raidable(game, a) ? ":onenemyground" : ""}`
+              // ...and where the allowance came from, which is the only way to
+              // see from outside that a forced march is giving a hex back.
+              + `:why[${moveAllowance(game, a).note.replace(/\s+/g, "_")}]`;
+          }),
         /* How far each of your warbands can see, which used to be one hex for
            everybody whatever they were carrying. */
         reach: game.armies.filter((a) => a.owner === game.player)
@@ -11356,7 +11529,7 @@ function RankLine({ u }) {
    All of this used to live in the right-hand panel, which then had no room
    left to talk about the ground you were standing on. */
 function WarbandBar({ game, P, army, sameHex, onDeselect, onRename, onHall, onCommand,
-  onReinforce, onSplit, onDisband, onTake, onMerge }) {
+  onReinforce, onSplit, onDisband, onTake, onMerge, onStance }) {
   const [open, setOpen] = useState(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(army.name);
@@ -11382,6 +11555,29 @@ function WarbandBar({ game, P, army, sameHex, onDeselect, onRename, onHall, onCo
 
   return (
     <div className="cc-warbar">
+      {/* The orders a warband can be given that are not "walk somewhere".
+          Raiding is greyed out unless they are actually standing on the
+          country of somebody you are at war with, which is the only ground
+          anybody is allowed to be turned loose on. */}
+      {own && !army.garrison && (
+        <div className="cc-stancerow">
+          {STANCE_IDS.map((id) => {
+            const st = STANCES[id];
+            const on = (army.stance || "column") === id;
+            const can = !st.needsEnemyGround || !!raidable(game, army);
+            return (
+              <button key={id} type="button" disabled={!on && !can}
+                onClick={() => onStance(army.id, id)}
+                title={on ? `${st.name} — ${st.desc}`
+                  : can ? `${st.verb} — ${st.desc} ${st.note}`
+                  : "Only on the country of somebody you are already at war with."}
+                className={`cc-stancebtn ${on ? "cc-stanceon" : ""}`}>
+                {st.short || st.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {mates.length > 0 && (
         <div className="cc-wartabs">
           <span className="cc-wartab cc-wartabon">{army.name} <span className="num">· {army.units.length}</span></span>
@@ -11492,6 +11688,11 @@ function WarbandBar({ game, P, army, sameHex, onDeselect, onRename, onHall, onCo
               : <span className="cc-text-e8b98a"> · full</span>)}
           </div>
 
+          {own && army.stance && army.stance !== "column" && (
+            <div className="cc-text-11d5px cc-text-f2c97a" title={stanceOf(army).desc}>
+              {stanceOf(army).name} — <span className="cc-text-a7bac6">{stanceOf(army).note}</span>
+            </div>
+          )}
           {own && (
             <div className="cc-text-11d5px cc-text-93a9b5" title={allow.note}>
               <span className="num">{army.mp}</span> of <span className="num">{allow.total}</span> movement
@@ -15658,6 +15859,11 @@ function RosterPanel({ game, P, sight, atWar, onClose, onPick }) {
             </span>
             {own && (
               <span className="ml-auto shrink-0 flex items-center gap-2">
+                {/* A roll that does not say which warbands are in a hole and
+                    which are on the road is a roll you have to click through. */}
+                {a.stance && a.stance !== "column" && (
+                  <span className="cc-text-f2c97a" title={stanceOf(a).desc}>{stanceOf(a).short.toLowerCase()}</span>
+                )}
                 <span className={tone}>{sup.band.name.toLowerCase()}</span>
                 <span className={`num ${a.mp > 0 ? "cc-text-8fe3d6" : "cc-text-6f8794"}`}>{a.mp}/{a.maxMp} mv</span>
               </span>

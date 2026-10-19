@@ -13,7 +13,15 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 17: a captain is a person. Every captain now carries the rest of a record —
+/* 18: a warband is doing something with the season. Every army now carries a
+   stance — in column, forced march, dug in, lying up, raiding — and three of
+   those five change what it has in hand, what it eats, what it loses and how
+   it fights, while one of them hides it from everybody's map. A version 17
+   save has no stance on anything, which would load as every warband in column:
+   survivable in itself, except that the movement already granted was granted
+   under the old rules, so a band that had forced its march would load with two
+   hexes it has no reason to have and no short season coming to pay for them.
+   17: a captain is a person. Every captain now carries the rest of a record —
    lines of theirs that went, winters under your banner — the marks they have
    been asked about and which of the two ways each one hardened, the wounds a
    field took off them and is not giving back, and whichever other captain of
@@ -84,7 +92,7 @@ export const SAVE_KEY = "coldcoast.save";
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 17;
+export const SAVE_VERSION = 18;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight
