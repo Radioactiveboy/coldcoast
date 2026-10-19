@@ -13,7 +13,16 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 16: three more peoples hold ground — the Holtfolk in the Gallian wood, the
+/* 17: a captain is a person. Every captain now carries the rest of a record —
+   lines of theirs that went, winters under your banner — the marks they have
+   been asked about and which of the two ways each one hardened, the wounds a
+   field took off them and is not giving back, and whichever other captain of
+   yours they have taken to or have not. A version 16 save has none of it, so
+   each of its captains would load with no routs, no winters and no marks
+   answered, and the first winter after loading would hand every one of them
+   five fields' worth of marks at once for a war they fought before the game
+   could see it.
+   16: three more peoples hold ground — the Holtfolk in the Gallian wood, the
    Fentaken out on the fresh Balt and the Combers on the eastern rim of the
    flats — and four more hexes are named places, two of them carrying the only
    stories on the map that are about the wars fought before the Collapse
@@ -75,7 +84,7 @@ export const SAVE_KEY = "coldcoast.save";
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 16;
+export const SAVE_VERSION = 17;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight

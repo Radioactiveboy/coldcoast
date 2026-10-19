@@ -148,6 +148,18 @@ const clearScenes = async () => {
       return false;
     });
     if (habit) { await wait(350); continue; }
+    /* And a captain's mark, which is the same scene for the people who do the
+       fighting and modal in exactly the same way. One of these left standing
+       swallows every click aimed at the map behind it. */
+    const settled = await page.evaluate(() => {
+      const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")]
+        .find((x) => /Something has settled in them/.test(x.innerText));
+      if (!ov) return false;
+      const b = [...ov.querySelectorAll("button")].filter((x) => !x.getAttribute("aria-label"));
+      if (b.length) { b[0].click(); return true; }
+      return false;
+    });
+    if (settled) { await wait(350); continue; }
     const open = await page.evaluate(() => {
       const t = [...document.querySelectorAll(".fixed.inset-0.z-50")].map((x) => x.innerText).join("\n");
       return /What do you say to them\?|Choose what you say|So it is said/.test(t);
@@ -1276,6 +1288,128 @@ const courtTab = async (name) => {
   await closeOverlay();
 }
 
+/* ------------------------------- CAPTAINS ---------------------------------
+   A captain used to be two habits and a loyalty bar. The thing being checked
+   here is that they are now a person: that a mark comes true off their own
+   record and not the realm's, that answering it writes one of two habits on
+   that one captain, that a wound reaches the companies and never heals, and
+   that there is a page which reads all of it back as a life.
+   ------------------------------------------------------------------------ */
+const people = () => page.evaluate(() => window.__ccWild().people);
+{
+  await closeOverlay();
+  await page.evaluate(() => window.__ccTest.hall());
+  await wait(300);
+
+  // A season on the record is not won or lost. It simply passes.
+  const yearsWas = (await people()).hall.map((x) => x.match(/y(\d+)/)[1]).join(",");
+  await click("End (winter|spring|summer|autumn)"); await wait(900);
+  await clearScenes();
+  const yearsNow = (await people()).hall.map((x) => x.match(/y(\d+)/)[1]).join(",");
+  check("a winter under your banner goes on a captain's record",
+    yearsWas !== yearsNow && yearsNow.split(",").every((y, i) => +y === +yearsWas.split(",")[i] + 1),
+    `${yearsWas} → ${yearsNow}`);
+
+  /* Five fields is five battles this captain stood in, and whether a given run
+     has given one of them five by now is the campaign's business, not this
+     check's. The mark is what wants testing. */
+  await page.evaluate(() => window.__ccTest.mark("fields"));
+  await wait(300);
+  let scene = null;
+  for (let i = 0; i < 10 && !scene; i++) {
+    await click("End (winter|spring|summer|autumn)"); await wait(900);
+    scene = await page.evaluate(() => {
+      const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")]
+        .find((x) => /Something has settled in them/.test(x.innerText));
+      return ov ? ov.innerText : null;
+    });
+    if (!scene) await clearScenes();
+  }
+  check("five fields of their own asks the captain a question",
+    !!scene && /Five fields/.test(scene) && /A quick eye/.test(scene) && /Stubborn/.test(scene),
+    scene ? scene.split("\n")[0] : "no scene in ten seasons");
+
+  const dueWas = (await people()).due;
+  const took = scene && await page.evaluate(() => {
+    const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")]
+      .find((x) => /Something has settled in them/.test(x.innerText));
+    const b = [...ov.querySelectorAll("button")].filter((x) => !x.getAttribute("aria-label"));
+    if (b.length) { b[0].click(); return true; }
+    return false;
+  });
+  await wait(600);
+  const after = await people();
+  /* The record lists every mark answered, and a long campaign may well have
+     answered one of the others first — ten winters comes true on its own. */
+  const marked = [...after.led, ...after.hall].find((x) => /:marks[^:]*blooded/.test(x));
+  check("the answer is written on that captain and nobody else",
+    !!took && !!marked && /quickeye/.test(marked)
+      && [...after.led, ...after.hall].filter((x) => /quickeye/.test(x)).length === 1
+      && after.due === null,
+    marked || `${dueWas || "nothing due"} → nothing marked among ${[...after.led, ...after.hall].join(" ")}`);
+
+  /* A wound is a three-in-ten roll on an afternoon that went badly, and it is
+     not a habit: nobody chose it, nothing takes it away, and it has to reach
+     the companies or it is only a line of text. */
+  const hurtWas = after.hall[0];
+  await page.evaluate(() => window.__ccTest.hurt());
+  await wait(400);
+  const hurtNow = (await people()).hall[0];
+  const does = (x) => x.split(":does")[1];
+  check("a wound reaches the companies and does not heal",
+    hurtWas.split(":hurt")[1].startsWith("-") && !hurtNow.split(":hurt")[1].startsWith("-")
+      && does(hurtWas) !== does(hurtNow),
+    `${hurtWas.split(":hurt")[1]} → ${hurtNow.split(":hurt")[1]}`);
+
+  /* Two of them have an opinion about each other. A bond is mutual or it is
+     nothing: the point of it is that a field one of them fights reaches the
+     other, who was not there, so both ends have to be written. */
+  await page.evaluate(() => window.__ccTest.tie("rival"));
+  await wait(400);
+  /* Checking the invariant rather than the pair that was just made: by this
+     point a long campaign has usually thrown up a bond or two of its own, and
+     every one of them has to point back at somebody who points back. */
+  const ppl = await people();
+  const rows = [...ppl.led, ...ppl.hall, ...ppl.posts, ...ppl.held].map((x) => ({
+    name: x.split("@")[0],
+    id: (x.match(/#(\S+?):L/) || [])[1],
+    bond: (x.match(/:tied(?:friend|rival):(\S+?):does/) || [])[1] || null,
+  }));
+  const by = new Map(rows.map((r) => [r.id, r]));
+  const live = rows.filter((r) => r.bond);
+  const mirrored = live.filter((r) => by.get(r.bond)?.bond === r.id);
+  check("a bond is written at both ends or it is nothing",
+    live.length >= 2 && mirrored.length === live.length,
+    `${live.length} tied, ${mirrored.length} of them mirrored — ${live.map((r) => r.name).join(" / ") || "nobody"}`);
+
+  // ...and the page that reads a captain back as a life rather than a column.
+  await page.evaluate(() => { const x = document.querySelector('[aria-label="Court"]'); if (x) x.click(); });
+  await wait(450);
+  await courtTab("The court");
+  await click("The hall|Open the hall"); await wait(450);
+  /* Whoever was just wounded, because the page has a section for it and the
+     rest of the hall has nothing to put in it. */
+  const whose = hurtNow.split("@")[0];
+  const page1 = await page.evaluate((nm) => {
+    const b = [...document.querySelectorAll("button")].find((x) => x.textContent === `Captain ${nm}`);
+    if (!b) return null;
+    b.click();
+    return true;
+  }, whose);
+  await wait(450);
+  const life = await page.evaluate(() => {
+    const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")]
+      .find((x) => /Came to your hall|Marks —/.test(x.innerText));
+    return ov ? ov.innerText : null;
+  });
+  check("a captain's name opens a page that reads as a life",
+    !!page1 && !!life && /Came to your hall/.test(life) && /Marks — \d of 5 answered/.test(life)
+      && /What the fields took/.test(life) && /Will not stand next to/.test(life),
+    life ? life.split("\n").slice(0, 3).join(" · ") : "no page");
+  await closeOverlay();
+  await closeOverlay();
+}
+
 /* Three peoples further out than the Albion five, each doing something none of
    the others do: a wood that makes ground rather than taking it, a people who
    hold water, and the purest form of the raiding holdout. */
@@ -1537,7 +1671,19 @@ check("forty seasons pass", seasons === 40, `${seasons}${seasons < 40 ? ` — ${
     bg.every((h) => ["27,79", "28,79", "28,80", "29,80", "27,81"].includes(h)), bg.join(" "));
   check("Holk have taken more of the flats", held > 1, one("holk"));
   check("Wight has bands out on the silt", bands > 0 || /broken/.test(one("skinless")), one("skinless"));
-  const dome = one("domesayers"), bret = one("bretons");
+  const bret = one("bretons");
+  /* Rune's crusade is sampled rather than counted: a band that went out and
+     was killed leaves nothing behind, so one unlucky instant used to read as
+     a people that had never sent anybody anywhere. Take the best of a few
+     seasons instead, and only spend them when the first look is empty. */
+  let dome = one("domesayers");
+  for (let i = 0; i < 4 && !/[1-9]bands/.test(dome); i++) {
+    await click("End (spring|summer|autumn|winter)"); await wait(420);
+    await clearScenes();
+    if (await inBattle()) await fightOut();
+    const again = await page.evaluate(() => window.__ccWild().holdouts);
+    dome = again.find((x) => x.startsWith("domesayers:")) || dome;
+  }
   check("Rune both crusades and converts",
     +((dome.match(/:(\d+)hex/) || [])[1] || 0) > 1 && /[1-9]bands/.test(dome), dome);
   check("Kernev digs in", +((bret.match(/\+(\d+)/) || [])[1] || 0) > 0, bret);

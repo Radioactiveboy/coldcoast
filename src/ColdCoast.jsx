@@ -20,7 +20,9 @@ import { SECTORS, SECTOR_NAME, ADJACENT, POSTURES, POSTURE_IDS, GROUND, groundFo
 import { UNIT_TIERS, UNITS, UNIT_IDS } from "./data/units.js";
 import { GOALS } from "./data/goals.js";
 import { CAPTAIN_NAMES, TRAITS, BORN_TRAITS, TRAIT_CLASH, LOYALTY, HONOUR_AT, HONOUR_WORDS,
-         HALL, appointCost } from "./data/captains.js";
+         HALL, appointCost, MARKS, MARK_IDS, markDue,
+         WOUNDS, WOUND_IDS, WOUND_CHANCE,
+         BONDS, BOND, bondKind } from "./data/captains.js";
 import { ORIGINS, ORIGIN_IDS } from "./data/origins.js";
 import { RANKS, rankOf, nextRank, XP_FIELD, XP_WON } from "./data/ranks.js";
 import { DISTRICT_POOL, SEAT_DISTRICTS, DISTRICT_COUNT } from "./data/districts.js";
@@ -232,6 +234,9 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
 .cc-max-h-300px{max-height:300px}
 .cc-text-d9a63f{color:#d9a63f}
 .cc-bg-5a2f26{background-color:#5a2f26}
+/* A wound is told in the same red as a broken thing, a shade off the panel. */
+.cc-bg-1b1416{background-color:#1b1416}
+.cc-text-c99a8a{color:#c99a8a}
 .cc-border-8a4a38{border-color:#8a4a38}
 .cc-text-f3d9cf{color:#f3d9cf}
 .cc-max-w-1080px{max-width:1080px}
@@ -1399,8 +1404,16 @@ function makeCaptain(natId, seed, taken = []) {
     traits.push(t);
   }
   const [lo, hi] = LOYALTY.start;
-  return { id: `c${seed}`, name, traits, loyalty: lo + Math.floor(Math.random() * (hi - lo + 1)),
-           fields: 0, wins: 0, storms: 0 };
+  /* fields, wins, storms, routs and seasons are the whole of a captain's
+     record, and between them they are what the marks in captains.js read to
+     decide what this particular person has become. */
+  /* The seeds the callers pass are descriptive, not unique: two of them can
+     land on the same realm in the same season, and two captains with one id
+     is a hall that answers a mark for the wrong person and renders the wrong
+     row. The tail makes the id its own, which is what it is for. */
+  return { id: `c${seed}${Math.random().toString(36).slice(2, 7)}`,
+           name, traits, loyalty: lo + Math.floor(Math.random() * (hi - lo + 1)),
+           fields: 0, wins: 0, storms: 0, routs: 0, seasons: 0, marks: [], wounds: [] };
 }
 /* Somebody has to be in the hall before they can be given a command. This
    is only used where the game itself must produce one — a realm whose seat
@@ -1419,22 +1432,64 @@ const namesInUse = (nat, armies, natId) => [
 ];
 const NO_CAPTAIN = { dealt: 1, taken: 1, morale: 1, storm: 1, ranged: 1, flank: 1, waste: 1, draw: 1,
                      scout: 0, relief: 0, loyalGain: 1, slight: 1 };
+const CAPTAIN_KEYS = ["dealt", "taken", "morale", "storm", "ranged", "flank", "waste", "draw",
+                      "loyalGain", "slight"];
+/* A habit and a wound reach the warband through exactly the same keys, which
+   is the point: the game cannot tell what a captain is good at from how they
+   came to be good at it. */
 function captainMods(army) {
   const c = army?.captain;
   if (!c) return NO_CAPTAIN;
   const out = { ...NO_CAPTAIN };
-  c.traits.forEach((id) => {
-    const t = TRAITS[id];
+  const fold = (t) => {
     if (!t) return;
-    ["dealt", "taken", "morale", "storm", "ranged", "flank", "waste", "draw", "loyalGain", "slight"]
-      .forEach((k) => { if (t[k]) out[k] *= t[k]; });
+    CAPTAIN_KEYS.forEach((k) => { if (t[k]) out[k] *= t[k]; });
     if (t.scout) out.scout += t.scout;
     if (t.relief) out.relief += t.relief;
-  });
+  };
+  c.traits.forEach((id) => fold(TRAITS[id]));
+  (c.wounds || []).forEach((id) => fold(WOUNDS[id]));
   return out;
 }
 const withTrait = (c, id) => (c.traits.includes(id) ? c : { ...c, traits: [...c.traits, id] });
+/* Nobody chooses a wound and nobody gets the same one twice. If there is
+   nothing left to take off them, the day simply did not take anything. */
+function withWound(c) {
+  const open = WOUND_IDS.filter((id) => !(c.wounds || []).includes(id));
+  if (!open.length) return null;
+  const id = pickOne(open);
+  return { c: { ...c, wounds: [...(c.wounds || []), id] }, id, w: WOUNDS[id] };
+}
 const withoutTrait = (c, id) => ({ ...c, traits: c.traits.filter((t) => t !== id) });
+/* Move one named captain's loyalty wherever they happen to be standing. This
+   exists for the other end of a bond: the person a field moves was not in it,
+   and may be leading a warband two hundred hexes away or sitting in the hall.
+   Returns the pair back because the caller holds both as locals. */
+function nudgeCaptain(armies, nations, natId, cid, delta) {
+  let found = false;
+  const out = armies.map((a) => {
+    if (found || a.owner !== natId || a.captain?.id !== cid) return a;
+    found = true;
+    return { ...a, captain: loyaltyShift(a.captain, delta) };
+  });
+  if (found) return { armies: out, nations };
+  const n = nations[natId];
+  if (!n || !(n.hall || []).some((x) => x.id === cid)) return { armies, nations };
+  return { armies,
+    nations: { ...nations, [natId]: { ...n,
+      hall: n.hall.map((x) => (x.id === cid ? loyaltyShift(x, delta) : x)) } } };
+}
+/* ...and to tell somebody their friend is not coming back, which is the same
+   operation on the bond rather than on the number. */
+function closeBond(armies, nations, natId, cid) {
+  const shut = (x) => (x.bond ? { ...x, bond: { ...x.bond, gone: true } } : x);
+  const n = nations[natId];
+  return {
+    armies: armies.map((a) => (a.owner === natId && a.captain?.id === cid
+      ? { ...a, captain: shut(a.captain) } : a)),
+    nations: n ? { ...nations, [natId]: { ...n, hall: (n.hall || []).map((x) => (x.id === cid ? shut(x) : x)) } } : nations,
+  };
+}
 function loyaltyShift(c, delta) {
   const m = captainMods({ captain: c });
   const d = delta > 0 ? delta * m.loyalGain : delta;
@@ -4047,7 +4102,7 @@ function initialState() {
   return {
     turn: 1, player: null, ...w, war, armies, uid,
     sel: null, battle: null, log: [], recruit: null, wallAt: null, over: null,
-    showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, regard: {}, pacts: {}, accords: {}, torn: 0, coalition: null, milestone: null, warhorn: null, retainer: null,
+    showCodex: false, district: null, intro: false, pending: [], survey: null, seat: null, tree: false, lords: false, lair: null, met: {}, regard: {}, pacts: {}, accords: {}, torn: 0, coalition: null, milestone: null, captainMark: null, person: null, warhorn: null, retainer: null,
     meetings: [], notices: [], focus: null, sound: { music: true, sfx: true },
     goals: { done: {}, hidden: false }, summary: null, roster: false,
     petitions: [], promises: [], hearing: null, chapter: null, hall: null,
@@ -4653,8 +4708,14 @@ export default function ColdCoast() {
           if (!was?.captain || isMinor(was.owner)) return;
           const won = b.winner === side && !b.stalemate;
           let c = loyaltyShift({ ...was.captain, fields: was.captain.fields + 1,
-            wins: was.captain.wins + (won ? 1 : 0) }, won ? LOYALTY.win : LOYALTY.loss);
+            wins: was.captain.wins + (won ? 1 : 0),
+            routs: (was.captain.routs || 0) + (!won && !b.stalemate ? 1 : 0),
+            storms: (was.captain.storms || 0) + (won && b.storming && side === "a" ? 1 : 0),
+          }, won ? LOYALTY.win : LOYALTY.loss);
           if (won && b.storming && side === "a" && !c.traits.includes("wallbreaker")) c = withTrait(c, "wallbreaker");
+          /* Nobody can ask a rival's captain which of two ways five fields
+             marked them, so theirs hardens on its own, the plain way. Yours
+             are asked, at a mark, which is the whole difference. */
           if (c.fields >= 5 && !c.traits.includes("veteran")) c = withTrait(c, "veteran");
           if (armies.some((a) => a.id === id)) armies = armies.map((a) => (a.id === id ? { ...a, captain: c } : a));
           else if (nations[was.owner]) {
@@ -4675,11 +4736,15 @@ export default function ColdCoast() {
         const foeNat = pSideB === "a" ? b.dNat : b.aNat;
         if (before?.captain) {
           let c = { ...before.captain, fields: before.captain.fields + 1 };
+          /* A wall gone up counts on the record every time, not only the first:
+             the habit is granted once, the fact is theirs for good. */
+          const stormed = b.storming && pSideB === "a";
+          if (stormed && won) c = { ...c, storms: (c.storms || 0) + 1 };
           if (won) {
             c = loyaltyShift({ ...c, wins: c.wins + 1 }, LOYALTY.win);
             c = withoutTrait(c, "shaken");
-            if (b.storming && pSideB === "a" && !c.traits.includes("wallbreaker")) {
-              c = withTrait({ ...c, storms: c.storms + 1 }, "wallbreaker");
+            if (stormed && !c.traits.includes("wallbreaker")) {
+              c = withTrait(c, "wallbreaker");
               people.push(`${c.name} went up the breach first. Wallbreaker, they call them now.`);
             }
             if (b.log.some((l) => l.t === "flank" && l.s === foeSide) && !c.traits.includes("cunning") && Math.random() < 0.6) {
@@ -4687,15 +4752,36 @@ export default function ColdCoast() {
               people.push(`${c.name} saw their line come apart and has been looking for the seam ever since.`);
             }
           } else {
-            c = loyaltyShift(c, LOYALTY.loss);
+            c = loyaltyShift({ ...c, routs: (c.routs || 0) + (b.stalemate ? 0 : 1) }, LOYALTY.loss);
             if (!c.traits.includes("cautious") && !c.traits.includes("shaken") && Math.random() < 0.5) {
               c = withTrait(c, "shaken");
               people.push(`${c.name} is shaken. A win will take it away.`);
             }
           }
-          if (c.fields >= 5 && !c.traits.includes("veteran")) {
-            c = withTrait(c, "veteran");
-            people.push(`${c.name} has stood in five lines now. A veteran.`);
+          /* The other end of a bond. Neither of them was there, and that is
+             exactly why it is worth saying: a friend is glad of it from
+             wherever they are standing and a rival counts it as something
+             taken off their own total. */
+          if (c.bond && !c.bond.gone && !b.stalemate) {
+            const d = (won ? 1 : -1) * (c.bond.kind === "friend" ? BOND.win : -BOND.win);
+            const moved = nudgeCaptain(armies, nations, g.player, c.bond.who, d);
+            armies = moved.armies; nations = moved.nations;
+          }
+
+          /* What the day took and will not give back. A line that went and a
+             wall gone up are the two afternoons a captain can come off worse
+             for good; nothing undoes a wound, and nothing else leaves one.
+             Five fields is not an afternoon, so it is asked about at a mark
+             rather than handed out here. */
+          {
+            const risk = !won && !b.stalemate ? WOUND_CHANCE.rout : stormed ? WOUND_CHANCE.storm : 0;
+            if (risk && Math.random() < risk) {
+              const got = withWound(c);
+              if (got) {
+                c = got.c;
+                people.push(`${c.name} came off the field with ${got.w.name.toLowerCase()}. ${got.w.desc}`);
+              }
+            }
           }
           if (after) {
             /* A company that has climbed a rung is worth saying out loud. */
@@ -4732,6 +4818,18 @@ export default function ColdCoast() {
             } else {
               nations[g.player] = { ...pn, fallen: [...(pn.fallen || []), { captain: c, turn: g.turn, at: b.provName }] };
               people.push(`${c.name} falls at ${b.provName} with the last of ${before.name}.`);
+            }
+            /* And whoever was the other end of them hears about it. A bond is
+               never felt harder than at the point it stops. */
+            if (c.bond && !c.bond.gone) {
+              const friend = c.bond.kind === "friend";
+              const moved = nudgeCaptain(armies, nations, g.player, c.bond.who,
+                friend ? -BOND.fell : BOND.fellRival);
+              const shut = closeBond(moved.armies, moved.nations, g.player, c.bond.who);
+              armies = shut.armies; nations = shut.nations;
+              const other = [...armies.filter((a) => a.owner === g.player && a.captain).map((a) => a.captain),
+                ...((nations[g.player]?.hall) || [])].find((x) => x.id === c.bond.who);
+              if (other) people.push(BONDS[c.bond.kind].fell.replace("{a}", other.name).replace("{b}", c.name));
             }
           }
         }
@@ -5257,6 +5355,95 @@ export default function ColdCoast() {
       };
     });
   }
+
+  /* Every captain of yours, wherever they are standing: leading a warband, or
+     waiting in the hall to be given one. The marks have to find them in both
+     places, and so does the page that reads their life back to you. */
+  const myCaptains = (g) => [
+    ...g.armies.filter((a) => a.owner === P && a.captain).map((a) => a.captain),
+    ...((g.nations[P]?.hall) || []),
+    /* A man in a post and a man in somebody's cells are both still yours, and
+       a bond with either of them is still a bond — so they count here even
+       though neither of them is standing anywhere a mark can find them. */
+    ...Object.values(g.nations[P]?.offices || {}).filter(Boolean),
+    ...((g.nations[P]?.captives) || []).map((x) => x.captain).filter(Boolean),
+  ];
+
+  /* Which of the two the mark hardened into. Written on that one captain and
+     on nobody else — the point of a mark is that two captains in the same war
+     come out of it different people — and set down as answered either way. */
+  function chooseMark(who, id, trait) {
+    setGame((g) => {
+      if (!MARKS[id]) return { ...g, captainMark: null };
+      const n = g.nations[P];
+      const put = (c) => (!c || c.id !== who || (c.marks || []).includes(id) ? c
+        : { ...withTrait(c, trait), marks: [...(c.marks || []), id] });
+      const armies = g.armies.map((a) => (a.owner === P && a.captain ? { ...a, captain: put(a.captain) } : a));
+      const hall = (n?.hall || []).map(put);
+      const next = { ...g, captainMark: null, armies,
+        nations: n ? { ...g.nations, [P]: { ...n, hall } } : g.nations };
+      const c = myCaptains(next).find((x) => x.id === who);
+      const word = MARKS[id].options.find((o) => o.trait === trait)?.name || TRAITS[trait]?.name || trait;
+      Sound.play("tick");
+      return { ...next, log: [{ turn: g.turn,
+        m: `${c?.name || "Your captain"} — ${word.toLowerCase()}. ${TRAITS[trait]?.desc || ""}` },
+        ...g.log].slice(0, 60) };
+    });
+  }
+
+  /* For the smoke test only: two of your captains have taken to each other,
+     or have not. Whether a given campaign has thrown up a pair is a winter in
+     eleven, and what wants checking is what the far end of a bond does. */
+  if (typeof window !== "undefined") window.__ccTie = (kind) => setGame((g) => {
+    const mine = myCaptains(g).filter((c) => !c.bond);
+    if (mine.length < 2) return g;
+    const [one, two] = mine;
+    const tie = (c) => (c.id === one.id ? { ...c, bond: { who: two.id, kind, since: g.turn } }
+      : c.id === two.id ? { ...c, bond: { who: one.id, kind, since: g.turn } } : c);
+    const n = g.nations[P];
+    return { ...g,
+      armies: g.armies.map((a) => (a.owner === P && a.captain ? { ...a, captain: tie(a.captain) } : a)),
+      nations: n ? { ...g.nations, [P]: { ...n, hall: (n.hall || []).map(tie) } } : g.nations };
+  });
+
+  /* For the smoke test only: a field took something off somebody. A wound is
+     a 3-in-10 roll on a line that went, and a test cannot arrange to lose an
+     afternoon on purpose without the loss itself being the thing under test. */
+  if (typeof window !== "undefined") window.__ccHurt = () => setGame((g) => {
+    /* The hall first, because it is the one screen where a captain's line can
+       be found and opened without first selecting the right warband. */
+    const n = g.nations[P];
+    if (n && (n.hall || []).length) {
+      const got = withWound(n.hall[0]);
+      if (got) return { ...g, nations: { ...g.nations, [P]: { ...n,
+        hall: n.hall.map((c, i) => (i ? c : got.c)) } } };
+    }
+    const a0 = g.armies.find((a) => a.owner === P && a.captain && !a.lord);
+    if (!a0) return g;
+    const got = withWound(a0.captain);
+    return got ? { ...g, armies: g.armies.map((a) => (a.id === a0.id ? { ...a, captain: got.c } : a)) } : g;
+  });
+
+  /* Reading a captain is only ever looking, so it is one field and no cost.
+     It is kept as an id rather than the person, so the page goes on being
+     right when a mark is answered or a field is fought while it is open. */
+  const openPerson = (id) => setGame((g) => ({ ...g, person: id }));
+
+  /* For the smoke test only: a captain's record is brought up to a mark. Five
+     fields is five battles and ten winters is ten winters, and what wants
+     checking is the scene, not the ten winters. */
+  if (typeof window !== "undefined") window.__ccMark = (field) => setGame((g) => {
+    const bump = (c) => ({ ...c, ...(field === "seasons" ? { seasons: 10 }
+      : field === "storms" ? { storms: 1 } : field === "routs" ? { routs: 1 } : { fields: 5 }) });
+    const a0 = g.armies.find((a) => a.owner === P && a.captain && !a.lord);
+    if (a0) return { ...g, armies: g.armies.map((a) => (a.id === a0.id ? { ...a, captain: bump(a.captain) } : a)) };
+    // The opening warband is led by the warlord, so early on the only captains
+    // of yours anywhere are the two standing in the hall. Marks find them too.
+    const n = g.nations[P];
+    if (!n || !(n.hall || []).length) return g;
+    return { ...g, nations: { ...g.nations, [P]: { ...n,
+      hall: n.hall.map((c, i) => (i ? c : bump(c))) } } };
+  });
 
   /* Somebody has come to the fire. Taking them costs nothing and gives up a
      place; sending them away costs nothing and gives up the person, for good —
@@ -7151,6 +7338,60 @@ export default function ColdCoast() {
         g = { ...g, met, regard, meetings };
       }
 
+      /* --- another winter under your banner ---
+         A season on a captain's record is not a reward for anything. It is
+         how long they have been yours, which is the one fact about them that
+         cannot be won or lost on a field — and the only one that accrues to
+         somebody who has spent the whole war standing in your hall. */
+      {
+        const n = nations[g.player];
+        armies = armies.map((a) => (a.owner === g.player && a.captain
+          ? { ...a, captain: { ...a.captain, seasons: (a.captain.seasons || 0) + 1 } } : a));
+        if (n && (n.hall || []).length) {
+          nations[g.player] = { ...n, hall: n.hall.map((c) => ({ ...c, seasons: (c.seasons || 0) + 1 })) };
+        }
+        /* And a bond ends when one end of it does. There are more ways to stop
+           being somebody's captain than there are places to notice it — a
+           field lost with the last of a warband, a ransom nobody paid, the
+           seat itself — so rather than catch each of them, one sweep a winter
+           closes whichever of them have gone quiet. */
+        const here = new Set([
+          ...armies.filter((a) => a.owner === g.player && a.captain).map((a) => a.captain.id),
+          ...((nations[g.player]?.hall) || []).map((c) => c.id),
+          // A post or a ransom is not the end of anybody.
+          ...Object.values(nations[g.player]?.offices || {}).filter(Boolean).map((c) => c.id),
+          ...((nations[g.player]?.captives) || []).map((x) => x.captain?.id).filter(Boolean),
+        ]);
+        const shut = (c) => (c.bond && !c.bond.gone && !here.has(c.bond.who)
+          ? { ...c, bond: { ...c.bond, gone: true } } : c);
+        armies = armies.map((a) => (a.owner === g.player && a.captain ? { ...a, captain: shut(a.captain) } : a));
+        const pn = nations[g.player];
+        if (pn) nations[g.player] = { ...pn, hall: (pn.hall || []).map(shut) };
+      }
+
+      /* --- who has taken to whom ---
+         Two captains in the same war long enough stop being strangers to each
+         other, and which way that goes is mostly who they already were. One
+         bond apiece, both ends written at once, and it is the far end of it
+         that makes a field somebody else fought worth anything to them. */
+      if (Math.random() < BOND.chance) {
+        const free = [
+          ...armies.filter((a) => a.owner === g.player && a.captain && !a.lord).map((a) => a.captain),
+          ...((nations[g.player]?.hall) || []),
+        ].filter((c) => !c.bond && (c.seasons || 0) >= BOND.needSeasons);
+        if (free.length >= 2) {
+          const one = pickOne(free);
+          const two = pickOne(free.filter((c) => c.id !== one.id));
+          const kind = bondKind(one, two);
+          const tie = (c) => (c.id === one.id ? { ...c, bond: { who: two.id, kind, since: g.turn } }
+            : c.id === two.id ? { ...c, bond: { who: one.id, kind, since: g.turn } } : c);
+          armies = armies.map((a) => (a.owner === g.player && a.captain ? { ...a, captain: tie(a.captain) } : a));
+          const pn = nations[g.player];
+          if (pn) nations[g.player] = { ...pn, hall: (pn.hall || []).map(tie) };
+          notice("lord", pickOne(BONDS[kind].lines).replace("{a}", one.name).replace("{b}", two.name), null);
+        }
+      }
+
       /* --- what the warlord has become ---
          A milestone is a fact about a person, not a bar filling up: five
          fields, a wall taken, a people sworn to you, thirty seasons in the
@@ -7170,6 +7411,22 @@ export default function ColdCoast() {
           try { return !!MILESTONES[id].need(ctx); } catch { return false; }
         });
         if (due) g = { ...g, milestone: due };
+      }
+
+      /* --- what one of your captains has become ---
+         The same machinery for the people who do the fighting. A mark comes
+         true because of something that happened to THIS captain and nobody
+         else — five fields of their own, a breach they went up, a line of
+         theirs that went, ten winters of theirs — and you are asked which of
+         two ways it marked them. One captain at a time, and never while the
+         warlord is still standing there waiting for an answer. */
+      if (!g.captainMark && !g.milestone) {
+        const mine = [
+          ...armies.filter((a) => a.owner === g.player && a.captain && !a.lord).map((a) => a.captain),
+          ...((nations[g.player]?.hall) || []),
+        ];
+        const due = mine.map((c) => ({ who: c.id, id: markDue(c) })).find((x) => x.id);
+        if (due) g = { ...g, captainMark: due };
       }
 
       /* --- who has come to the fire ---
@@ -7705,209 +7962,234 @@ export default function ColdCoast() {
     ? game.armies.find((a) => a.c === selProv.c && a.r === selProv.r) : null);
   const barHex = barArmy ? game.armies.filter((a) => a.c === barArmy.c && a.r === barArmy.r) : [];
 
+  /* Whoever is being read, found wherever they are standing now — so the page
+     follows a captain sent back to the hall and shuts itself if the warband
+     they were leading is gone. */
+  const person = (() => {
+    if (!game.person) return null;
+    const a = game.armies.find((x) => x.owner === P && x.captain?.id === game.person);
+    if (a) return { c: a.captain, where: a.lord ? `Holds the seat, and leads ${a.name}` : `Leads ${a.name}` };
+    const h = (game.nations[P]?.hall || []).find((c) => c.id === game.person);
+    if (h) return { c: h, where: "Waiting in your hall for a command" };
+    const held = (game.nations[P]?.captives || []).find((x) => x.captain?.id === game.person);
+    if (held) return { c: held.captain, where: `Taken by ${FACTION[held.by]?.short || "somebody"}, awaiting ransom` };
+    return null;
+  })();
+
+  /* Anywhere in the tree a captain's line is drawn, you can ask to read the
+     person; the page that opens is at the bottom of this same tree. */
   return (
-    <div className="cc-root cc-app w-full flex flex-col cc-text-e5eef3"
-      style={{ background: "radial-gradient(1200px 700px at 25% 0%, #16232c 0%, #0b1116 60%, #080c10 100%)", color: "#ffffff" }}>
-      <style>{UI_CSS}</style>
+    <PersonCtx.Provider value={openPerson}>
+      <div className="cc-root cc-app w-full flex flex-col cc-text-e5eef3"
+        style={{ background: "radial-gradient(1200px 700px at 25% 0%, #16232c 0%, #0b1116 60%, #080c10 100%)", color: "#ffffff" }}>
+        <style>{UI_CSS}</style>
 
-      <TopBar nat={nat} income={income} turn={game.turn} owned={owned.length}
-        armies={game.armies.filter((a) => a.owner === P).length} pop={realmPop}
-        idle={game.armies.filter((a) => a.owner === P && a.mp > 0).length}
-        missions={missionList(game, P).filter((m) => !m.done).length}
-        onRoster={() => setGame((g) => ({ ...g, roster: !g.roster }))}
-        sound={game.sound} onLords={() => setGame((g) => ({ ...g, lords: true }))}
-        onSound={(which) => setGame((g) => {
-          const next = { ...g.sound, [which]: !g.sound[which] };
-          if (which === "music") Sound.music(next.music); else Sound.sfx(next.sfx);
-          return { ...g, sound: next };
-        })}
-        onEnd={endTurn} onSave={saveNow} saveFailed={saveFailed}
-        onScreen={(id) => setGame((g) => ({ ...g, screen: id }))}
-        onCodex={() => setGame((g) => ({ ...g, showCodex: true }))} />
+        <TopBar nat={nat} income={income} turn={game.turn} owned={owned.length}
+          armies={game.armies.filter((a) => a.owner === P).length} pop={realmPop}
+          idle={game.armies.filter((a) => a.owner === P && a.mp > 0).length}
+          missions={missionList(game, P).filter((m) => !m.done).length}
+          onRoster={() => setGame((g) => ({ ...g, roster: !g.roster }))}
+          sound={game.sound} onLords={() => setGame((g) => ({ ...g, lords: true }))}
+          onSound={(which) => setGame((g) => {
+            const next = { ...g.sound, [which]: !g.sound[which] };
+            if (which === "music") Sound.music(next.music); else Sound.sfx(next.sfx);
+            return { ...g, sound: next };
+          })}
+          onEnd={endTurn} onSave={saveNow} saveFailed={saveFailed}
+          onScreen={(id) => setGame((g) => ({ ...g, screen: id }))}
+          onCodex={() => setGame((g) => ({ ...g, showCodex: true }))} />
 
-      <div className="flex-1 flex flex-col cc-lg-flex-row min-h-0">
-        <div className="flex-1 min-w-0 min-h-0 relative overflow-hidden cc-min-h-420px">
-          {game.summary && (
-            <SeasonCard summary={game.summary} onClose={() => setGame((g) => ({ ...g, summary: null }))} />
-          )}
-          <HallRow petitions={game.petitions || []} game={game} onHear={(pid) => setGame((g) => ({ ...g, hearing: pid }))} />
-          <PromiseRow promises={game.promises || []} game={game}
-            onGo={(k) => setGame((g) => ({ ...g, focus: k, sel: { armyId: null, k } }))} />
-          <GoalsCard goals={game.goals || { done: {}, hidden: false }} origin={game.nations[P]?.origin}
-            onToggle={() => setGame((g) => ({ ...g, goals: { ...(g.goals || { done: {} }), hidden: !g.goals?.hidden } }))}
-            onPutAway={() => setGame((g) => ({ ...g, goals: { ...(g.goals || { done: {} }), hidden: true, away: true } }))} />
-          <Notices list={game.notices} raised={!!barArmy}
-            onGo={(n) => setGame((g) => ({ ...g, focus: n.k, sel: { armyId: null, k: n.k },
-              notices: g.notices.filter((x) => x.id !== n.id) }))}
-            onDismiss={(id) => setGame((g) => ({ ...g, notices: g.notices.filter((x) => x.id !== id) }))} />
-          <WorldMap game={game} P={P} sight={sight} onSelect={selectHex} atWar={atWar} onDeselect={deselect}
-            onFocused={clearFocus} onMarch={marchTo} />
-          {barArmy && !game.battle && (
-            <WarbandBar game={game} P={P} army={barArmy} sameHex={barHex}
-              onDeselect={deselect} onRename={renameArmy} onCommand={setCommander}
+        <div className="flex-1 flex flex-col cc-lg-flex-row min-h-0">
+          <div className="flex-1 min-w-0 min-h-0 relative overflow-hidden cc-min-h-420px">
+            {game.summary && (
+              <SeasonCard summary={game.summary} onClose={() => setGame((g) => ({ ...g, summary: null }))} />
+            )}
+            <HallRow petitions={game.petitions || []} game={game} onHear={(pid) => setGame((g) => ({ ...g, hearing: pid }))} />
+            <PromiseRow promises={game.promises || []} game={game}
+              onGo={(k) => setGame((g) => ({ ...g, focus: k, sel: { armyId: null, k } }))} />
+            <GoalsCard goals={game.goals || { done: {}, hidden: false }} origin={game.nations[P]?.origin}
+              onToggle={() => setGame((g) => ({ ...g, goals: { ...(g.goals || { done: {} }), hidden: !g.goals?.hidden } }))}
+              onPutAway={() => setGame((g) => ({ ...g, goals: { ...(g.goals || { done: {} }), hidden: true, away: true } }))} />
+            <Notices list={game.notices} raised={!!barArmy}
+              onGo={(n) => setGame((g) => ({ ...g, focus: n.k, sel: { armyId: null, k: n.k },
+                notices: g.notices.filter((x) => x.id !== n.id) }))}
+              onDismiss={(id) => setGame((g) => ({ ...g, notices: g.notices.filter((x) => x.id !== id) }))} />
+            <WorldMap game={game} P={P} sight={sight} onSelect={selectHex} atWar={atWar} onDeselect={deselect}
+              onFocused={clearFocus} onMarch={marchTo} />
+            {barArmy && !game.battle && (
+              <WarbandBar game={game} P={P} army={barArmy} sameHex={barHex}
+                onDeselect={deselect} onRename={renameArmy} onCommand={setCommander}
+                onHall={(aid) => setGame((g) => ({ ...g, hall: aid || "open" }))}
+                onReinforce={reinforce} onSplit={splitUnit} onTake={takeCommand} onMerge={mergeInto}
+                onDisband={(aid, uid) => setGame((g) => ({
+                  ...g,
+                  armies: g.armies.map((a) => a.id === aid ? { ...a, units: a.units.filter((u) => u.id !== uid) } : a).filter((a) => a.units.length),
+                }))} />
+            )}
+          </div>
+          <aside className="cc-sidetex w-full cc-lg-w-352px shrink-0 border-t cc-lg-border-t-0 cc-lg-border-l cc-border-28363f cc-bg-0d141af2 flex flex-col min-h-0 cc-max-h-46vh cc-lg-max-h-none">
+            <Sidebar
+              game={game} P={P} nat={nat} sight={sight} selProv={selProv} selArmy={selArmy} atWar={atWar}
+              onBuild={build} onRecruitOpen={(k) => setGame((g) => ({ ...g, recruit: k }))}
+              onWallOpen={(k) => setGame((g) => ({ ...g, wallAt: k }))}
+              onWar={toggleWar} onDeselect={deselect}
+              onInvestigate={investigate} onClaim={claim} onMarch={march} onStorm={storm}
+              onInvest={invest} onLift={liftSiege} onStory={advanceStory} onSally={sally}
               onHall={(aid) => setGame((g) => ({ ...g, hall: aid || "open" }))}
-              onReinforce={reinforce} onSplit={splitUnit} onTake={takeCommand} onMerge={mergeInto}
+              onSeat={(k) => setGame((g) => ({ ...g, seat: k }))} onResearch={research}
+              onOpenTree={() => setGame((g) => ({ ...g, tree: true }))} onRepair={repair}
+              onDistrict={(k) => setGame((g) => ({ ...g, district: k }))}
+              onTake={takeCommand} onMerge={mergeInto} onReinforce={reinforce} onCommand={setCommander}
+              onCraft={setCraft} onInvestPop={investPop}
+              onRename={renameArmy} onSplit={splitUnit}
               onDisband={(aid, uid) => setGame((g) => ({
                 ...g,
                 armies: g.armies.map((a) => a.id === aid ? { ...a, units: a.units.filter((u) => u.id !== uid) } : a).filter((a) => a.units.length),
-              }))} />
-          )}
+              }))}
+            />
+          </aside>
         </div>
-        <aside className="cc-sidetex w-full cc-lg-w-352px shrink-0 border-t cc-lg-border-t-0 cc-lg-border-l cc-border-28363f cc-bg-0d141af2 flex flex-col min-h-0 cc-max-h-46vh cc-lg-max-h-none">
-          <Sidebar
-            game={game} P={P} nat={nat} sight={sight} selProv={selProv} selArmy={selArmy} atWar={atWar}
-            onBuild={build} onRecruitOpen={(k) => setGame((g) => ({ ...g, recruit: k }))}
-            onWallOpen={(k) => setGame((g) => ({ ...g, wallAt: k }))}
-            onWar={toggleWar} onDeselect={deselect}
-            onInvestigate={investigate} onClaim={claim} onMarch={march} onStorm={storm}
-            onInvest={invest} onLift={liftSiege} onStory={advanceStory} onSally={sally}
-            onHall={(aid) => setGame((g) => ({ ...g, hall: aid || "open" }))}
-            onSeat={(k) => setGame((g) => ({ ...g, seat: k }))} onResearch={research}
-            onOpenTree={() => setGame((g) => ({ ...g, tree: true }))} onRepair={repair}
-            onDistrict={(k) => setGame((g) => ({ ...g, district: k }))}
-            onTake={takeCommand} onMerge={mergeInto} onReinforce={reinforce} onCommand={setCommander}
-            onCraft={setCraft} onInvestPop={investPop}
-            onRename={renameArmy} onSplit={splitUnit}
-            onDisband={(aid, uid) => setGame((g) => ({
-              ...g,
-              armies: g.armies.map((a) => a.id === aid ? { ...a, units: a.units.filter((u) => u.id !== uid) } : a).filter((a) => a.units.length),
-            }))}
-          />
-        </aside>
-      </div>
 
-      {game.recruit && (
-        <RecruitPanel
-          natId={P} nat={nat} provName={game.provinces[game.recruit]?.name}
-          prov={game.provinces[game.recruit]}
-          onClose={() => setGame((g) => ({ ...g, recruit: null }))}
-          onConfirm={(type, wg, ag) => recruitUnit(game.recruit, type, wg, ag)}
-        />
-      )}
-      {game.wallAt && (
-        <RecruitPanel wall
-          natId={P} nat={nat} provName={game.provinces[game.wallAt]?.name}
-          prov={game.provinces[game.wallAt]}
-          onClose={() => setGame((g) => ({ ...g, wallAt: null }))}
-          onConfirm={(type, wg, ag) => garrisonUnit(game.wallAt, type, wg, ag)}
-        />
-      )}
-      {game.battle && (
-        <BattleScreen b={game.battle} nations={game.nations} P={P}
-          onStep={stepBattle} onAuto={autoBattle} onClose={closeBattle}
-          onDeploy={deployBattle} onPost={postBattle} onCommit={commitReserve}
-          onBegin={beginBattle} />
-      )}
-      {game.lords && (
-        <CourtScreen game={game} P={P}
-          tab={game.courtTab || "lord"}
-          onTab={(k) => setGame((g) => ({ ...g, courtTab: k }))}
-          onClose={() => setGame((g) => ({ ...g, lords: false }))}
-          onSuccession={() => setGame((g) => ({ ...g, lords: false, nations: { ...g.nations, [P]: { ...g.nations[P], succession: true } } }))}
-          onHall={() => setGame((g) => ({ ...g, lords: false, hall: "open" }))}
-          onHear={(pid) => setGame((g) => ({ ...g, lords: false, hearing: pid }))}
-          onWear={wearPiece} onStow={stowPiece} onBuy={buyPiece}
-          onHold={holdOffice} onLeave={leaveOffice}
-          onTake={takeTradition} onDecide={decide} onRelease={releaseRetainer} />
-      )}
-      {game.chapter && !game.battle && (
-        <ChapterScene chapter={game.chapter} onClose={() => setGame((g) => ({ ...g, chapter: null }))} />
-      )}
-      {game.milestone && !game.battle && MILESTONES[game.milestone] && (
-        <MilestoneScene id={game.milestone} game={game} P={P} onChoose={chooseHabit} />
-      )}
-      {game.retainer && !game.battle && !game.milestone && RETAINERS[game.retainer] && (
-        <RetainerScene id={game.retainer} game={game} P={P} onAnswer={answerRetainer} />
-      )}
-      {game.warhorn && !game.battle && !game.milestone && !game.retainer && MINORS[game.warhorn] && (
-        <WarhornScene who={game.warhorn} game={game} P={P}
-          onClose={() => setGame((g) => ({ ...g, warhorn: null }))} />
-      )}
-      {!game.battle && (game.meetings || []).length > 0 && FIRST_MEET[game.meetings[0]] && (
-        <EncounterScene enc={FIRST_MEET[game.meetings[0]]} game={game} P={P} onAnswer={answerEncounter} />
-      )}
-      {game.hearing && (game.petitions || []).some((x) => x.id === game.hearing) && (
-        <PetitionScene pt={game.petitions.find((x) => x.id === game.hearing)} game={game}
-          onAnswer={(i) => answerPetition(game.hearing, i)}
-          onClose={() => setGame((g) => ({ ...g, hearing: null }))} />
-      )}
-      {game.nations[P]?.succession && game.nations[P]?.lordDead && !game.battle && (
-        <SuccessionScene game={game} P={P} onChoose={succeed}
-          onLater={() => setGame((g) => ({ ...g, nations: { ...g.nations, [P]: { ...g.nations[P], succession: false } } }))} />
-      )}
-      {game.hall && (
-        <HallPanel game={game} P={P} armyId={game.hall === "open" ? null : game.hall}
-          onAppoint={appointCaptain} onDismiss={dismissCaptain} onSend={sendForCaptain}
-          onClose={() => setGame((g) => ({ ...g, hall: null }))} />
-      )}
-      {game.roster && (
-        <RosterPanel game={game} P={P} sight={sight} atWar={atWar}
-          onClose={() => setGame((g) => ({ ...g, roster: false }))}
-          onPick={(a) => setGame((g) => ({
-            ...g, roster: false, focus: key(a.c, a.r),
-            sel: { armyId: a.owner === P ? a.id : null, k: key(a.c, a.r) },
-          }))} />
-      )}
-      {game.tree && (
-        <TechTree game={game} P={P} onResearch={research}
-          onClose={() => setGame((g) => ({ ...g, tree: false }))} />
-      )}
-      {game.intro && (
-        <OpeningScene game={game} P={P}
-          onClose={() => setGame((g) => ({ ...g, intro: false }))} onChoose={chooseOrigin} />
-      )}
-      {game.district && game.provinces[game.district] && (
-        <DistrictPanel game={game} P={P} prov={game.provinces[game.district]}
-          onClose={() => setGame((g) => ({ ...g, district: null }))}
-          onBuild={build} onImprove={improve} onRepair={repair}
-          onTakeWard={takeWard} onFightWard={fightWard} />
-      )}
-      {game.seat && game.provinces[game.seat] && (
-        <SeatScreen game={game} P={P} prov={game.provinces[game.seat]}
-          onClose={() => setGame((g) => ({ ...g, seat: null }))}
-          onEdict={setEdict} onUpgrade={seatUpgrade} onWork={seatWork}
-          onRecruitOpen={(k) => setGame((g) => ({ ...g, recruit: k }))} />
-      )}
-      {game.lair && game.provinces[game.lair.k] && (
-        <LairModal lair={game.lair} prov={game.provinces[game.lair.k]}
-          onClose={() => setGame((g) => ({ ...g, lair: null }))} />
-      )}
-      {game.survey && (
-        <SurveyModal sv={game.survey} prov={game.provinces[game.survey.k]}
-          onChoose={resolveSurvey} onClose={() => setGame((g) => ({ ...g, survey: null }))} />
-      )}
-      {game.screen && (() => {
-        const shut = () => setGame((g) => ({ ...g, screen: null }));
-        const openTree = () => setGame((g) => ({ ...g, screen: null, tree: true }));
-        if (game.screen === "realm") return (
-          <RealmScreen title="The realm" onClose={shut}>
-            <RealmPanel game={game} P={P} nat={nat} />
-          </RealmScreen>);
-        if (game.screen === "tech") return (
-          <RealmScreen title="Advances" onClose={shut}>
-            <AdvancesPanel game={game} P={P} onResearch={research} onOpenTree={openTree} />
-          </RealmScreen>);
-        if (game.screen === "make") return (
-          <RealmScreen title="The works" onClose={shut}>
-            <ProductionPanel game={game} P={P} onCraft={setCraft} />
-          </RealmScreen>);
-        if (game.screen === "missions") return (
-          <RealmScreen title="Missions" onClose={shut}>
-            <MissionsPanel game={game} P={P}
-              onGo={(k) => setGame((g) => ({ ...g, screen: null, focus: k, sel: { armyId: null, k } }))}
-              onHear={(pid) => setGame((g) => ({ ...g, screen: null, hearing: pid }))}
-              onDistrict={(k) => setGame((g) => ({ ...g, screen: null, district: k }))} />
-          </RealmScreen>);
-        if (game.screen === "world") return (
-          <RealmScreen title="Rivals" onClose={shut}>
-            <WorldPanel game={game} P={P} atWar={atWar} onWar={toggleWar}
-              onGift={sendGift} onAsk={askAccord} />
-          </RealmScreen>);
-        return null;
-      })()}
-      {game.showCodex && <Codex onClose={() => setGame((g) => ({ ...g, showCodex: false }))} />}
-      {game.over && <GameOver over={game.over} onRestart={() => setGame(initialState())} />}
-    </div>
+        {game.recruit && (
+          <RecruitPanel
+            natId={P} nat={nat} provName={game.provinces[game.recruit]?.name}
+            prov={game.provinces[game.recruit]}
+            onClose={() => setGame((g) => ({ ...g, recruit: null }))}
+            onConfirm={(type, wg, ag) => recruitUnit(game.recruit, type, wg, ag)}
+          />
+        )}
+        {game.wallAt && (
+          <RecruitPanel wall
+            natId={P} nat={nat} provName={game.provinces[game.wallAt]?.name}
+            prov={game.provinces[game.wallAt]}
+            onClose={() => setGame((g) => ({ ...g, wallAt: null }))}
+            onConfirm={(type, wg, ag) => garrisonUnit(game.wallAt, type, wg, ag)}
+          />
+        )}
+        {game.battle && (
+          <BattleScreen b={game.battle} nations={game.nations} P={P}
+            onStep={stepBattle} onAuto={autoBattle} onClose={closeBattle}
+            onDeploy={deployBattle} onPost={postBattle} onCommit={commitReserve}
+            onBegin={beginBattle} />
+        )}
+        {game.lords && (
+          <CourtScreen game={game} P={P}
+            tab={game.courtTab || "lord"}
+            onTab={(k) => setGame((g) => ({ ...g, courtTab: k }))}
+            onClose={() => setGame((g) => ({ ...g, lords: false }))}
+            onSuccession={() => setGame((g) => ({ ...g, lords: false, nations: { ...g.nations, [P]: { ...g.nations[P], succession: true } } }))}
+            onHall={() => setGame((g) => ({ ...g, lords: false, hall: "open" }))}
+            onHear={(pid) => setGame((g) => ({ ...g, lords: false, hearing: pid }))}
+            onWear={wearPiece} onStow={stowPiece} onBuy={buyPiece}
+            onHold={holdOffice} onLeave={leaveOffice}
+            onTake={takeTradition} onDecide={decide} onRelease={releaseRetainer} />
+        )}
+        {game.chapter && !game.battle && (
+          <ChapterScene chapter={game.chapter} onClose={() => setGame((g) => ({ ...g, chapter: null }))} />
+        )}
+        {game.milestone && !game.battle && MILESTONES[game.milestone] && (
+          <MilestoneScene id={game.milestone} game={game} P={P} onChoose={chooseHabit} />
+        )}
+        {game.captainMark && !game.battle && !game.milestone && MARKS[game.captainMark.id] && (
+          <CaptainMarkScene due={game.captainMark} game={game} P={P} onChoose={chooseMark} />
+        )}
+        {game.retainer && !game.battle && !game.milestone && !game.captainMark && RETAINERS[game.retainer] && (
+          <RetainerScene id={game.retainer} game={game} P={P} onAnswer={answerRetainer} />
+        )}
+        {game.warhorn && !game.battle && !game.milestone && !game.captainMark && !game.retainer && MINORS[game.warhorn] && (
+          <WarhornScene who={game.warhorn} game={game} P={P}
+            onClose={() => setGame((g) => ({ ...g, warhorn: null }))} />
+        )}
+        {!game.battle && (game.meetings || []).length > 0 && FIRST_MEET[game.meetings[0]] && (
+          <EncounterScene enc={FIRST_MEET[game.meetings[0]]} game={game} P={P} onAnswer={answerEncounter} />
+        )}
+        {game.hearing && (game.petitions || []).some((x) => x.id === game.hearing) && (
+          <PetitionScene pt={game.petitions.find((x) => x.id === game.hearing)} game={game}
+            onAnswer={(i) => answerPetition(game.hearing, i)}
+            onClose={() => setGame((g) => ({ ...g, hearing: null }))} />
+        )}
+        {game.nations[P]?.succession && game.nations[P]?.lordDead && !game.battle && (
+          <SuccessionScene game={game} P={P} onChoose={succeed}
+            onLater={() => setGame((g) => ({ ...g, nations: { ...g.nations, [P]: { ...g.nations[P], succession: false } } }))} />
+        )}
+        {game.hall && (
+          <HallPanel game={game} P={P} armyId={game.hall === "open" ? null : game.hall}
+            onAppoint={appointCaptain} onDismiss={dismissCaptain} onSend={sendForCaptain}
+            onClose={() => setGame((g) => ({ ...g, hall: null }))} />
+        )}
+        {game.roster && (
+          <RosterPanel game={game} P={P} sight={sight} atWar={atWar}
+            onClose={() => setGame((g) => ({ ...g, roster: false }))}
+            onPick={(a) => setGame((g) => ({
+              ...g, roster: false, focus: key(a.c, a.r),
+              sel: { armyId: a.owner === P ? a.id : null, k: key(a.c, a.r) },
+            }))} />
+        )}
+        {game.tree && (
+          <TechTree game={game} P={P} onResearch={research}
+            onClose={() => setGame((g) => ({ ...g, tree: false }))} />
+        )}
+        {game.intro && (
+          <OpeningScene game={game} P={P}
+            onClose={() => setGame((g) => ({ ...g, intro: false }))} onChoose={chooseOrigin} />
+        )}
+        {game.district && game.provinces[game.district] && (
+          <DistrictPanel game={game} P={P} prov={game.provinces[game.district]}
+            onClose={() => setGame((g) => ({ ...g, district: null }))}
+            onBuild={build} onImprove={improve} onRepair={repair}
+            onTakeWard={takeWard} onFightWard={fightWard} />
+        )}
+        {game.seat && game.provinces[game.seat] && (
+          <SeatScreen game={game} P={P} prov={game.provinces[game.seat]}
+            onClose={() => setGame((g) => ({ ...g, seat: null }))}
+            onEdict={setEdict} onUpgrade={seatUpgrade} onWork={seatWork}
+            onRecruitOpen={(k) => setGame((g) => ({ ...g, recruit: k }))} />
+        )}
+        {game.lair && game.provinces[game.lair.k] && (
+          <LairModal lair={game.lair} prov={game.provinces[game.lair.k]}
+            onClose={() => setGame((g) => ({ ...g, lair: null }))} />
+        )}
+        {game.survey && (
+          <SurveyModal sv={game.survey} prov={game.provinces[game.survey.k]}
+            onChoose={resolveSurvey} onClose={() => setGame((g) => ({ ...g, survey: null }))} />
+        )}
+        {game.screen && (() => {
+          const shut = () => setGame((g) => ({ ...g, screen: null }));
+          const openTree = () => setGame((g) => ({ ...g, screen: null, tree: true }));
+          if (game.screen === "realm") return (
+            <RealmScreen title="The realm" onClose={shut}>
+              <RealmPanel game={game} P={P} nat={nat} />
+            </RealmScreen>);
+          if (game.screen === "tech") return (
+            <RealmScreen title="Advances" onClose={shut}>
+              <AdvancesPanel game={game} P={P} onResearch={research} onOpenTree={openTree} />
+            </RealmScreen>);
+          if (game.screen === "make") return (
+            <RealmScreen title="The works" onClose={shut}>
+              <ProductionPanel game={game} P={P} onCraft={setCraft} />
+            </RealmScreen>);
+          if (game.screen === "missions") return (
+            <RealmScreen title="Missions" onClose={shut}>
+              <MissionsPanel game={game} P={P}
+                onGo={(k) => setGame((g) => ({ ...g, screen: null, focus: k, sel: { armyId: null, k } }))}
+                onHear={(pid) => setGame((g) => ({ ...g, screen: null, hearing: pid }))}
+                onDistrict={(k) => setGame((g) => ({ ...g, screen: null, district: k }))} />
+            </RealmScreen>);
+          if (game.screen === "world") return (
+            <RealmScreen title="Rivals" onClose={shut}>
+              <WorldPanel game={game} P={P} atWar={atWar} onWar={toggleWar}
+                onGift={sendGift} onAsk={askAccord} />
+            </RealmScreen>);
+          return null;
+        })()}
+        {person && (
+          <CaptainPage c={person.c} where={person.where} others={myCaptains(game)}
+            onClose={() => setGame((g) => ({ ...g, person: null }))} />
+        )}
+        {game.showCodex && <Codex onClose={() => setGame((g) => ({ ...g, showCodex: false }))} />}
+        {game.over && <GameOver over={game.over} onRestart={() => setGame(initialState())} />}
+      </div>
+    </PersonCtx.Provider>
   );
 }
 
@@ -9247,6 +9529,13 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
       stock: (type) => window.__ccStock && window.__ccStock(type),
       see: (c, r) => window.__ccSee && window.__ccSee(c, r),
       hall: () => window.__ccHall && window.__ccHall(),
+      // ...and five fields, or ten winters, on somebody's record.
+      mark: (field) => window.__ccMark && window.__ccMark(field),
+      // ...and something a field took off them for good.
+      hurt: () => window.__ccHurt && window.__ccHurt(),
+      // ...and two of them have an opinion about each other, which is one
+      // winter in eleven once two of them have served four.
+      tie: (kind) => window.__ccTie && window.__ccTie(kind),
     };
     if (typeof window !== "undefined") window.__ccWild = () => {
       const game = gameRef.current;
@@ -9344,6 +9633,32 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
                 .map((k) => `${k}:${c[k].toFixed(3)}`).join(" ");
             })(),
             pending: game.milestone || null,
+          };
+        })(),
+        /* Who is actually leading your warbands, read as people rather than as
+           a column of modifiers: what is on their record, what they hardened
+           into at a mark, and what a field took off them for good. */
+        people: (() => {
+          const n = game.nations[game.player] || {};
+          const say = (c, where) => `${c.name}@${where}#${c.id}:L${c.loyalty}:f${c.fields || 0}w${c.wins || 0}`
+            + `s${c.storms || 0}r${c.routs || 0}y${c.seasons || 0}`
+            + `:${(c.traits || []).join("+") || "-"}`
+            + `:marks${(c.marks || []).join("+") || "-"}`
+            + `:hurt${(c.wounds || []).join("+") || "-"}`
+            + `:tied${c.bond ? `${c.bond.kind}${c.bond.gone ? "-gone" : ""}:${c.bond.who}` : "-"}`
+            // ...and what all of it comes to for the companies, which is the
+            // only way to see from outside that a wound is not decoration.
+            + `:does${["dealt", "taken", "storm", "morale", "ranged", "waste"]
+                .map((k) => captainMods({ captain: c })[k].toFixed(2)).join("/")}`;
+          return {
+            led: game.armies.filter((a) => a.owner === game.player && a.captain)
+              .map((a) => say(a.captain, a.lord ? "seat" : a.id)),
+            hall: (n.hall || []).map((c) => say(c, "hall")),
+            /* A post and a ransom are the other two places one of yours can
+               be standing, and a bond reaches into both. */
+            posts: Object.entries(n.offices || {}).filter(([, c]) => c).map(([k, c]) => say(c, k)),
+            held: (n.captives || []).map((x) => say(x.captain, `held-${x.by}`)),
+            due: game.captainMark ? `${game.captainMark.who}:${game.captainMark.id}` : null,
           };
         })(),
         /* The diplomatic position, which is otherwise only legible by opening
@@ -10786,25 +11101,195 @@ function SelectionPanel({ game, P, sight, selProv, selArmy, onBuild, onRecruitOp
 }
 
 /* Who leads them, what they are like, and whether they still mean to. */
+/* A captain's line turns up in seven places — the army panel, the hall, the
+   succession, the court — and from every one of them you can ask to read the
+   person properly. A context is cheaper and quieter than threading the same
+   handler through all seven. */
+const PersonCtx = React.createContext(null);
+
 function CaptainLine({ c, compact }) {
+  const open = React.useContext(PersonCtx);
   const tone = c.loyalty >= 50 ? "cc-text-9fd6b4" : c.loyalty >= LOYALTY.mutter ? "cc-text-e8b98a" : "cc-text-e08a6a";
+  const hurt = (c.wounds || []).filter((id) => WOUNDS[id]);
   return (
     <div className={`rounded border cc-border-31454f cc-bg-131f27 px-2.5 py-2 ${compact ? "" : "mb-2"}`}>
       <div className="flex items-baseline gap-2">
-        <span className="cc-text-13px cc-text-f0e2b8">Captain {c.name}</span>
+        {open ? (
+          <button type="button" onClick={() => open(c.id)}
+            className="cc-text-13px cc-text-f0e2b8 cc-hover-text-f2c97a text-left"
+            title="Read them properly">Captain {c.name}</button>
+        ) : (
+          <span className="cc-text-13px cc-text-f0e2b8">Captain {c.name}</span>
+        )}
         <span className={`cc-text-11d5px ml-auto ${tone}`}>{loyaltyWord(c.loyalty)}</span>
       </div>
       <div className="cc-loyal mt-1"><span style={{ width: `${c.loyalty}%` }} className={c.loyalty >= 50 ? "cc-loyalgood" : c.loyalty >= LOYALTY.mutter ? "cc-loyalwarn" : "cc-loyalbad"} /></div>
       <div className="flex flex-wrap gap-1 mt-1.5">
         {c.traits.map((id) => TRAITS[id] && (
           <span key={id} title={TRAITS[id].desc}
-            className={`cc-text-11px rounded px-1.5 py-0.5 border ${id === "shaken" ? "cc-border-5a3230 cc-text-e09a8a" : TRAITS[id].earned ? "cc-border-8a6f36 cc-text-f2c97a" : "cc-border-3d5a4a cc-text-9fd6b4"}`}>
+            className={`cc-text-11px rounded px-1.5 py-0.5 border ${id === "shaken" ? "cc-border-5a3230 cc-text-e09a8a" : TRAITS[id].mark ? "cc-border-8a6f36 cc-text-f0e2b8" : TRAITS[id].earned ? "cc-border-8a6f36 cc-text-f2c97a" : "cc-border-3d5a4a cc-text-9fd6b4"}`}>
             {TRAITS[id].name}
+          </span>
+        ))}
+        {hurt.map((id) => (
+          <span key={id} title={WOUNDS[id].desc}
+            className="cc-text-11px rounded px-1.5 py-0.5 border cc-border-5a3230 cc-text-c99a8a">
+            {WOUNDS[id].name}
           </span>
         ))}
         <span className="cc-text-11px cc-text-6f8794 ml-auto">{c.fields} {c.fields === 1 ? "field" : "fields"}</span>
       </div>
     </div>
+  );
+}
+
+/* --------------------------- A CAPTAIN, READ BACK --------------------------
+   Everything in here comes off this captain's own record, which is the only
+   way two people with the same two habits and different wars read as two
+   different people. It is prose on purpose: the chips underneath say what the
+   habits do, and this says who they are. */
+function captainStory(c) {
+  const out = [];
+  const born = (c.traits || []).filter((id) => TRAITS[id]?.born).map((id) => TRAITS[id].name.toLowerCase());
+  out.push(born.length
+    ? `Came to your hall ${born.join(" and ")} — nobody taught them either of those.`
+    : "Came to your hall with nothing anybody had thought to write down.");
+  const f = c.fields || 0, w = c.wins || 0;
+  out.push(!f
+    ? "They have not stood in a line for you yet."
+    : `${f} ${f === 1 ? "field" : "fields"} since, and ${!w ? "not one of them won"
+      : w === f ? "every one of them won" : `${w} of them won`}.`);
+  if (c.storms) {
+    out.push(c.storms === 1
+      ? "Once they have gone up broken stonework with people above them trying to stop it happening."
+      : `${c.storms} times they have gone up broken stonework with people above them trying to stop it happening.`);
+  }
+  if (c.routs) {
+    out.push(c.routs === 1
+      ? "A line of theirs went, once, and they came off the field with what was left of it."
+      : `${c.routs} times a line of theirs has gone, and ${c.routs === 2 ? "both times" : "every time"} they came off the field with what was left of it.`);
+  }
+  const y = c.seasons || 0;
+  if (y) out.push(`${y} ${y === 1 ? "winter" : "winters"} under your banner.`);
+  (c.wounds || []).forEach((id) => { if (WOUNDS[id]) out.push(`${WOUNDS[id].name}. ${WOUNDS[id].desc}`); });
+  if (c.loyalty < LOYALTY.mutter) out.push("They are muttering about you, and the companies can hear it.");
+  else if (c.loyalty >= 75) out.push("They would follow you into the sea.");
+  return out.join(" ");
+}
+
+function CaptainPage({ c, where, others, onClose }) {
+  if (!c) return null;
+  const tied = c.bond && (others || []).find((x) => x.id === c.bond.who);
+  const answered = c.marks || [];
+  const habits = (c.traits || []).filter((id) => TRAITS[id]);
+  const hurt = (c.wounds || []).filter((id) => WOUNDS[id]);
+  const ahead = MARK_IDS.filter((id) => !answered.includes(id));
+  const tone = c.loyalty >= 50 ? "cc-text-9fd6b4" : c.loyalty >= LOYALTY.mutter ? "cc-text-e8b98a" : "cc-text-e08a6a";
+  return (
+    <Overlay onClose={onClose}>
+      <div className="cc-scenetex cc-w-620px cc-max-w-94vw cc-max-h-90vh rounded-lg border cc-border-8a6f36 cc-bg-0d141a flex flex-col overflow-hidden">
+        <div className="px-5 py-3.5 border-b cc-border-2a1f1c flex items-center gap-3"
+          style={{ background: "linear-gradient(90deg,#1e1710,#0d141a)" }}>
+          <div className="flex-1 min-w-0">
+            <div className="cc-text-11d5px cc-text-c9a37a">{where}</div>
+            <div className="disp cc-text-20px">{c.name}</div>
+          </div>
+          <span className={`cc-text-12px ${tone}`}>{loyaltyWord(c.loyalty)}</span>
+          <button onClick={onClose} className="cc-text-93a9b5 cc-hover-text-e5eef3"><X size={18} /></button>
+        </div>
+        <div className="p-5 grid gap-3.5 overflow-y-auto thin">
+          <p className="cc-text-14px leading-relaxed cc-text-dfeaf0">{captainStory(c)}</p>
+          <div className="cc-loyal"><span style={{ width: `${c.loyalty}%` }} className={c.loyalty >= 50 ? "cc-loyalgood" : c.loyalty >= LOYALTY.mutter ? "cc-loyalwarn" : "cc-loyalbad"} /></div>
+          {c.bond && (
+            <div className="rounded border cc-border-31454f cc-bg-131f27 px-3 py-2">
+              <div className="cc-text-11d5px cc-text-93a9b5">
+                {c.bond.gone ? BONDS[c.bond.kind].gone : BONDS[c.bond.kind].word}
+              </div>
+              <div className={`cc-text-13px ${c.bond.kind === "friend" ? "cc-text-9fd6b4" : "cc-text-e8b98a"}`}>
+                {tied ? tied.name : "somebody who is not under your banner any more"}
+              </div>
+              <div className="cc-text-12d5px cc-text-adc2cc mt-0.5 leading-snug">
+                {c.bond.gone || !tied ? "Nothing moves either way now."
+                  : BONDS[c.bond.kind].note}
+              </div>
+            </div>
+          )}
+          <div>
+            <div className="cc-text-12d5px cc-text-a7bac6 pb-1 mb-2 border-b cc-border-243138">
+              What they are, and what it does to the warband
+            </div>
+            <div className="grid gap-2">
+              {habits.map((id) => (
+                <div key={id} className="rounded border cc-border-31454f cc-bg-131f27 px-3 py-2">
+                  <div className="flex items-baseline gap-2">
+                    <span className={`cc-text-13px ${TRAITS[id].mark ? "cc-text-f0e2b8" : TRAITS[id].earned ? "cc-text-f2c97a" : "cc-text-9fd6b4"}`}>
+                      {TRAITS[id].name}
+                    </span>
+                    <span className="cc-text-11px cc-text-6f8794 ml-auto">
+                      {TRAITS[id].mark ? "hardened at a mark" : TRAITS[id].earned ? "earned in the field" : "theirs before you met them"}
+                    </span>
+                  </div>
+                  <div className="cc-text-12d5px cc-text-adc2cc mt-0.5 leading-snug">{TRAITS[id].desc}</div>
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {traitChips(TRAITS[id]).map((x, i) => (
+                      <span key={i} className={`cc-text-11px rounded px-1.5 py-0.5 border ${x.good
+                        ? "cc-border-3d5a4a cc-text-9fd6b4" : "cc-border-5a3230 cc-text-e09a8a"}`}>{x.t}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {hurt.length > 0 && (
+            <div>
+              <div className="cc-text-12d5px cc-text-a7bac6 pb-1 mb-2 border-b cc-border-243138">
+                What the fields took, and are not giving back
+              </div>
+              <div className="grid gap-2">
+                {hurt.map((id) => (
+                  <div key={id} className="rounded border cc-border-5a3230 cc-bg-1b1416 px-3 py-2">
+                    <div className="cc-text-13px cc-text-e09a8a">{WOUNDS[id].name}</div>
+                    <div className="cc-text-12d5px cc-text-adc2cc mt-0.5 leading-snug">{WOUNDS[id].desc}</div>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {traitChips(WOUNDS[id]).map((x, i) => (
+                        <span key={i} className={`cc-text-11px rounded px-1.5 py-0.5 border ${x.good
+                          ? "cc-border-3d5a4a cc-text-9fd6b4" : "cc-border-5a3230 cc-text-e09a8a"}`}>{x.t}</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <div className="cc-text-12d5px cc-text-a7bac6 pb-1 mb-2 border-b cc-border-243138">
+              Marks — {answered.length} of {MARK_IDS.length} answered
+            </div>
+            <div className="grid gap-1">
+              {MARK_IDS.map((id) => {
+                const m = MARKS[id];
+                const took = m.options.find((o) => (c.traits || []).includes(o.trait));
+                const done = answered.includes(id);
+                return (
+                  <div key={id} className="flex items-baseline gap-2 cc-text-12d5px">
+                    <span className={done ? "cc-text-f0e2b8" : "cc-text-6f8794"}>{m.title}</span>
+                    <span className="cc-text-11d5px cc-text-93a9b5 ml-auto text-right">
+                      {done ? (took ? took.name : "answered") : "not yet"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {ahead.length > 0 && (
+              <div className="cc-text-11d5px cc-text-6f8794 mt-2 leading-snug">
+                A mark comes true because of something that happens to them and nobody else.
+                You will be asked which of two ways it marked them, once, and the answer is permanent.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </Overlay>
   );
 }
 
@@ -14694,6 +15179,62 @@ function MilestoneScene({ id, game, P, onChoose }) {
   );
 }
 
+/* The same scene for a captain, because the thing being asked is the same
+   thing: which of two ways did this afternoon mark the person who was in it.
+   The difference is whose face is at the top of the card, and that the answer
+   reaches one warband rather than every warband you will ever raise. */
+function CaptainMarkScene({ due, game, P, onChoose }) {
+  const m = MARKS[due?.id];
+  const c = [
+    ...game.armies.filter((a) => a.owner === P && a.captain).map((a) => a.captain),
+    ...((game.nations[P]?.hall) || []),
+  ].find((x) => x.id === due?.who);
+  if (!m || !c) return null;
+  const answered = (c.marks || []).length;
+  return (
+    <Overlay>
+      <div className="cc-scenetex cc-w-660px cc-max-w-94vw rounded-lg border cc-border-8a6f36 cc-bg-0d141a overflow-hidden">
+        <div className="px-5 py-3.5 border-b cc-border-2a1f1c flex items-center gap-3"
+          style={{ background: "linear-gradient(90deg,#1e1710,#0d141a)" }}>
+          <Swords size={20} className="cc-text-f0e2b8" />
+          <div className="flex-1">
+            <div className="cc-text-11d5px cc-text-c9a37a">{m.kicker} — Captain {c.name}</div>
+            <div className="disp cc-text-20px">{m.title}</div>
+          </div>
+        </div>
+        <div className="p-5 grid gap-3">
+          <p className="cc-text-14px leading-relaxed cc-text-dfeaf0">{m.scene}</p>
+          <div className="cc-text-12d5px cc-text-93a9b5">
+            <span className="num">{c.fields || 0}</span> {(c.fields || 0) === 1 ? "field" : "fields"} and{" "}
+            <span className="num">{c.seasons || 0}</span>{" "}
+            {(c.seasons || 0) === 1 ? "winter" : "winters"} behind them, and{" "}
+            {answered ? <>already <span className="num">{answered}</span> {answered === 1 ? "mark" : "marks"} on them</> : "nothing written on them yet"}.
+            This is one more, it reaches their warband and no other, and it is permanent.
+          </div>
+          <div className="grid gap-2 cc-md-grid-cols-2">
+            {m.options.map((o) => {
+              const t = TRAITS[o.trait] || {};
+              return (
+                <button key={o.trait} type="button" onClick={() => onChoose(due.who, due.id, o.trait)}
+                  className="text-left rounded border cc-border-31454f cc-bg-131f27 px-3.5 py-3 cc-hover-border-4d9aa6 transition-colors">
+                  <div className="disp cc-text-15px cc-text-f2c97a">{o.name}</div>
+                  <div className="cc-text-12d5px cc-text-adc2cc mt-1 leading-snug">{o.note}</div>
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {traitChips(t).map((x, i) => (
+                      <span key={i} className={`cc-text-11d5px rounded px-1.5 py-0.5 border ${x.good
+                        ? "cc-border-3d5a4a cc-text-9fd6b4" : "cc-border-5a3230 cc-text-e09a8a"}`}>{x.t}</span>
+                    ))}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
 /* A habit said in the same words the armoury and the traditions use. */
 const TRAIT_WORD = {
   dealt: ["damage dealt", 1], taken: ["damage taken", -1], morale: ["nerve holds", -1],
@@ -14702,6 +15243,9 @@ const TRAIT_WORD = {
   chase: ["the broken run down", 1], siege: ["cost of sitting on a siege", -1],
   garrison: ["wear on a garrison", 1], regardGain: ["regard earned", 1],
   raidOff: ["raids aimed at you", -1], loyalGain: ["loyalty earned", 1],
+  // Proud had nothing to say for itself until a captain's page gave every
+  // habit a card of its own and left one of them visibly blank.
+  slight: ["how hard a slight lands", -1],
 };
 function traitChips(t) {
   const out = [];
@@ -14712,8 +15256,8 @@ function traitChips(t) {
     if (!pc) return;
     out.push({ t: `${w[0]} ${v > 1 ? "+" : "−"}${pc}%`, good: w[1] > 0 ? v > 1 : v < 1 });
   });
-  if (t?.scout) out.push({ t: `scouting +${t.scout}`, good: true });
-  if (t?.relief) out.push({ t: `supply reach +${t.relief}`, good: true });
+  if (t?.scout) out.push({ t: `scouting ${t.scout > 0 ? "+" : "−"}${Math.abs(t.scout)}`, good: t.scout > 0 });
+  if (t?.relief) out.push({ t: `supply reach ${t.relief > 0 ? "+" : "−"}${Math.abs(t.relief)}`, good: t.relief > 0 });
   Object.entries(t?.mul || {}).forEach(([k, v]) => {
     const word = { food: "rations", scrap: "scrap", metal: "metal", fuel: "fuel", powder: "powder", men: "recruits" };
     out.push({ t: `${word[k] || k} ${v > 1 ? "+" : "−"}${Math.round(Math.abs(v - 1) * 100)}%`, good: v > 1 });
