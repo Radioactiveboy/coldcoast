@@ -57,7 +57,7 @@ export const STORIES = {
         need: { seasons: 2 }, action: "Stay a while", done: "The sluice-house family have stopped hiding the children when your people go past." },
       { text: "The gates are seized. One of them, opened, would drain the upper pool and put four hundred metres of riverbed and everything in it within reach. It wants a winch, which wants iron.",
         need: { scrap: 40 }, action: "Build the winch", done: "The gate goes up with a noise like a hill falling over. The pool goes down." },
-      { text: "The drained pool is a mudflat full of three centuries of things people dropped off a bridge. It wants working, and it wants the family to keep working the traps below it.",
+      { text: "The drained pool is a mudflat full of eight centuries of things people dropped off a bridge. It wants working, and it wants the family to keep working the traps below it.",
         need: { hold: true }, action: "Put a flag on it and set them to work", done: "Bristol Weir is worked from both ends now." },
     ],
     reward: { feature: "weirworks", text: "The weir feeds the seat and turns up something worth carting every season." },
@@ -81,7 +81,7 @@ export const STORIES = {
     steps: [
       { text: "The light is a signal. Somebody aboard is talking to somebody on the moor. Watch long enough to learn the pattern.",
         need: { seasons: 2 }, action: "Watch the light", done: "Three long, two short, at dusk. Whoever answers is up on the Crag." },
-      { text: "The signalling gear is on the bridge, six decks up through a ship that has been leaning at thirty degrees for three hundred years. It wants people who do not mind heights and do mind their footing.",
+      { text: "The signalling gear is on the bridge, six decks up through a ship that has been leaning at thirty degrees for eight hundred years. It wants people who do not mind heights and do mind their footing.",
         need: { unit: "hunters" }, action: "Send the hunters up", done: "The bridge. A lamp, a mirror, a book of who has answered and when. The signaller is long dead; the light is on a clockwork." },
       { text: "The lamp is a lighthouse in everything but name. Set it to your own pattern and post someone to keep it.",
         need: { hold: true }, action: "Keep the light", done: "Plymouth Hulk shows a light every night now, and it is yours." },
@@ -93,7 +93,7 @@ export const STORIES = {
     intro: "A fortress on a plug of black rock, built on a castle that was built on a hill fort. The gate is shut. From the walls, on a clear day, you can see the whole of the north.",
     steps: [
       { text: "The gate is shut from inside and nobody answers. There is a postern on the north face that the ivy has kept for you.",
-        need: { seasons: 1 }, action: "Find the postern", done: "A door the size of a man, behind three centuries of ivy. It opens inward." },
+        need: { seasons: 1 }, action: "Find the postern", done: "A door the size of a man, behind eight centuries of ivy. It opens inward." },
       { text: "Inside, a garrison of nobody. Barrack rooms, a magazine, a well, and a signal station on the highest tower looking south to the Hulk. The magazine is sealed and wants somebody who knows powder.",
         need: { tech: "saltpetre" }, action: "Open the magazine", done: "Barrels, dry. More than you have seen in one place." },
       { text: "A fortress is only a wall with somebody on it. Man it.",
@@ -108,7 +108,7 @@ export const STORIES = {
       { text: "The rust is a crust. Under it, in the sheds, the plate was stacked in the dry and is still plate. Cutting it out is a season's work.",
         need: { seasons: 2 }, action: "Cut into the sheds", done: "Eleven tonnes of plate, and the tools that cut it." },
       { text: "One shed is a foundry with the furnace still lined. It could be lit again by people who know how.",
-        need: { tech: "smelting" }, action: "Light the furnace", done: "Smoke over the Rust for the first time in three hundred years." },
+        need: { tech: "smelting" }, action: "Light the furnace", done: "Smoke over the Rust for the first time in eight hundred years." },
       { text: "A foundry needs a town around it, and the town needs to be yours.",
         need: { hold: true }, action: "Claim the Rust", done: "Glasgow Rust is a working town." },
     ],
@@ -116,7 +116,7 @@ export const STORIES = {
   },
   "22,61": { // Newcastle Slag
     title: "Newcastle Slag",
-    intro: "Hills that are not hills. Three centuries of slag from the old furnaces, grassed over, with things glinting in the cuttings where the rain has been at it.",
+    intro: "Hills that are not hills. Eight centuries of slag from the old furnaces, grassed over, with things glinting in the cuttings where the rain has been at it.",
     steps: [
       { text: "The slag is worth picking through. It is also full of holes, and some of the holes have things in them.",
         need: { unit: "axemen" }, action: "Send the axes in first", done: "Two dogs the size of ponies and a lot of very old iron. The axemen lose nobody, which surprises them." },
@@ -170,7 +170,7 @@ export const STORIES = {
     title: "Holk",
     intro: "A hundred trawlers dragged bow-to-stern into a ring on the open silt, cut into halls and roofed with their own decks, with a mile of ploughed seabed around them. The masts are a stockade. The winches still turn.",
     steps: [
-      { text: "The ring was dragged together by hand and by winch three hundred years ago and nobody since has written down which hull is holding which up. Somebody has to walk it and find out.",
+      { text: "The ring was dragged together by hand and by winch eight hundred years ago and nobody since has written down which hull is holding which up. Somebody has to walk it and find out.",
         need: { seasons: 1 }, action: "Walk the ring", done: "Ninety-one hulls, eleven of them load-bearing, and one stern trawler that everything else is leaning on." },
       { text: "The threshing floor is the afterdeck of the Holkfast and it has been turned by hand since before anyone alive was born. Iron would make it a mill.",
         need: { scrap: 45 }, action: "Iron the threshing floor", done: "It does in a morning what took a week. The reeve stands and watches it for an hour without saying anything." },

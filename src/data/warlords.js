@@ -81,7 +81,7 @@ export const WARLORDS = {
     blurb: "Nobody remembers his given name and he has not used it since he took the ledger. He has spent his whole life on a deck four hundred feet above a dry seabed, and he has never once been rushed by anybody.",
     traits: [
       { n: "The board", d: "Everyone crosses. What everyone does not do is cross free.", mul: { scrap: 1.25 } },
-      { n: "One span a decade", d: "They have not stopped building it in three hundred years and they are not going to.", taken: 0.85 },
+      { n: "One span a decade", d: "They have not stopped building it in eight hundred years and they are not going to.", taken: 0.85 },
     ],
   },
   skinless: {

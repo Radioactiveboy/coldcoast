@@ -74,7 +74,7 @@ export const REGALIA = {
   },
   alpinehelm: {
     slot: "head", name: "A vault-warden's helm", tier: "seat", fromSeat: "alpine",
-    note: "Machined, not hammered, and the visor still closes without a sound after three hundred years.",
+    note: "Machined, not hammered, and the visor still closes without a sound after eight hundred years.",
     mods: { taken: 0.93, ranged: 1.05 },
   },
   karstseal: {

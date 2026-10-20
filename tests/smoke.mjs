@@ -102,6 +102,25 @@ const closeOverlay = async () => {
 let sawChapter = false;
 const clearScenes = async () => {
   for (let i = 0; i < 6; i++) {
+    /* The seat falling empty is the one modal nothing here answered, and it
+       is the one that cost the most: a warlord killed somewhere in the long
+       campaign put a scene in front of the map that every later click went
+       into, so the court, the holdouts, the narrows and the realm meetings
+       all failed together and none of them said why. Name the first captain
+       with a claim, which is what a player does, and which also keeps the
+       realm out of the leaderless penalty for the rest of the run. */
+    const seat = await page.evaluate(() => {
+      const ov = [...document.querySelectorAll(".fixed.inset-0.z-50")]
+        .find((x) => /The seat is empty/.test(x.innerText));
+      if (!ov) return false;
+      const bb = [...ov.querySelectorAll("button")];
+      const take = bb.find((x) => /Give them the seat/.test(x.textContent))
+        || bb.find((x) => /Let the companies put somebody forward/.test(x.textContent))
+        || bb.find((x) => /Leave it empty for now/.test(x.textContent));
+      if (take) { take.click(); return true; }
+      return false;
+    });
+    if (seat) { await wait(400); continue; }
     /* Somebody at the fire is modal in the same way, and turning them away is
        final — so the busy answer is to take them, which is also what leaves
        the household with something in it to check afterwards. */
@@ -1399,7 +1418,6 @@ const courtTab = async (name) => {
   await wait(450);
   const tabs = await page.evaluate(() => [...document.querySelectorAll(".cc-courttab")].map((x) => x.textContent.trim()));
   check("the court opens from the top left", opened && tabs.length === 4, tabs.join(" · ") || "no tabs");
-
   // The armoury. A bought piece goes on, and it moves what the banner is worth.
   const before = await court();
   const scrapWas = (await purse()).scrap;
@@ -1432,6 +1450,22 @@ const courtTab = async (name) => {
   check("a post takes somebody out of the hall",
     !!who && held.offices.some((x) => x.startsWith("quartermaster:")) && held.hall === hallWas - 1,
     held.offices.join(" · ") || "nobody holds anything");
+  /* When this one goes, every check below it goes with it and none of them
+     says why — the court, the holdouts, the narrows and the realm meetings
+     all fail together. Say what was actually on the screen and how far the
+     campaign had got, so the next person reading a wall of red has a thread
+     to pull rather than a mystery. */
+  if (!who) {
+    const why = await page.evaluate(() => ({
+      overlays: [...document.querySelectorAll(".fixed.inset-0.z-50")]
+        .map((x) => x.innerText.split("\n").filter(Boolean)[0] || "(blank)"),
+      head: (document.querySelector("header")?.innerText || "").split("\n").filter(Boolean).slice(0, 3),
+      court: window.__ccWild().court,
+    }));
+    console.log("        ? overlays on screen:", why.overlays.join(" | ") || "none");
+    console.log("        ? the top bar reads :", why.head.join(" / "));
+    console.log("        ? the court holds   :", JSON.stringify(why.court));
+  }
 
   // A decision is made once and stays made.
   const tookWas = (await court()).taken.length;
@@ -1483,7 +1517,12 @@ const people = () => page.evaluate(() => window.__ccWild().people);
   // A season on the record is not won or lost. It simply passes.
   const years = async () => {
     const m = new Map();
-    (await people()).hall.forEach((x) => m.set(x.match(/#(\S+?):L/)[1], +x.match(/y(\d+)/)[1]));
+    const p2 = await people();
+    /* Every captain of yours, wherever they are standing. Reading the hall
+       alone made this depend on nobody being given a command or a post in the
+       same season, which is not a thing the campaign promises. */
+    [...p2.led, ...p2.hall, ...p2.posts].forEach((x) =>
+      m.set(x.match(/#(\S+?):L/)[1], { y: +x.match(/y(\d+)/)[1], who: x.split("@")[0], at: x.split("@")[1].split("#")[0] }));
     return m;
   };
   const yearsWas = await years();
@@ -1493,10 +1532,14 @@ const people = () => page.evaluate(() => window.__ccWild().people);
   /* Keyed on the captain rather than their place in the list: a man can be
      given a command or walk in off the road mid-season, and an index is not a
      person. Only the ones who were in the hall before and after are asked. */
-  const both = [...yearsWas.keys()].filter((id) => yearsNow.has(id));
+  /* A captain in a post is out of the field and their record is frozen, which
+     is the rule; everybody still under the banner gains the winter. */
+  const both = [...yearsWas.keys()].filter((id) => yearsNow.has(id))
+    .filter((id) => !yearsWas.get(id).at.startsWith("post-") && !yearsNow.get(id).at.startsWith("post-"));
   check("a winter under your banner goes on a captain's record",
-    both.length > 0 && both.every((id) => yearsNow.get(id) === yearsWas.get(id) + 1),
-    both.map((id) => `${yearsWas.get(id)}→${yearsNow.get(id)}`).join(" ") || "nobody in the hall either side");
+    both.length > 0 && both.every((id) => yearsNow.get(id).y === yearsWas.get(id).y + 1),
+    both.map((id) => `${yearsWas.get(id).who} ${yearsWas.get(id).at}→${yearsNow.get(id).at} `
+      + `${yearsWas.get(id).y}→${yearsNow.get(id).y}`).join(" | ") || "nobody under the banner either side");
 
   /* Five fields is five battles this captain stood in, and whether a given run
      has given one of them five by now is the campaign's business, not this
@@ -1593,7 +1636,11 @@ const people = () => page.evaluate(() => window.__ccWild().people);
   });
   check("a captain's name opens a page that reads as a life",
     !!page1 && !!life && /Came to your hall/.test(life) && /Marks — \d of 5 answered/.test(life)
-      && /What the fields took/.test(life) && /Will not stand next to/.test(life),
+      /* Any of the four ways the page heads a bond: the section is what is
+         under test, not which way the pair took to each other. A captain the
+         campaign had already paired off cannot be tied again, so insisting on
+         the rival wording made this pass or fail on who the war threw up. */
+      && /What the fields took/.test(life) && /sta(nds?|ood) next to/i.test(life),
     life ? life.split("\n").slice(0, 3).join(" · ") : "no page");
   await closeOverlay();
   await closeOverlay();

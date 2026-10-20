@@ -133,7 +133,7 @@ export const BUILDINGS = {
 
   /* ------------------------ WHAT A TRIBE CAN RAISE ------------------------
      Everything above wants a cart of scrap and somebody who knows what a
-     sluice is. These three are what a people three hundred years into the cold
+     sluice is. These three are what a people eight hundred years into the cold
      can put up with hands, spades and thorn — and they are the works that make
      ground feel held rather than merely owned.
 

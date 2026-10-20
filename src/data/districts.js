@@ -41,7 +41,7 @@ export const DISTRICT_POOL = [
   },
   {
     id: "docks", name: "The Drowned Docks", on: null, coast: true,
-    intro: "Wharves built for a water level that has not existed for three hundred years, standing forty feet over dry mud. The dockers' families never left. They still call it the harbour.",
+    intro: "Wharves built for a water level that has not existed for eight hundred years, standing forty feet over dry mud. The dockers' families never left. They still call it the harbour.",
     holder: "wasters", garrison: ["spearmen", "hunters"],
     ground: { left: "anchored", centre: "open", right: "rough" },
     ways: [
@@ -52,7 +52,7 @@ export const DISTRICT_POOL = [
   },
   {
     id: "spoil", name: "The Spoil Heap", on: "hrm",
-    intro: "A shanty on a hill that is not a hill. Three centuries of tailings, grassed over, with a thousand people living in the cuttings and pulling metal out of it by hand.",
+    intro: "A shanty on a hill that is not a hill. Eight centuries of tailings, grassed over, with a thousand people living in the cuttings and pulling metal out of it by hand.",
     holder: "wasters", garrison: ["axemen", "axemen"],
     ground: { left: "rough", centre: "rough", right: "open" },
     ways: [
@@ -74,7 +74,7 @@ export const DISTRICT_POOL = [
   },
   {
     id: "vaultdoor", name: "The Sealed Door", on: "rmh",
-    intro: "A blast door in the side of the quarter, seated, cold, with a keypad that has been dead for three hundred years. Somebody has built a shrine in front of it and lives off what pilgrims leave.",
+    intro: "A blast door in the side of the quarter, seated, cold, with a keypad that has been dead for eight hundred years. Somebody has built a shrine in front of it and lives off what pilgrims leave.",
     holder: "changed", garrison: ["fleshhorde", "fleshhorde"],
     ground: { left: "walls", centre: "rough", right: "walls" },
     ways: [
@@ -101,7 +101,7 @@ export const DISTRICT_POOL = [
     ground: { left: "walls", centre: "walls", right: "rough" },
     ways: [
       { kind: "pay", res: { scrap: 50, food: 30 }, label: "Take them into service", text: "Wages and rations, and the wall-keepers become your wall-keepers. They are visibly relieved that somebody finally asked." },
-      { kind: "fight", label: "Go up it", text: "Up a wall that has been kept in repair for three hundred years by people whose whole purpose is keeping it." },
+      { kind: "fight", label: "Go up it", text: "Up a wall that has been kept in repair for eight hundred years by people whose whole purpose is keeping it." },
       { kind: "need", need: { pop: 900 }, label: "Outgrow them", text: "The place spills past the wall and round it until keeping a gate shut stops meaning anything. They open it themselves." },
     ],
   },
@@ -234,7 +234,7 @@ export const SEAT_DISTRICTS = {
     },
     {
       id: "lundenwall", name: "The Wall Ward",
-      intro: "The square mile the Romans walled and nobody since has managed to un-wall. What is inside it has not needed anyone's permission in three hundred years, and says so from the gate.",
+      intro: "The square mile the Romans walled and nobody since has managed to un-wall. What is inside it has not needed anyone's permission in eight hundred years, and says so from the gate.",
       holder: "wasters", garrison: ["spearmen", "spearmen", "hunters"],
       ground: { left: "walls", centre: "walls", right: "rough" },
       ways: [
@@ -256,7 +256,7 @@ export const SEAT_DISTRICTS = {
     },
     {
       id: "lundendeep", name: "The Deep Lines",
-      intro: "The tube, below the water table that no longer exists, dry for three centuries. People went down there when the water came and some of their grandchildren have still not come up.",
+      intro: "The tube, below the water table that no longer exists, dry for eight centuries. People went down there when the water came and some of their grandchildren have still not come up.",
       holder: "changed", garrison: ["fleshhorde", "fleshhorde", "fleshhorde"],
       ground: { left: "walls", centre: "rough", right: "walls" },
       ways: [
@@ -328,7 +328,7 @@ export const SEAT_DISTRICTS = {
   "59,106": [  // Venezia Silt
     {
       id: "venpiles", name: "The Piles",
-      intro: "The city stands on a forest of wooden piles that have been in mud for a millennium and in dry air for three centuries. The pile-keepers go down and pack them, every year, and everybody leaves the pile-keepers alone.",
+      intro: "The city stands on a forest of wooden piles that have been in mud for a millennium and in dry air for eight centuries. The pile-keepers go down and pack them, every year, and everybody leaves the pile-keepers alone.",
       holder: "wasters", garrison: ["spearmen", "hunters"],
       ground: { left: "rough", centre: "rough", right: "anchored" },
       ways: [
@@ -344,7 +344,7 @@ export const SEAT_DISTRICTS = {
       ground: { left: "walls", centre: "rough", right: "rough" },
       ways: [
         { kind: "pay", res: { scrap: 60, food: 20 }, label: "Buy a season's making", text: "You buy the whole season's work sight unseen. It is an enormous sum and it makes you, in their eyes, a patron rather than a warlord." },
-        { kind: "fight", label: "Take the furnaces", text: "Among furnaces that have been lit for three hundred years, which nobody on either side wants to put out." },
+        { kind: "fight", label: "Take the furnaces", text: "Among furnaces that have been lit for eight hundred years, which nobody on either side wants to put out." },
         { kind: "need", need: { tech: "refining" }, label: "Bring them fuel", text: "Proper fuel, refined, in quantity. The guild has been burning driftwood for a century. They open the gate themselves." },
       ],
     },
@@ -392,7 +392,7 @@ export const SEAT_DISTRICTS = {
       ground: { left: "open", centre: "open", right: "open" },
       ways: [
         { kind: "pay", res: { scrap: 50 }, label: "Buy the cut", text: "You buy the caravanmaster's cut and keep the caravanmaster, who is worth considerably more than the cut." },
-        { kind: "fight", label: "Take the ground", text: "In the open against horse, on ground chosen three hundred years ago for being good to ride on." },
+        { kind: "fight", label: "Take the ground", text: "In the open against horse, on ground chosen eight hundred years ago for being good to ride on." },
         { kind: "need", need: { tech: "horsemanship" }, label: "Out-ride them", text: "Your own riders on the salt road, faster and further. The caravanmaster changes sides before anybody draws anything." },
       ],
     },
@@ -406,7 +406,7 @@ export const SEAT_DISTRICTS = {
       ways: [
         { kind: "pay", res: { scrap: 55 }, label: "Endow the alignment", text: "You pay for the alignment to be done properly, with instruments. The devotion is unoffended and the field is yours." },
         { kind: "fight", label: "Take the field", text: "In the open, among nine thousand mirrors, in full sun, which nobody enjoys." },
-        { kind: "need", need: { tech: "refining" }, label: "Give the tower fuel", text: "The tower has run on sun alone for three centuries and it has always been a season short. You fix that, and the field follows the tower." },
+        { kind: "need", need: { tech: "refining" }, label: "Give the tower fuel", text: "The tower has run on sun alone for eight centuries and it has always been a season short. You fix that, and the field follows the tower." },
       ],
     },
     {

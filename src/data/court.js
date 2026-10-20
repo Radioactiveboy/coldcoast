@@ -134,7 +134,7 @@ export const DECISIONS = {
   burnrolls: {
     name: "Burn the old rolls",
     line: "Every debt, tithe and tenancy written before the water came.",
-    note: "There are ledgers in the seat that still record what a family owed to a bank that has been underwater for three hundred years. Burning them is either an act of mercy or the end of property, depending on who you ask.",
+    note: "There are ledgers in the seat that still record what a family owed to a bank that has been underwater for eight hundred years. Burning them is either an act of mercy or the end of property, depending on who you ask.",
     need: (c) => c.seat,
     cost: { scrap: 40 },
     gives: { growth: 1.12, pop: 90, mul: { scrap: 0.97 } },

@@ -1,7 +1,7 @@
 /* ------------------------------ FIRST CONTACT ------------------------------
    The first time your riders come back having laid eyes on somebody, you get
    the scene rather than a line in the log: where they are, what they are, why
-   they are still here after three hundred years, and what you propose to do
+   they are still here after eight hundred years, and what you propose to do
    about it before either of you has committed to anything.
 
    Every answer moves how that people regard you, and regard is not decoration
@@ -108,7 +108,7 @@ export const PACTS = {
 export const FIRST_MEET = {
 
   /* --------------------- THREE FURTHER OUT --------------------------------
-     A wood that has been deciding where its own paths go for three hundred
+     A wood that has been deciding where its own paths go for eight hundred
      years, a people who went into the water when the Balt went fresh and did
      not entirely come back, and the crews who worked out first what a harbour
      forty feet above its own floor is good for.
@@ -185,7 +185,7 @@ export const FIRST_MEET = {
     ],
     lore: [
       "The sills closed, the salt went, and the Balt became the biggest body of fresh water anybody had ever seen. The people who did not leave it worked it instead: eel runs, weed frames, pens in the flooded storeys, and a great deal of time spent under.",
-      "Three hundred years of that has told. They are longer in the hand and the foot than they should be, they do not take cold, and they can stay down a length of time your outriders will describe to you afterwards and expect not to be believed. They do not regard any of this as having gone wrong.",
+      "Eight hundred years of that has told. They are longer in the hand and the foot than they should be, they do not take cold, and they can stay down a length of time your outriders will describe to you afterwards and expect not to be believed. They do not regard any of this as having gone wrong.",
     ],
     voice: {
       name: "Sedge",
@@ -370,7 +370,7 @@ export const FIRST_MEET = {
     title: "The Alpine Compact",
     where: "under the Alpine Wall, where the doors are",
     scene: [
-      "There is a valley with nothing in it: no fields, no smoke, no stock. At the head of it is a concrete face with a door in it the size of a barn, and the door is clean. Everything else in the world is three hundred years dirty. That door has been washed.",
+      "There is a valley with nothing in it: no fields, no smoke, no stock. At the head of it is a concrete face with a door in it the size of a barn, and the door is clean. Everything else in the world is eight hundred years dirty. That door has been washed.",
       "It opens far enough for one person, and a woman in a grey coat comes out to a line painted on the ground and stops at it. She does not invite anybody in. She asks, in a flat and careful voice, whether you have any documents.",
     ],
     lore: [
@@ -417,7 +417,7 @@ export const FIRST_MEET = {
         regard: -38,
         war: true,
         outcome:
-          "She does not argue and she does not hurry. She steps back over the line, the door begins to close, and somewhere above the valley something that has been silent for three hundred years starts turning. Your riders are off the scree before the first shot and it still takes two of them.",
+          "She does not argue and she does not hurry. She steps back over the line, the door begins to close, and somewhere above the valley something that has been silent for eight hundred years starts turning. Your riders are off the scree before the first shot and it still takes two of them.",
       },
     ],
   },
@@ -431,7 +431,7 @@ export const FIRST_MEET = {
       "The factor is delighted to see you. He is delighted in a way that does not stop being unsettling. He would like to know what you have, what you want, what you are short of this winter, and whether you have considered that the League has been financing wars on this coast since before your grandfather was weaned.",
     ],
     lore: [
-      "Karst is not one thing. It is eleven free cities strung along the dry Adriatic that agree about tolls and about almost nothing else, and it has grown rich for three centuries on the simple observation that somebody has to sell both sides their powder.",
+      "Karst is not one thing. It is eleven free cities strung along the dry Adriatic that agree about tolls and about almost nothing else, and it has grown rich for eight centuries on the simple observation that somebody has to sell both sides their powder.",
       "They will fight, and they are good at it, because a League company is paid, fed and replaced on a schedule. But they would much rather you fought somebody else, on credit, with their carts behind you.",
     ],
     voice: {
@@ -476,7 +476,7 @@ export const FIRST_MEET = {
         war: true,
         anger: 2,
         outcome:
-          "The hirelings do the arithmetic and ride off, which is the most Karst thing about the whole affair. Mesic walks. The carts are worth every bit of what they looked like — and the League has never in three hundred years failed to collect on a loss, because a League that failed once would be a League nobody paid.",
+          "The hirelings do the arithmetic and ride off, which is the most Karst thing about the whole affair. Mesic walks. The carts are worth every bit of what they looked like — and the League has never in eight hundred years failed to collect on a loss, because a League that failed once would be a League nobody paid.",
       },
     ],
   },
@@ -490,7 +490,7 @@ export const FIRST_MEET = {
       "You find the clans at the end of them, camped on a ridge with the fires banked, everything packed, and a hundred and forty people watching your riders come up the slope without one of them standing to greet it. A woman with a white braid eventually gets up, looks past your man at the country behind him, and asks him what it grows.",
     ],
     lore: [
-      "When the cold came down they did not build against it, which is why they are still here. They moved. Three hundred years of moving has left them with no walls, no stores, no seat, and no reason at all to fear a winter that has already been worse.",
+      "When the cold came down they did not build against it, which is why they are still here. They moved. Eight hundred years of moving has left them with no walls, no stores, no seat, and no reason at all to fear a winter that has already been worse.",
       "The south is not a rival to them. It is a larder with the door propped open, and they have been working their way down it a valley at a time for longer than anyone south of the Keel has been counting.",
     ],
     voice: {
@@ -663,11 +663,11 @@ export const FIRST_MEET = {
     /* What your riders actually saw. Present tense, no summary. */
     scene: [
       "Your outriders come back off the moor with the horses lathered and a story they tell twice, because nobody believes it the first time. There is smoke on the western skyline, and it is not a burn-off. It is chimneys.",
-      "Red-Ruth is a hole in the world, eight hundred feet down and a mile across, cut in steps all the way round. There are men working on every one of them. Pumps turn. A smelter is lit. Somebody has been keeping the lights on down there for three hundred years and has never once thought to send word about it to anyone.",
+      "Red-Ruth is a hole in the world, a thousand feet down and a mile across, cut in steps all the way round. There are men working on every one of them. Pumps turn. A smelter is lit. Somebody has been keeping the lights on down there for eight hundred years and has never once thought to send word about it to anyone.",
     ],
     /* Why they are the way they are. */
     lore: [
-      "When the sea went out, the china clay pits and the deep tin workings did not flood and did not stop. The shifts that worked them simply stayed, because a pump you let stand is a shaft you lose, and a shaft you lose you do not get back. Three hundred years later they are still cutting, still pumping, and still ahead of the water.",
+      "When the sea went out, the china clay pits and the deep tin workings did not flood and did not stop. The shifts that worked them simply stayed, because a pump you let stand is a shaft you lose, and a shaft you lose you do not get back. Eight hundred years later they are still cutting, still pumping, and still ahead of the water.",
       "They have no interest in the coast, in Lunden, or in you. What they have is the only standing industry left on the island: cut stone, wrought iron, and powder-grade nitre by the cartload. Every approach to the rim is ranged, and the man who set the ranges is still alive.",
     ],
     /* The one who came to the rim to look at you. */
@@ -789,7 +789,7 @@ export const FIRST_MEET = {
       "It is ships. A hundred of them, dragged into a ring bow-to-stern, hulls turned into halls and masts cut down into a stockade, with the whole of it sitting in a mile-wide apron of ploughed silt. There are people out in the furrows to the knee, and they wave.",
     ],
     lore: [
-      "When the water went it took a season, not a day, and the trawler fleet that was working the Dogger simply settled where it floated. The crews did not walk. They put lines on the hulls, dragged them into a ring with what was left of the winches, and started turning over the seabed — which turns out, after three hundred years of everything dying into it, to be the best soil on the island.",
+      "When the water went it took a season, not a day, and the trawler fleet that was working the Dogger simply settled where it floated. The crews did not walk. They put lines on the hulls, dragged them into a ring with what was left of the winches, and started turning over the seabed — which turns out, after eight hundred years of everything dying into it, to be the best soil on the island.",
       "They are farmers now with a ship's discipline: watches, rations, a reeve elected off the deck every spring. They are friendly to everybody, on principle and on arithmetic, because a town with no walls that grows more food than it can eat has to be. And they are spreading — every year another few furlongs of the flats goes under the plough.",
     ],
     voice: {
@@ -907,11 +907,11 @@ export const FIRST_MEET = {
     title: "The Domesayers of Rune",
     where: "Rune, the old city on the river",
     scene: [
-      "Your riders hear it before they see anything: a bell, then eleven of them, ringing an hour that does not exist on any clock anyone has kept for three hundred years. It goes on for a quarter of an hour. Then it stops, and the quiet afterwards is worse.",
+      "Your riders hear it before they see anything: a bell, then eleven of them, ringing an hour that does not exist on any clock anyone has kept for eight hundred years. It goes on for a quarter of an hour. Then it stops, and the quiet afterwards is worse.",
       "Rune is a city with the roof off. The cathedral tower is a stump and the bells are hung in the stump on new timber, and everything for a mile around it has been pulled down to sightlines and burned flat. There are people on every approach and every one of them is facing outward.",
     ],
     lore: [
-      "They hold that the water did not simply leave. They hold that it was taken back, that a thing taken back is a judgement, and that a judgement half-finished is the worst condition a world can be left in. Three hundred years of thinking about that has not made them calmer.",
+      "They hold that the water did not simply leave. They hold that it was taken back, that a thing taken back is a judgement, and that a judgement half-finished is the worst condition a world can be left in. Eight hundred years of thinking about that has not made them calmer.",
       "So they finish it. Preaching companies go out of Rune every spring to burn whatever they have decided is unclean, and the ground behind them belongs to the bells afterwards. The Bretons on the peninsula have buried a great many of their own people over this, and are going to bury more.",
     ],
     voice: {
