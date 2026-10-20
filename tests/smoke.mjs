@@ -1543,6 +1543,7 @@ const people = () => page.evaluate(() => window.__ccWild().people);
   await page.evaluate(() => window.__ccTest.hurt());
   await wait(400);
   const hurtNow = (await people()).hall[0];
+  const hurtId = hurtNow.match(/#(\S+?):L/)[1];
   const does = (x) => x.split(":does")[1];
   check("a wound reaches the companies and does not heal",
     hurtWas.split(":hurt")[1].startsWith("-") && !hurtNow.split(":hurt")[1].startsWith("-")
@@ -1552,7 +1553,7 @@ const people = () => page.evaluate(() => window.__ccWild().people);
   /* Two of them have an opinion about each other. A bond is mutual or it is
      nothing: the point of it is that a field one of them fights reaches the
      other, who was not there, so both ends have to be written. */
-  await page.evaluate(() => window.__ccTest.tie("rival"));
+  await page.evaluate((who) => window.__ccTest.tie("rival", who), hurtId);
   await wait(400);
   /* Checking the invariant rather than the pair that was just made: by this
      point a long campaign has usually thrown up a bond or two of its own, and

@@ -1,4 +1,4 @@
-# Cold Coast
+# The Aftermath
 
 A turn-based grand strategy game set on a geographically real Europe, three
 hundred and eighty winters after the Collapse. The seas fell roughly 110 metres
