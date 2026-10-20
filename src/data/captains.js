@@ -99,6 +99,42 @@ export const TRAITS = {
   shaken:      { name: "Shaken", earned: true,
     desc: "Lost a field and has not stopped thinking about it. A win takes this away.",
     morale: 1.08 },
+  /* What a captain hardens into. These are chosen at the marks below — one of
+     two, by you, permanent — which is the difference between a captain and
+     the warlord, who used to be the only person in this game with a life.
+     They are larger than a warlord's habits because they reach one warband
+     rather than every warband. */
+  quickeye:    { name: "Quick eye", mark: true,
+    desc: "Reads a line the moment it is drawn and knows which end of it is lying.",
+    flank: 1.25, scout: 1 },
+  stubborn:    { name: "Stubborn", mark: true,
+    desc: "Has been told the position was lost on five separate occasions and has not yet agreed.",
+    morale: 0.88, dealt: 0.96 },
+  firstup:     { name: "First up the ladder", mark: true,
+    desc: "Goes up a breach ahead of the company, which is either leadership or a death wish.",
+    storm: 1.22, taken: 1.05 },
+  minesapper:  { name: "Sapper", mark: true,
+    desc: "Would rather spend three seasons under a wall than one afternoon on top of it.",
+    siege: 0.7, storm: 0.95 },
+  bitter:      { name: "Bitter", mark: true,
+    desc: "Lost a field and decided whose fault it was. Fights harder and is harder to keep.",
+    dealt: 1.1, loyalGain: 0.7 },
+  tempered:    { name: "Tempered", mark: true,
+    desc: "Lost a field, buried the companies, and came back a steadier thing than went out.",
+    morale: 0.9, taken: 0.95 },
+  oldhand:     { name: "Old hand", mark: true,
+    desc: "Has been under this banner long enough to know where everything is kept.",
+    waste: 0.6, relief: 1, loyalGain: 1.2 },
+  hardbitten:  { name: "Hard-bitten", mark: true,
+    desc: "Ten winters of this. Nothing surprises them and nothing much pleases them either.",
+    taken: 0.9, loyalGain: 0.8 },
+  namesake:    { name: "A name of their own", mark: true,
+    desc: "Twenty fields. People who have never served under them have opinions about them.",
+    morale: 0.88, dealt: 1.06 },
+  grimmer:     { name: "Grim", mark: true,
+    desc: "Twenty fields and a way of looking at a map that empties a room.",
+    dealt: 1.12, taken: 0.96, loyalGain: 0.75 },
+
   // What a warlord brings to the whole realm, by where they came from. These
   // reach every warband, which is why they are smaller than a captain's.
   tracker:     { name: "Tracker", origin: true,
@@ -140,6 +176,8 @@ export const TRAITS = {
 };
 // The habits only a warlord can hold, earned at a milestone.
 export const LORD_TRAITS = Object.keys(TRAITS).filter((id) => TRAITS[id].lord);
+// ...and the ones only a captain can, chosen at a mark.
+export const MARK_TRAITS = Object.keys(TRAITS).filter((id) => TRAITS[id].mark);
 export const BORN_TRAITS = Object.keys(TRAITS).filter((id) => TRAITS[id].born);
 // Pairs that cannot both be true of one person.
 export const TRAIT_CLASH = [["cautious", "reckless"], ["hard", "beloved"]];
@@ -183,3 +221,153 @@ export const HONOUR_WORDS = {
   riders: "Riders", ironclad: "Shields", line: "Line", musketeers: "Guns", guncrew: "Guns",
   technicals: "Engines", vaultguard: "Guard", riflemen: "Rifles", baggage: "Carts",
 };
+
+/* ------------------------------ A CAPTAIN'S LIFE ----------------------------
+   A captain used to be two traits rolled at birth, a loyalty number and three
+   counters. The warlord got a scene at every milestone asking which of two
+   habits it had made of them; the people you actually look at every season got
+   a trait handed to them silently, or nothing at all.
+
+   These are the same thing for the people who do the fighting. A mark comes
+   true because of something that happened to THIS captain — five fields, a
+   breach gone up, a field lost and lived through, ten winters under your
+   banner, twenty fields — and you choose which of two ways it marked them.
+   Once, and it is on them for good.
+
+   `need` reads the captain's own record, not the realm's. That is the whole
+   point: two captains in the same war have different lives.
+   ------------------------------------------------------------------------ */
+export const MARKS = {
+  blooded: {
+    need: (c) => (c.fields || 0) >= 5,
+    kicker: "Something has settled in them",
+    title: "Five fields",
+    scene: "Five times now they have drawn a line up and watched somebody come at it. The company that joined last spring has started asking them what happens next instead of asking each other, and they have started having an answer ready before the question.",
+    options: [
+      { trait: "quickeye", name: "A quick eye", note: "They have learned to read a line the moment it is drawn, and which end of it is lying." },
+      { trait: "stubborn", name: "Stubborn", note: "They have been told the position was lost five times now, and have not once agreed." },
+    ],
+  },
+  breach: {
+    need: (c) => (c.storms || 0) >= 1,
+    kicker: "Something has settled in them",
+    title: "Up the breach",
+    scene: "They have gone up broken stonework with people above them trying to stop it happening, and come down the other side. Nobody who has done that talks about walls the way they did before, and there are two quite different ways of not talking about them.",
+    options: [
+      { trait: "firstup", name: "First up the ladder", note: "They go up ahead of the company now. It is either leadership or a death wish and nobody is sure which." },
+      { trait: "minesapper", name: "A sapper", note: "They would rather spend three seasons under a wall than one more afternoon on top of one." },
+    ],
+  },
+  rout: {
+    need: (c) => (c.routs || 0) >= 1,
+    kicker: "Something has settled in them",
+    title: "A field lost, and lived through",
+    scene: "The line went, and they came off the field with what was left of it, which is a thing that happens to most captains once and changes all of them. They have spent the winter deciding what it was.",
+    options: [
+      { trait: "bitter", name: "Bitter", note: "They have decided whose fault it was. They fight harder now and they are harder to keep." },
+      { trait: "tempered", name: "Tempered", note: "They buried the companies, said nothing, and came back a steadier thing than went out." },
+    ],
+  },
+  tenwinters: {
+    need: (c) => (c.seasons || 0) >= 10,
+    kicker: "Something has settled in them",
+    title: "Ten winters under your banner",
+    scene: "Ten winters is long enough that the people who were new when they took the command have commands of their own, and long enough that nobody remembers them being anything else. It is also long enough to have opinions about how you run things.",
+    options: [
+      { trait: "oldhand", name: "An old hand", note: "They know where everything is kept and who to ask for it. Very little is wasted under them." },
+      { trait: "hardbitten", name: "Hard-bitten", note: "Ten winters of this. Nothing surprises them and nothing much pleases them either." },
+    ],
+  },
+  twentyfields: {
+    need: (c) => (c.fields || 0) >= 20,
+    kicker: "Something has settled in them",
+    title: "Twenty fields",
+    scene: "Twenty. People who have never served under them have firm opinions about them, and some of those people are on the other side of the mud. Whatever they are now, they have been it for a long time.",
+    options: [
+      { trait: "namesake", name: "A name of their own", note: "The companies believe in them, which is worth more in a long line than anything they actually do." },
+      { trait: "grimmer", name: "Grim", note: "Twenty fields and a way of looking at a map that empties a room." },
+    ],
+  },
+};
+export const MARK_IDS = Object.keys(MARKS);
+
+/* Which mark is due for this captain, if any. One at a time and in the order
+   they are written, so a captain who has done everything at once still gets
+   asked about it one thing at a time. */
+export function markDue(c) {
+  if (!c) return null;
+  const answered = c.marks || [];
+  return MARK_IDS.find((id) => !answered.includes(id) && MARKS[id].need(c)) || null;
+}
+
+/* --------------------------------- WOUNDS -----------------------------------
+   What a field takes off somebody who does not die of it. A wound is not a
+   habit: nobody chooses it, it does not come with a scene, and it never goes
+   away. They are deliberately small — a captain with two of them is worse at
+   their job and still worth keeping, which is the only interesting version. */
+export const WOUNDS = {
+  hand:  { name: "A hand that does not close", desc: "Took it on the shield side going up a breach.", dealt: 0.94 },
+  leg:   { name: "A leg that set badly", desc: "Set by somebody in a hurry, in the dark, in a ditch.", storm: 0.82 },
+  eye:   { name: "Lost an eye", desc: "They do not say to what and nobody asks twice.", ranged: 0.9, scout: -1 },
+  lung:  { name: "Took a lung", desc: "Breathes like a man going uphill, on flat ground, in summer.", waste: 1.25 },
+  face:  { name: "A face people look away from", desc: "Half of it is somebody else's work and all of it is permanent.", morale: 0.93, loyalGain: 0.85 },
+};
+export const WOUND_IDS = Object.keys(WOUNDS);
+// How likely a captain is to come out of a bad day with something lasting.
+export const WOUND_CHANCE = { rout: 0.3, storm: 0.22 };
+
+/* --------------------------------- BONDS -----------------------------------
+   Two captains who have been in the same war for long enough stop being
+   strangers to each other, and which way that goes is mostly a matter of who
+   they already were. A proud man and a hard one find a rival in each other;
+   a beloved one and a steady one find somebody to stand next to.
+
+   A bond is the only thing in this file that makes a field somebody ELSE
+   fought matter to a captain who was not there. That is the whole of its
+   job: your best man winning in Gallia should mean something in the hall at
+   home, and whether it means gladness or gall depends on who is standing in
+   it. One bond per person, mutual, and it does not quietly expire — it ends
+   when one of them does, which is also when it is felt most.
+   ------------------------------------------------------------------------ */
+export const BONDS = {
+  friend: {
+    word: "Stands next to",
+    gone: "Stood next to",
+    note: "Glad of anything that goes right for them, and takes it badly when it does not.",
+    lines: [
+      "{a} and {b} have taken to sitting at the same end of the hall.",
+      "{a} will not hear a word said against {b}, which is new.",
+      "{a} and {b} came up out of the same war and have decided it makes them something.",
+    ],
+    fell: "{a} has not said anything since word came about {b}.",
+  },
+  rival: {
+    word: "Will not stand next to",
+    gone: "Would not stand next to",
+    note: "Counts everything that goes right for them as something taken off their own total.",
+    lines: [
+      "{a} has started counting what {b} is given, out loud.",
+      "{a} and {b} have had words. Nobody will say what about.",
+      "{a} does not think much of {b}, and has stopped troubling to hide it.",
+    ],
+    fell: "{a} heard about {b} and said it was always going to end that way.",
+  },
+};
+export const BOND = {
+  needSeasons: 4,   // both of them long enough under the banner to have an opinion
+  chance: 0.09,     // ...and then a winter at a time
+  win: 2,           // what a field of theirs does to the other one
+  fell: 12,         // ...and what losing them does to a friend
+  fellRival: 5,     // ...or gives a rival
+};
+/* Sharp people find rivals and warm people find friends, and when a pair is
+   neither the hall decides it for them. */
+export function bondKind(a, b) {
+  const count = (c, list) => list.filter((t) => (c.traits || []).includes(t)).length;
+  const sharp = ["proud", "hard", "reckless", "bitter", "grimmer", "hardbitten", "firstup"];
+  const warm = ["beloved", "steady", "tempered", "oldhand", "namesake", "cautious"];
+  const s = count(a, sharp) + count(b, sharp);
+  const w = count(a, warm) + count(b, warm);
+  if (s !== w) return s > w ? "rival" : "friend";
+  return Math.random() < 0.5 ? "rival" : "friend";
+}

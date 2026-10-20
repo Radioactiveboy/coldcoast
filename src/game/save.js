@@ -13,7 +13,24 @@
    ------------------------------------------------------------------------ */
 
 export const SAVE_KEY = "coldcoast.save";
-/* 16: three more peoples hold ground — the Holtfolk in the Gallian wood, the
+/* 18: a warband is doing something with the season. Every army now carries a
+   stance — in column, forced march, dug in, lying up, raiding — and three of
+   those five change what it has in hand, what it eats, what it loses and how
+   it fights, while one of them hides it from everybody's map. A version 17
+   save has no stance on anything, which would load as every warband in column:
+   survivable in itself, except that the movement already granted was granted
+   under the old rules, so a band that had forced its march would load with two
+   hexes it has no reason to have and no short season coming to pay for them.
+   17: a captain is a person. Every captain now carries the rest of a record —
+   lines of theirs that went, winters under your banner — the marks they have
+   been asked about and which of the two ways each one hardened, the wounds a
+   field took off them and is not giving back, and whichever other captain of
+   yours they have taken to or have not. A version 16 save has none of it, so
+   each of its captains would load with no routs, no winters and no marks
+   answered, and the first winter after loading would hand every one of them
+   five fields' worth of marks at once for a war they fought before the game
+   could see it.
+   16: three more peoples hold ground — the Holtfolk in the Gallian wood, the
    Fentaken out on the fresh Balt and the Combers on the eastern rim of the
    flats — and four more hexes are named places, two of them carrying the only
    stories on the map that are about the wars fought before the Collapse
@@ -75,7 +92,7 @@ export const SAVE_KEY = "coldcoast.save";
    normalised across the lines) to a count of craftsmen on each line. The same
    numbers mean something different now, so a version 1 save would load into a
    realm quietly working at a fraction of its strength. */
-export const SAVE_VERSION = 16;
+export const SAVE_VERSION = 18;
 
 /* Screen furniture, not the position. An open tech tree or a half-written
    recruit order is not worth carrying across a reload, and restoring straight
