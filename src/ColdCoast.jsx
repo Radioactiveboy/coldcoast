@@ -432,7 +432,19 @@ button{font-family:inherit;color:inherit;background-color:transparent;padding:0}
   font-size:15px;color:#cfe0e8;flex-shrink:0}
 .cc-craftbtn:hover{border-color:#4d7488;background:#1b2a34}
 .cc-titleart{position:absolute;inset:0;width:100%;height:100%}
-.cc-titlestack{z-index:2;max-width:640px}
+.cc-titlestack{z-index:2;max-width:640px;padding:22px 28px 26px}
+/* ...and the block of words gets its own soft plate, because the brightest
+   part of the painting runs straight through the middle of the page. */
+.cc-titlestack::before{content:"";position:absolute;inset:-6% -12%;z-index:-1;pointer-events:none;
+  background:radial-gradient(62% 58% at 50% 46%, rgba(4,9,12,.74) 0%, rgba(4,9,12,.44) 52%, rgba(4,9,12,0) 100%)}
+/* The title is a painting now rather than a drawing, so the words need
+   something to sit on: a wash up off the floor to carry the buttons, a
+   lighter one down from the ceiling, and a vignette to close the corners
+   without flattening the middle, which is where the picture is. */
+.cc-titlescrim{position:absolute;inset:0;z-index:1;pointer-events:none;background:
+  radial-gradient(125% 88% at 50% 40%, rgba(4,9,12,0) 0%, rgba(4,9,12,.30) 54%, rgba(4,9,12,.88) 100%),
+  linear-gradient(180deg, rgba(4,9,12,.80) 0%, rgba(4,9,12,.14) 25%, rgba(4,9,12,.34) 55%, rgba(4,9,12,.94) 100%)}
+.cc-titlesub{letter-spacing:.055em;text-shadow:0 2px 14px rgba(4,10,14,.95)}
 .cc-titleword{letter-spacing:.02em;text-shadow:0 6px 34px rgba(4,10,14,.95),0 2px 6px rgba(4,10,14,.9)}
 .cc-beginbtn{display:inline-flex;align-items:center;gap:9px;padding:12px 34px;border-radius:7px;
   border:1px solid #4d9aa6;color:#dff3f6;background:linear-gradient(180deg,#1c4048,#132c33);
@@ -1130,6 +1142,15 @@ const WARD_ART = Object.fromEntries(
 const SEAT_ART = Object.fromEntries(
   Object.entries(import.meta.glob("./assets/seat-*.{webp,png,jpg}", { eager: true, query: "?url", import: "default" }))
     .map(([path, src]) => [path.replace(/^.*\/seat-/, "").replace(/\.[a-z]+$/i, ""), src]));
+
+/* The key art behind the title. A file dropped in as title-<anything>.webp
+   takes over; with none, the Bridgerton painting stands in, which is the
+   widest landscape in the set and the one that reads at a glance. */
+const TITLE_ART = (() => {
+  const own = Object.values(import.meta.glob("./assets/title-*.{webp,png,jpg}",
+    { eager: true, query: "?url", import: "default" }));
+  return own[0] || SEAT_ART.bridgerton || null;
+})();
 
 function SeatPlate({ id, height = 190, caption }) {
   const src = SEAT_ART[id];
@@ -2831,11 +2852,25 @@ function upgradeState(game, P, prov) {
    and filtered noise. Nothing is created until the player's first gesture,
    which is also what browsers require before audio may start.
    ------------------------------------------------------------------------ */
+/* The one recording this game is allowed to have. Everything else you hear is
+   built out of oscillators at run time, on purpose — no files, nothing over
+   the wire. A title screen is the exception worth making: it is the one
+   moment a game is simply playing you something rather than scoring what you
+   are doing. Drop a file in as src/assets/theme-menu.<mp3|ogg|m4a|webm|wav>
+   and the menu plays it; with no file the menu is the same cold drone the
+   rest of the game runs on, and not a line of this changes. */
+const MENU_THEME = (() => {
+  const found = Object.values(import.meta.glob("./assets/theme-menu.{mp3,ogg,m4a,webm,wav}",
+    { eager: true, query: "?url", import: "default" }));
+  return found[0] || null;
+})();
+
 const Sound = (() => {
   let ctx = null, master = null, musicBus = null, sfxBus = null, ambBus = null;
   let noiseBuf = null, playing = false, timer = null, voices = [];
   let wantMusic = true, wantSfx = true, lastCue = null;
   let amb = null, ambTimer = null, field = null;
+  let theme = null, themeTap = null, inMenu = false;
   let scene = { season: "spring", coast: false, forge: false, ruins: false };
 
   const ok = () => ctx && ctx.state !== "closed";
@@ -3150,6 +3185,32 @@ const Sound = (() => {
     voices = [];
   }
 
+  /* Routed into the same music bus the drone uses, so the music toggle, the
+     fades and the master volume all go on meaning exactly what they meant. */
+  function startTheme() {
+    if (!MENU_THEME || theme || !ensure()) return false;
+    try {
+      const el = new Audio(MENU_THEME);
+      el.loop = true;
+      el.preload = "auto";
+      themeTap = ctx.createMediaElementSource(el);
+      themeTap.connect(musicBus);
+      const go = el.play();
+      if (go && go.catch) go.catch(() => {});
+      theme = el;
+      return true;
+    } catch (e) {
+      theme = null; themeTap = null;
+      return false;
+    }
+  }
+  function stopTheme() {
+    if (!theme) return;
+    try { theme.pause(); theme.currentTime = 0; } catch (e) {}
+    try { themeTap.disconnect(); } catch (e) {}
+    theme = null; themeTap = null;
+  }
+
   function fade(node, to, secs) {
     if (!ok()) return;
     const t = ctx.currentTime;
@@ -3164,6 +3225,25 @@ const Sound = (() => {
       if (!ensure()) return;
       if (ctx.state === "suspended") ctx.resume();
       if (wantMusic) { startMusic(); startAmbience(); fade(musicBus, 0.5, 3); fade(ambBus, 0.9, 4); }
+    },
+    /* The title screen, which gets the theme if there is one and the drone if
+       there is not. Nothing can start before the first gesture — browsers do
+       not allow it — so the menu calls this on the first thing the player
+       touches rather than on mount. */
+    menu(on) {
+      inMenu = on;
+      if (!on) { stopTheme(); return; }
+      if (!wantMusic || !ensure()) return;
+      if (ctx.state === "suspended") ctx.resume();
+      if (startTheme()) { stopMusic(); fade(musicBus, 0.7, 2.5); }
+      else if (!playing) { startMusic(); startAmbience(); fade(musicBus, 0.5, 3); fade(ambBus, 0.9, 4); }
+    },
+    // Whether there is a recording to play at all, and whether it is running.
+    // There is no hearing a headless browser; this is how a test knows.
+    hasTheme() { return !!MENU_THEME; },
+    themeState() {
+      return { have: !!MENU_THEME, on: !!theme && !theme.paused,
+        at: theme ? +theme.currentTime.toFixed(2) : 0 };
     },
     play(name) {
       if (!wantSfx || !ok() || !FX[name]) return;
@@ -3185,8 +3265,12 @@ const Sound = (() => {
       wantMusic = on;
       if (!ensure()) return;
       if (ctx.state === "suspended") ctx.resume();
-      if (on) { startMusic(); startAmbience(); fade(musicBus, 0.5, 2); fade(ambBus, 0.9, 2); }
-      else { fade(musicBus, 0, 1.2); fade(ambBus, 0, 1.2); setTimeout(() => { stopMusic(); stopAmbience(); }, 1300); }
+      if (on && inMenu && startTheme()) { stopMusic(); fade(musicBus, 0.7, 2); }
+      else if (on) { startMusic(); startAmbience(); fade(musicBus, 0.5, 2); fade(ambBus, 0.9, 2); }
+      else {
+        fade(musicBus, 0, 1.2); fade(ambBus, 0, 1.2);
+        setTimeout(() => { stopMusic(); stopAmbience(); stopTheme(); }, 1300);
+      }
     },
     sfx(on) { wantSfx = on; if (ok()) fade(sfxBus, on ? 0.75 : 0, 0.2); },
     /* Where the player is and what season it is. Called whenever either
@@ -3220,6 +3304,7 @@ const Sound = (() => {
       if (amb && ok()) tuneAmbience(4);
     },
     state() { return { music: wantMusic, sfx: wantSfx }; },
+    lastCueReset() { lastCue = null; },
     /* What the ambience is doing right now, for the smoke test. There is no
        way to hear a headless browser, so the next best thing is to check that
        the layers exist and that the season actually moves their gains. */
@@ -3234,6 +3319,11 @@ const Sound = (() => {
     },
   };
 })();
+
+/* For probes: whether the menu's theme is running. It lives here rather than
+   with the map's other hooks because the map is not mounted on the one screen
+   the theme plays on. */
+if (typeof window !== "undefined") window.__ccTheme = () => Sound.themeState();
 
 /* --------------------------------- UTIL ----------------------------------- */
 const key = (c, r) => `${c},${r}`;
@@ -5443,7 +5533,7 @@ export default function ColdCoast() {
   /* For the smoke test only: two of your captains have taken to each other,
      or have not. Whether a given campaign has thrown up a pair is a winter in
      eleven, and what wants checking is what the far end of a bond does. */
-  if (typeof window !== "undefined") window.__ccTie = (kind) => setGame((g) => {
+  if (typeof window !== "undefined") window.__ccTie = (kind, who) => setGame((g) => {
     /* Only the two places a bond is actually written — leading a warband, or
        waiting in the hall. A man in a post counts as still yours for the
        purpose of keeping a bond alive, but he is not in the field and nothing
@@ -5453,7 +5543,12 @@ export default function ColdCoast() {
       ...((g.nations[P]?.hall) || []),
     ].filter((c) => !c.bond);
     if (mine.length < 2) return g;
-    const [one, two] = mine;
+    /* A named captain is put at the head of the pair when the caller has one
+       in mind, so a wound and a bond can be made to land on one person. */
+    const lead = who ? mine.findIndex((c) => c.id === who) : 0;
+    if (lead < 0) return g;
+    const one = mine[lead];
+    const two = mine[lead === 0 ? 1 : 0];
     const tie = (c) => (c.id === one.id ? { ...c, bond: { who: two.id, kind, since: g.turn } }
       : c.id === two.id ? { ...c, bond: { who: one.id, kind, since: g.turn } } : c);
     const n = g.nations[P];
@@ -5465,16 +5560,20 @@ export default function ColdCoast() {
   /* For the smoke test only: a field took something off somebody. A wound is
      a 3-in-10 roll on a line that went, and a test cannot arrange to lose an
      afternoon on purpose without the loss itself being the thing under test. */
-  if (typeof window !== "undefined") window.__ccHurt = () => setGame((g) => {
-    /* The hall first, because it is the one screen where a captain's line can
-       be found and opened without first selecting the right warband. */
+  if (typeof window !== "undefined") window.__ccHurt = (who) => setGame((g) => {
+    /* A named captain when the caller has one in mind — a test that wants to
+       read one page with everything on it has to put the wound and the bond
+       on the same person — and otherwise the hall, which is the one screen
+       where a captain's line can be opened without selecting a warband. */
     const n = g.nations[P];
-    if (n && (n.hall || []).length) {
-      const got = withWound(n.hall[0]);
+    const inHall = (n?.hall || []).findIndex((c) => (who ? c.id === who : true));
+    if (inHall >= 0) {
+      const got = withWound(n.hall[inHall]);
       if (got) return { ...g, nations: { ...g.nations, [P]: { ...n,
-        hall: n.hall.map((c, i) => (i ? c : got.c)) } } };
+        hall: n.hall.map((c, i) => (i === inHall ? got.c : c)) } } };
     }
-    const a0 = g.armies.find((a) => a.owner === P && a.captain && !a.lord);
+    const a0 = g.armies.find((a) => a.owner === P && a.captain && !a.lord
+      && (!who || a.captain.id === who));
     if (!a0) return g;
     const got = withWound(a0.captain);
     return got ? { ...g, armies: g.armies.map((a) => (a.id === a0.id ? { ...a, captain: got.c } : a)) } : g;
@@ -8977,9 +9076,31 @@ const BUILD_ART = {
   ),
 };
 
+/* A building's mark on the hex. The silhouettes here were drawn by hand, ten
+   of them, and the three raised last never got one and came out as a plain
+   box — so a track, a watch fire and a palisade were the same shape as each
+   other and as nothing in particular. They are the game-icons marks the
+   panels already use, dropped into the same little box the drawings sat in:
+   one 512 path, centred, standing on the same ground line.
+
+   The stroke widths are divided back out by the scale. A 0.9 outline inside a
+   group scaled to 1/38th would come out at 0.02 and vanish, which is how the
+   first attempt at this looked like a set of flat stickers. */
+const BUILD_BOX = 13.4;
+const BUILD_K = BUILD_BOX / 512;
+function BuildGlyph({ id, width }) {
+  const ic = buildingIcon(id);
+  if (!ic) return <path d="M-4 3v-4h8v4z" />;
+  return (
+    <g transform={`translate(${-BUILD_BOX / 2},${3 - BUILD_BOX}) scale(${BUILD_K})`}
+      strokeWidth={width ? width / BUILD_K : undefined}>
+      <path d={ic.d} />
+    </g>
+  );
+}
+
 function BuildingMark({ b, x, y, small, tiny, left, damaged }) {
   const done = !left;
-  const art = BUILD_ART[b];
   const total = BUILDINGS[b]?.turns || 1;
   const frac = done ? 1 : Math.max(0, (total - left) / total);
   const k = tiny ? 0.62 : small ? 0.82 : 1;
@@ -8993,18 +9114,18 @@ function BuildingMark({ b, x, y, small, tiny, left, damaged }) {
        like stickers once the ground under them had a light source. */
     <g transform={`translate(${x},${y}) scale(${k})`}>
       <ellipse cx="1.2" cy="3.4" rx="6.8" ry="1.6" fill="#060b0f" opacity="0.45" />
-      <g transform="translate(0.9,0.8)" fill="#050a0e" stroke="#050a0e" strokeWidth="0.6"
+      <g transform="translate(0.9,0.8)" fill="#050a0e" stroke="#050a0e"
          strokeLinejoin="round" strokeLinecap="round" opacity="0.3">
-        {art || <path d="M-4 3v-4h8v4z" />}
+        <BuildGlyph id={b} width={0.6} />
       </g>
       <g fill={`url(#${done ? (damaged ? "bldhurt" : "bldwarm") : "bldsite"})`}
-         stroke="#0a1015" strokeWidth="0.9" strokeLinejoin="round" strokeLinecap="round"
+         stroke="#0a1015" strokeLinejoin="round" strokeLinecap="round"
          opacity={done ? 1 : 0.9}>
-        {art || <path d="M-4 3v-4h8v4z" />}
+        <BuildGlyph id={b} width={0.9} />
       </g>
-      <g transform="translate(-0.45,-0.45)" fill="none" stroke="#fff0cf" strokeWidth="0.6"
+      <g transform="translate(-0.45,-0.45)" fill="none" stroke="#fff0cf"
          strokeLinejoin="round" strokeLinecap="round" opacity="0.3">
-        {art || <path d="M-4 3v-4h8v4z" />}
+        <BuildGlyph id={b} width={0.6} />
       </g>
       {!done && (
         <>
@@ -9672,10 +9793,10 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
       // ...and five fields, or ten winters, on somebody's record.
       mark: (field) => window.__ccMark && window.__ccMark(field),
       // ...and something a field took off them for good.
-      hurt: () => window.__ccHurt && window.__ccHurt(),
+      hurt: (who) => window.__ccHurt && window.__ccHurt(who),
       // ...and two of them have an opinion about each other, which is one
       // winter in eleven once two of them have served four.
-      tie: (kind) => window.__ccTie && window.__ccTie(kind),
+      tie: (kind, who) => window.__ccTie && window.__ccTie(kind, who),
     };
     if (typeof window !== "undefined") window.__ccWild = () => {
       const game = gameRef.current;
@@ -15938,72 +16059,50 @@ function TitleScreen({ onBegin, sound, onSound, saved, onContinue }) {
     r: 0.6 + noise(i, 3, 73) * 1.6, sp: 2 + noise(i, 4, 74) * 6,
     dr: (noise(i, 5, 75) - 0.5) * 8,
   })), []);
+  /* No browser lets a page make a sound before the player has touched it, so
+     the theme waits for the first thing they touch rather than for this screen
+     to mount — and stops when they leave it, whichever way they leave. */
+  useEffect(() => {
+    const off = () => {
+      window.removeEventListener("pointerdown", go);
+      window.removeEventListener("keydown", go);
+    };
+    const go = () => { Sound.menu(true); off(); };
+    window.addEventListener("pointerdown", go);
+    window.addEventListener("keydown", go);
+    return () => { off(); Sound.menu(false); };
+  }, []);
 
   return (
     <div className="cc-root cc-app w-full flex flex-col cc-text-e5eef3 overflow-hidden"
       style={{ background: "#05090c", color: "#ffffff" }}>
       <style>{UI_CSS}</style>
       <div className="relative flex-1 min-h-0 flex flex-col items-center justify-center px-5">
-        <svg viewBox="0 0 1000 560" className="cc-titleart" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-          <defs>
-            <linearGradient id="tsky" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#05090c" />
-              <stop offset="42%" stopColor="#13242e" />
-              <stop offset="72%" stopColor="#223a44" />
-              <stop offset="100%" stopColor="#0b141a" />
-            </linearGradient>
-            <radialGradient id="tsun" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#cfe3ea" stopOpacity="0.5" />
-              <stop offset="100%" stopColor="#cfe3ea" stopOpacity="0" />
-            </radialGradient>
-            <radialGradient id="tvig" cx="50%" cy="45%" r="72%">
-              <stop offset="45%" stopColor="#000" stopOpacity="0" />
-              <stop offset="100%" stopColor="#000" stopOpacity="0.82" />
-            </radialGradient>
-          </defs>
-          <rect width="1000" height="560" fill="url(#tsky)" />
-          <circle cx="700" cy="180" r="150" fill="url(#tsun)" />
-          <circle cx="700" cy="180" r="26" fill="#e8f2f6" opacity="0.35" />
-
-          {/* far range, then the drowned city, then the flats */}
-          <path d="M0 300 L90 250 L150 285 L240 225 L330 280 L420 240 L520 295 L610 250 L700 300 L820 245 L920 292 L1000 262 L1000 560 L0 560 Z"
-            fill="#0d1b23" opacity="0.85" />
-          <g fill="#091319">
-            {[[120,330,26,120],[168,352,18,98],[210,300,30,150],[262,340,20,110],[300,318,34,132],
-              [352,356,16,94],[386,308,28,142],[440,346,22,104],[478,322,32,128],[534,352,18,98],
-              [572,312,30,138],[628,344,24,106],[672,326,28,124],[726,354,20,96],[762,318,34,132],
-              [820,348,22,102],[860,330,26,120],[912,352,18,98]].map(([x,y,w,h],i)=>(
-              <path key={i} d={`M${x} ${y+h} L${x} ${y} L${x+w*0.45} ${y-6} L${x+w} ${y+4} L${x+w} ${y+h} Z`} />
-            ))}
-          </g>
-          <path d="M0 430 Q250 408 500 428 T1000 424 L1000 560 L0 560 Z" fill="#16242c" />
-          <path d="M0 470 Q260 452 520 470 T1000 464 L1000 560 L0 560 Z" fill="#101c23" />
-          {[452, 486, 516].map((y, i) => (
-            <path key={i} d={`M0 ${y} q60 -6 120 0 t120 0 t120 0 t120 0 t120 0 t120 0 t120 0 t120 0`}
-              fill="none" stroke="#5f8a97" strokeWidth="0.8" opacity="0.22" />
-          ))}
-          {/* a hull on her side, because that is the first thing the Doggerbund saw */}
-          <g transform="translate(150,455) rotate(-8)" fill="#070f14">
-            <path d="M0 0 q60 -26 190 -20 l16 10 q-40 26 -120 30 q-70 2 -86 -20 z" />
-            <path d="M96 -22 l6 -34 l16 2 l-2 32 z" />
-          </g>
+        {/* The scene behind the title used to be drawn here in SVG — a sky
+            gradient, a range, a drowned city and a hull on her side. It was
+            about as good as two hundred lines of paths get, and it still read
+            as a diagram. The painting does in one image what the drawing was
+            reaching for, and the only thing still drawn over it is the ash. */}
+        {TITLE_ART && (
+          <img src={TITLE_ART} alt="" className="cc-titleart"
+            style={{ objectFit: "cover", objectPosition: "50% 44%" }} />
+        )}
+        <div className="cc-titlescrim" />
+        <svg viewBox="0 0 1000 560" className="cc-titleart" preserveAspectRatio="xMidYMid slice"
+          aria-hidden="true" style={{ zIndex: 1, pointerEvents: "none" }}>
           {flakes.map((fl, i) => {
             const y = (fl.y + t * fl.sp) % 110 - 5;
             return <circle key={i} cx={`${(fl.x + Math.sin(t / 3 + i) * fl.dr / 10 + 100) % 100}%`}
-              cy={`${y}%`} r={fl.r} fill="#dceaf0" opacity={0.10 + fl.r * 0.10} />;
+              cy={`${y}%`} r={fl.r} fill="#dceaf0" opacity={0.07 + fl.r * 0.07} />;
           })}
-          <rect width="1000" height="560" fill="url(#tvig)" />
         </svg>
 
         <div className="relative text-center cc-titlestack">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <Snowflake size={30} className="cc-text-7fc9d6" strokeWidth={1.4} />
-            <h1 className="disp cc-text-64px cc-sm-text-84px leading-none cc-titleword">Cold Coast</h1>
-          </div>
-          <p className="cc-text-15px cc-text-adc2cc tracking-wide mb-1">
-            Three hundred and eighty winters after the Collapse
+          <h1 className="disp cc-text-64px cc-sm-text-84px leading-none cc-titleword mb-3">The Aftermath</h1>
+          <p className="cc-text-15px cc-text-c9a37a cc-titlesub uppercase mb-3">
+            800 years of destruction has taught mankind nothing but efficiency
           </p>
-          <p className="cc-text-14px cc-text-8399a6 cc-max-w-62ch mx-auto leading-relaxed mb-7">
+          <p className="cc-text-14px cc-text-adc2cc cc-max-w-62ch mx-auto leading-relaxed mb-7">
             The seas fell and gave back a continent. Out on the dry Dogger, the wrecks
             stand where they settled, and seven realms are counting what is left.
           </p>
@@ -16048,7 +16147,7 @@ function NationPicker({ onPick }) {
       <div className="cc-max-w-1080px mx-auto px-5 cc-sm-px-8 py-10 cc-sm-py-12 w-full">
         <div className="flex items-center gap-3 mb-1">
           <Snowflake size={26} className="cc-text-7fc9d6" strokeWidth={1.5} />
-          <h1 className="disp cc-text-40px cc-sm-text-52px leading-none">Cold Coast</h1>
+          <h1 className="disp cc-text-40px cc-sm-text-52px leading-none">The Aftermath</h1>
         </div>
         <p className="cc-text-13d5px cc-text-8399a6 mb-4">
           Choose a realm and you take its warlord's name. What follows is yours.

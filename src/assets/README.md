@@ -12,10 +12,30 @@ dropped in with the right name appears in the game without a code change.
 | `unit-<type>`   | a unit id from `data/units.js`   | the muster roll and company chips |
 | `terrain-<name>`| wired by hand in `TERRAIN_ART`   | the province panel and survey scenes |
 | `lord-<faction>-bust` / `-head` | the faction the person speaks for | the warlord screen, and the face in their meeting scene |
+| `title-<anything>` | nothing — the first one found wins | the key art behind the title |
 
-`ward-*`, `seat-*` and `lord-*` are picked up automatically by `import.meta.glob`.
+`ward-*`, `seat-*`, `lord-*` and `title-*` are picked up automatically by `import.meta.glob`.
 The unit and terrain plates are still imported by name at the top of
 `ColdCoast.jsx` — add the import when you add the file.
+
+## The one sound that is a file
+
+Everything you hear in this game is built out of oscillators at run time —
+there are no audio files and that is on purpose. The title screen is the one
+exception, because a menu is the one moment a game is simply playing you
+something rather than scoring what you are doing.
+
+Drop a track in as **`theme-menu.mp3`** (`.ogg`, `.m4a`, `.webm` and `.wav`
+also work) and the menu plays it, looped, routed through the same music bus
+as everything else — so the music toggle, the fades and the master volume all
+go on meaning what they meant. With no file the menu plays the same cold
+drone the rest of the game runs on, and nothing else changes.
+
+Two things to know. A browser will not let any page make a sound before the
+player has touched it, so the theme starts on the first click or keypress on
+the title screen rather than the moment it loads. And whatever you drop in
+ships inside the bundle, so keep it to a couple of minutes at a modest
+bitrate — a 5MB track is five times the whole rest of the game.
 
 ## Size
 
