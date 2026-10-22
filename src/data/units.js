@@ -106,7 +106,7 @@ export const UNITS = {
     name: "Flesh Horde", tier: "tribal", only: "changed", role: "It does not stop",
     size: 280, melee: 13, ranged: 0, def: 0, food: 0, powder: 0,
     scrap: 0, moraleBase: 130, press: 1.3,
-    desc: "Three centuries in the wet dark under the ruins did something, and it kept doing it. What comes up the stairwell is the wrong shape and there is a great deal of it.",
+    desc: "Eight centuries in the wet dark under the ruins did something, and it kept doing it. What comes up the stairwell is the wrong shape and there is a great deal of it.",
   },
   /* Not a company at all. Dogs that went back to being wolves, and the things
      that live off what a dead continent left lying about. They are quick and
@@ -119,13 +119,13 @@ export const UNITS = {
     name: "Feral Herd", tier: "tribal", only: "beasts", role: "Teeth in the treeline",
     size: 150, melee: 8, ranged: 0, def: 2, food: 0, powder: 0,
     scrap: 0, moraleBase: 48, press: 1.15, beast: true,
-    desc: "Boar gone huge on three centuries of nobody hunting them, dogs that forgot which side they were on, and whatever has been eating both. They hold a wood the way weather holds a hill.",
+    desc: "Boar gone huge on eight centuries of nobody hunting them, dogs that forgot which side they were on, and whatever has been eating both. They hold a wood the way weather holds a hill.",
   },
   riflemen: {
     name: "Riflemen", tier: "vault", needs: "vaultcraft", role: "Killing at distance",
     size: 90, melee: 5, ranged: 22, def: 13, food: 3, powder: 3,
     scrap: 120, moraleBase: 72,
-    desc: "Preserved rifles, still zeroed after three centuries. Irreplaceable, one at a time.",
+    desc: "Preserved rifles, still zeroed after eight centuries. Irreplaceable, one at a time.",
   },
 };
 export const UNIT_IDS = Object.keys(UNITS);

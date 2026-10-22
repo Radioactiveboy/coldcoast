@@ -65,7 +65,7 @@ export const POP_LANDMARK = {
   "58,28": 1200,  // Skjoldhall — the Boreal seat, and thin ground for it
   "87,91": 1400,  // Karkhan Wells — the Horde's seat
   "17,120": 1350, // Meseta Prime — the Solar Throne's seat
-  "14,81": 900,   // Red-Ruth — the Quarrymen, three hundred years down the shafts
+  "14,81": 900,   // Red-Ruth — the Quarrymen, eight hundred years down the shafts
   "27,79": 1400,  // Bridgerton — a town living on the deck of its own bridge
   "24,80": 400,   // Wight Mountain — the Skinless, and what they have taken
   "24,87": 1100,  // Rune — the old city on the river, and everyone the bells called in

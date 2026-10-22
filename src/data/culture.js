@@ -69,7 +69,7 @@ export const TRADITIONS = {
   chartkeepers: {
     name: "The chart-keepers",
     line: "Every column that goes out comes back and says what it saw.",
-    note: "Copied, corrected, and kept in a room that is never allowed to get wet. Three hundred years of it means your riders are rarely surprised by ground.",
+    note: "Copied, corrected, and kept in a room that is never allowed to get wet. Eight hundred years of it means your riders are rarely surprised by ground.",
     scoutAdd: 1,
     mul: { scrap: 0.97 },
   },
@@ -103,7 +103,7 @@ export const TRADITIONS = {
   saltroad: {
     name: "The salt road",
     line: "A guest on the road is fed, whoever they are.",
-    note: "It costs a household a meal and it has meant that for three centuries no Doggerbund column has walked a road where nobody would talk to it.",
+    note: "It costs a household a meal and it has meant that for eight centuries no Doggerbund column has walked a road where nobody would talk to it.",
     mul: { food: 0.98 },
     regard: { all: 6 },
     tags: ["open"],

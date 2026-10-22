@@ -1,9 +1,9 @@
 # The Aftermath
 
-A turn-based grand strategy game set on a geographically real Europe, three
-hundred and eighty winters after the Collapse. The seas fell roughly 110 metres
-and gave back a continent: the North Sea is a silt prairie, the Baltic and the
-Black Sea are freshwater lakes, and seven realms are counting what is left.
+A turn-based grand strategy game set on a geographically real Europe, eight
+hundred winters after the Collapse. The seas fell roughly 110 metres and gave
+back a continent: the North Sea is a silt prairie, the Baltic and the Black
+Sea are freshwater lakes, and seven realms are counting what is left.
 
 8,544 land provinces on a 104 × 145 hex grid, drawn from real coastlines.
 

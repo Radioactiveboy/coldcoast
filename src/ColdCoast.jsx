@@ -50,7 +50,7 @@ import { startingPop, popRecruits, popSlots, popRank, popCostOf, popCeiling, pop
 
 /* ============================================================================
    COLD COAST — a turn-based grand strategy prototype
-   Europe, ~380 years after the Collapse. A long cold snap locked the world's
+   Europe, ~800 years after the Collapse. A long cold snap locked the world's
    water into ice. The seas fell ~110 metres. The North Sea, the Baltic and the
    northern Adriatic are dry silt plains. The Black Sea is a shrinking salt lake.
    ========================================================================== */
@@ -811,7 +811,7 @@ const TERRAIN = {
   r: { name: "Ruinfield",     color: "#7d6355", food: 0, scrap: 5, fuel: 1, powder: 2, men: 1, def: 22, move: 2, land: true },
   b: { name: "Saltpan",       color: "#b0a184", food: 0, scrap: 1, fuel: 3, powder: 0, men: 0, def: -5, move: 1, land: true },
   /* Ground that is being fought over rather than lived on: the floor of the
-     old Channel, churned to bog by three hundred years of people killing each
+     old Channel, churned to bog by eight hundred years of people killing each
      other across it. Slow, ugly, and worth picking over if you ever hold it. */
   w: { name: "Bogged warzone", color: "#5f5647", food: 0, scrap: 3, fuel: 1, powder: 1, men: 0, def: 18, move: 3, land: true },
   l: { name: "Freshwater",    color: "#41697a", food: 3, scrap: 0, fuel: 0, powder: 0, men: 0, def: -12, move: 2, land: true },
@@ -2104,7 +2104,7 @@ const MINORS = {
     at: [14, 81], seatName: "Red-Ruth", defBonus: 45,
     feature: "quarry", building: "yard",
     blurb:
-      "Three hundred years down the same shafts. They kept the pumps running, the china clay pits open and the smelters lit, and they have never once needed anyone's permission.",
+      "Eight hundred years down the same shafts. They kept the pumps running, the china clay pits open and the smelters lit, and they have never once needed anyone's permission.",
     trait:
       "Dug in behind spoil heaps and cut faces, with guns ranged on every approach. They will not expand and they will not treat. Break them and the workings are yours.",
     guardName: "The Red-Ruth Pit Guard",
@@ -2234,7 +2234,7 @@ const MINORS = {
     at: [33, 90], seatName: "Fontainebleau Holt", defBonus: 38, regard: 44,
     feature: "holt", building: "wall",
     blurb:
-      "Forty thousand people living inside a wood that has had three hundred years to decide where its paths go. They coppice it, burn it for charcoal, eat out of it, and have never in living memory let anybody cut a ride through it who was not from it.",
+      "Forty thousand people living inside a wood that has had eight hundred years to decide where its paths go. They coppice it, burn it for charcoal, eat out of it, and have never in living memory let anybody cut a ride through it who was not from it.",
     trait:
       "They do not raid and they do not trade much. What they do is grow: every few years the laid thorn is further out than it was, and the ground it took is wood now. A column that goes into the holt is fighting the holt.",
     guardName: "The Holt Wardens",
@@ -2253,7 +2253,7 @@ const MINORS = {
     at: [62, 46], seatName: "Stockholm Reef", defBonus: 30, regard: 38,
     feature: "reefmere", building: "fishery",
     blurb:
-      "When the sills closed, the Balt went fresh and then went shallow, and the people who stayed in it went in after it. Three hundred years down in the weed and the eel runs has done something to them that they do not consider a misfortune and nobody else has a word for.",
+      "When the sills closed, the Balt went fresh and then went shallow, and the people who stayed in it went in after it. Eight hundred years down in the weed and the eel runs has done something to them that they do not consider a misfortune and nobody else has a word for.",
     trait:
       "They hold water the way other peoples hold hills, and they are the only ones who can. Their ground goes out along the fresh every few years, they will ferry anything for iron, and what comes out of the mere at night is not a warband in any sense you were taught.",
     guardName: "The Reef Weirwatch",
@@ -2296,12 +2296,12 @@ const MINORS = {
   },
   beasts: {
     name: "The Feral Herds", short: "Feral herd", color: "#9a7a4a", defBonus: 8,
-    blurb: "Three hundred years with nobody hunting them, and the woods belong to what lives in them.",
+    blurb: "Eight hundred years with nobody hunting them, and the woods belong to what lives in them.",
     trait: "They hold the wood they are in and nothing more. Bring bows: they have no armour and no stomach for a fight they are losing.",
   },
   changed: {
     name: "The Changed", short: "Changed", color: "#8a5fa0", defBonus: 20,
-    blurb: "Three centuries in the wet dark under the ruins did something, and it kept doing it.",
+    blurb: "Eight centuries in the wet dark under the ruins did something, and it kept doing it.",
     trait: "They do not leave the ruins and they do not stop coming up the stairs.",
   },
 };
@@ -2415,7 +2415,7 @@ const ENCOUNTERS = [
   },
   {
     id: "sealed", on: "rhm", title: "A door that never opened",
-    text: "A blast door set into the rock, still seated, still cold. The keypad has been dead for three centuries.",
+    text: "A blast door set into the rock, still seated, still cold. The keypad has been dead for eight centuries.",
     choices: [
       { label: "Cut it", hint: "Slow, and you do not know what is behind it",
         outcomes: [
@@ -2526,7 +2526,7 @@ const ENCOUNTERS = [
   },
   {
     id: "holdfast", on: null, title: "People, still here",
-    text: "A holdfast of forty-odd, walled with vehicle bodies. They have watched three centuries of weather and are not obviously impressed by you.",
+    text: "A holdfast of forty-odd, walled with vehicle bodies. They have watched eight centuries of weather and are not obviously impressed by you.",
     choices: [
       { label: "Offer terms and a share of the rations", hint: "Costs food now, gains hands later",
         outcomes: [
@@ -9950,7 +9950,7 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
             hall: (n.hall || []).map((c) => say(c, "hall")),
             /* A post and a ransom are the other two places one of yours can
                be standing, and a bond reaches into both. */
-            posts: Object.entries(n.offices || {}).filter(([, c]) => c).map(([k, c]) => say(c, k)),
+            posts: Object.entries(n.offices || {}).filter(([, c]) => c).map(([k, c]) => say(c, `post-${k}`)),
             held: (n.captives || []).map((x) => say(x.captain, `held-${x.by}`)),
             due: game.captainMark ? `${game.captainMark.who}:${game.captainMark.id}` : null,
           };
@@ -14514,7 +14514,7 @@ function OpeningScene({ game, P, onClose, onChoose }) {
         </div>
         <div className="p-5 cc-text-14px leading-relaxed cc-text-c3d5de grid gap-3">
           <p>
-            Three hundred years since the water went out. The sea dropped and kept dropping,
+            Eight hundred years since the water went out. The sea dropped and kept dropping,
             and what it left behind — the Dogger flats, the dry floor of the narrows — is
             walkable now, and everyone has worked that out at once.
           </p>
@@ -15269,7 +15269,7 @@ function CulturePanel({ game, P, onTake }) {
     <div>
       <div className="cc-text-13px cc-text-93a9b5 leading-relaxed mb-3">
         An edict is an order. This is how a hundred thousand people bury their dead, feed their children and
-        decide who is allowed through the gate — and it starts empty on purpose, because a realm three hundred
+        decide who is allowed through the gate — and it starts empty on purpose, because a realm eight hundred
         years into the cold has habits but has not yet decided what it is.
       </div>
 
@@ -16160,7 +16160,7 @@ function NationPicker({ onPick }) {
           </div>
         </div>
         <p className="cc-text-15px cc-text-adc2cc leading-relaxed cc-max-w-62ch mb-9">
-          Three hundred and eighty winters after the Collapse, the ice took the water back.
+          Eight hundred winters after the Collapse, the ice took the water back.
           The seas fell a hundred metres and gave up their floors. The North Sea is a silt prairie,
           the Baltic a chain of lakes, and the Black Sea is drying into salt. Seven powers are
           walking out onto the new ground. Only one of them gets to keep it.
@@ -16278,7 +16278,7 @@ function Codex({ onClose }) {
           </div>
           <div>
             <div className="disp cc-text-16px cc-text-e5eef3 mb-1">Meeting people</div>
-            <p>What you have not laid eyes on, you know nothing about. The season your riders first come within sight of somebody, you get the meeting itself: where they are, what they are, why they are still here after three hundred years, and three or four things you might say to them. Every answer costs or pays something on the spot and every answer is remembered — each people carries a regard for you, said in a word, in the Rivals panel.</p>
+            <p>What you have not laid eyes on, you know nothing about. The season your riders first come within sight of somebody, you get the meeting itself: where they are, what they are, why they are still here after eight hundred years, and three or four things you might say to them. Every answer costs or pays something on the spot and every answer is remembered — each people carries a regard for you, said in a word, in the Rivals panel.</p>
             <p className="mt-2">Regard is not decoration. A people who think well of you will sell you what they dig out of the ground, season after season, and that arrangement sits in your ledger like any other income. A people you came at with a demand will cut the face back and range it, and the place costs more to take for the rest of the game. Marching companies onto their ground ends any arrangement the same day.</p>
           </div>
           <div>
