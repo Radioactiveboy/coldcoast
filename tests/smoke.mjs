@@ -35,11 +35,44 @@ let failures = 0;
    one is reported the moment the next check goes past it, which is almost
    always the check that just broke. */
 let seenErrors = 0;
+/* When the app throws, React unmounts the whole tree: no header, no overlays,
+   no map. Every check after that fails for the same reason and the run reads
+   as twenty unrelated bugs. Say it once, plainly, the moment it happens, and
+   mark everything after it as what it is. */
+let crashed = false;
+const CRASH = /error occurred in the <|Cannot read propert|is not a function|is not defined/;
 const check = (name, ok, note = "") => {
-  console.log(`${ok ? "  pass  " : "  FAIL  "}${name}${note ? `  ${note}` : ""}`);
+  const fresh = errors.slice(seenErrors);
+  if (!crashed && fresh.some((e) => CRASH.test(e))) {
+    crashed = true;
+    console.log("\n  ====  THE APP CRASHED  ====");
+    console.log("  Everything below this line is a consequence, not a separate fault.");
+    console.log(`  ${fresh.find((e) => CRASH.test(e))}\n`);
+  }
+  console.log(`${ok ? "  pass  " : "  FAIL  "}${name}${note ? `  ${note}` : ""}`
+    + (!ok && crashed ? "   (after the crash)" : ""));
   if (!ok) failures++;
   while (seenErrors < errors.length) console.log(`        ! ${errors[seenErrors++]}`);
 };
+
+/* ---------------------- WHAT DOES NOT NEED A BROWSER -----------------------
+   The tables are plain data and can be checked in a tenth of a second, which
+   is worth doing before spending six minutes driving a game to find out the
+   same thing. This one is here because it did not get checked: a warband's
+   supply band is looked up by whole hexes, a quartermaster hands back a
+   FRACTION of a hex of reach, and SUPPLY_BANDS[2.25] is undefined. Every
+   screen that reads a warband's supply then threw, React unmounted the game,
+   and the suite reported twenty failures in the court, the holdouts and the
+   narrows without once mentioning that the app was gone. */
+{
+  const { bandAt, SUPPLY_BANDS, SUPPLY_MAX } = await import("../src/data/supply.js");
+  const shares = [1.15, 1, 0.6, 0.25];   // devoted, loyal, uneasy, muttering
+  const odd = [...shares.map((sh) => 3 - (1 + sh)), 0.4, 2.6, -1, 0, SUPPLY_MAX, 99, NaN, Infinity];
+  const bad = odd.filter((d) => !bandAt(d) || !bandAt(d).name);
+  check("every distance lands in a supply band, whole hex or not",
+    bad.length === 0 && SUPPLY_BANDS.length === SUPPLY_MAX + 1,
+    bad.length ? `no band at ${bad.join(", ")}` : `${odd.length} distances, all of them placed`);
+}
 const click = (re) =>
   page.evaluate((r) => {
     const b = [...document.querySelectorAll("button")].find((x) => new RegExp(r).test(x.textContent));
@@ -1447,24 +1480,37 @@ const courtTab = async (name) => {
   });
   await wait(400);
   const held = await court();
-  check("a post takes somebody out of the hall",
-    !!who && held.offices.some((x) => x.startsWith("quartermaster:")) && held.hall === hallWas - 1,
+  const postTook = !!who && held.offices.some((x) => x.startsWith("quartermaster:"))
+    && held.hall === hallWas - 1;
+  check("a post takes somebody out of the hall", postTook,
     held.offices.join(" · ") || "nobody holds anything");
   /* When this one goes, every check below it goes with it and none of them
      says why — the court, the holdouts, the narrows and the realm meetings
      all fail together. Say what was actually on the screen and how far the
      campaign had got, so the next person reading a wall of red has a thread
      to pull rather than a mystery. */
-  if (!who) {
+  if (!postTook) {
     const why = await page.evaluate(() => ({
       overlays: [...document.querySelectorAll(".fixed.inset-0.z-50")]
-        .map((x) => x.innerText.split("\n").filter(Boolean)[0] || "(blank)"),
+        .map((x) => (x.innerText || "").split("\n").filter(Boolean)[0] || "(blank)"),
       head: (document.querySelector("header")?.innerText || "").split("\n").filter(Boolean).slice(0, 3),
+      tabs: [...document.querySelectorAll(".cc-courttab")]
+        .map((x) => x.textContent.trim() + (x.getAttribute("aria-selected") === "true" ? "*" : "")),
+      card: (() => {
+        const c = [...document.querySelectorAll(".rounded.border")]
+          .find((x) => /Quartermaster of the stores/.test(x.textContent));
+        if (!c) return "no quartermaster card in the document";
+        return [...c.querySelectorAll("button")]
+          .map((b) => `[${b.textContent.trim()}${b.disabled ? " DISABLED" : ""}]`).join(" ") || "the card has no buttons";
+      })(),
       court: window.__ccWild().court,
     }));
-    console.log("        ? overlays on screen:", why.overlays.join(" | ") || "none");
-    console.log("        ? the top bar reads :", why.head.join(" / "));
-    console.log("        ? the court holds   :", JSON.stringify(why.court));
+    console.log("        ? clicked            :", who === null ? "no button to click" : `"${who}"`);
+    console.log("        ? overlays on screen :", why.overlays.join(" | ") || "none");
+    console.log("        ? the top bar reads  :", why.head.join(" / ") || "(no header — not on the map)");
+    console.log("        ? court tabs         :", why.tabs.join(" ") || "none");
+    console.log("        ? the quartermaster  :", why.card);
+    console.log("        ? the court holds    :", JSON.stringify(why.court));
   }
 
   // A decision is made once and stays made.
@@ -1634,14 +1680,22 @@ const people = () => page.evaluate(() => window.__ccWild().people);
       .find((x) => /Came to your hall|Marks —/.test(x.innerText));
     return ov ? ov.innerText : null;
   });
+  /* Every section the page is supposed to carry, named, so a failure says
+     which one is missing instead of only that one is. The bond matches any of
+     the four ways it can be headed — the section is what is under test, not
+     which way the pair took to each other. */
+  const WANTS = [
+    ["the life in prose", /Came to your hall/],
+    ["what they are", /What they are, and what it does/],
+    ["the wounds", /What the fields took/],
+    ["the bond", /sta(nds?|ood) next to/i],
+    ["the marks", /Marks — \d of 5 answered/],
+  ];
+  const missing = life ? WANTS.filter(([, re]) => !re.test(life)).map(([n]) => n) : ["the page itself"];
   check("a captain's name opens a page that reads as a life",
-    !!page1 && !!life && /Came to your hall/.test(life) && /Marks — \d of 5 answered/.test(life)
-      /* Any of the four ways the page heads a bond: the section is what is
-         under test, not which way the pair took to each other. A captain the
-         campaign had already paired off cannot be tied again, so insisting on
-         the rival wording made this pass or fail on who the war threw up. */
-      && /What the fields took/.test(life) && /sta(nds?|ood) next to/i.test(life),
-    life ? life.split("\n").slice(0, 3).join(" · ") : "no page");
+    !!page1 && !!life && missing.length === 0,
+    missing.length ? `${whose} — no ${missing.join(", no ")}`
+      : life.split("\n").slice(0, 2).join(" · "));
   await closeOverlay();
   await closeOverlay();
 }
