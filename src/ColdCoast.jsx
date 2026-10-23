@@ -9733,6 +9733,21 @@ function WorldMap({ game, P, sight, onSelect, atWar, onDeselect, onFocused, onMa
           .map((sec) => stormGround({ siege: { seasons: n * SIEGE.perBreach } })[sec]).join("/")),
       };
     };
+    /* Every warband of the player's, as the bar along the foot of the map sees
+       them: which one is in hand, how many companies each is carrying, and the
+       limit they are all measured against. The merge and split orders are all
+       gated on those three numbers and on nothing else, so when one of them is
+       not on screen this says why without anybody having to guess. */
+    if (typeof window !== "undefined") window.__ccBands = () => {
+      const game = gameRef.current;
+      const cap = bandCap(game.nations[game.player]);
+      return {
+        cap, sel: game.sel?.armyId || null,
+        mine: game.armies.filter((a) => a.owner === game.player).map((a) =>
+          `${a.id}@${a.c},${a.r}:${a.units.length}${a.garrison ? ":garrison" : ""}`
+          + `${a.id === game.sel?.armyId ? ":inhand" : ""}`),
+      };
+    };
     /* What the selected warband would eat standing at home, so a test can
        check it is really being charged more for standing somewhere else. */
     if (typeof window !== "undefined") window.__ccSupply = () => {
@@ -11893,7 +11908,13 @@ function WarbandBar({ game, P, army, sameHex, onDeselect, onRename, onHall, onCo
               Sighted, not yours. You cannot give them orders.
             </div>
           )}
-          {own && mates.slice(0, 2).map((a) => {
+          {/* A garrison is not a warband and mergeInto has always refused to
+              fold anything into one — but the order was offered anyway, because
+              the list of who you could merge with filtered garrisons out of the
+              candidates and never asked whether the thing in hand was one. The
+              button was there, it did nothing when pressed, and nothing said
+              why. They are the wall; they do not take anybody in. */}
+          {own && !army.garrison && mates.slice(0, 2).map((a) => {
             const together = a.units.length + army.units.length;
             return (
               <button key={a.id} type="button" disabled={together > cap}

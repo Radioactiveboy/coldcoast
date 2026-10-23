@@ -72,6 +72,14 @@ const check = (name, ok, note = "") => {
   check("every distance lands in a supply band, whole hex or not",
     bad.length === 0 && SUPPLY_BANDS.length === SUPPLY_MAX + 1,
     bad.length ? `no band at ${bad.join(", ")}` : `${odd.length} distances, all of them placed`);
+  /* And the ladder only ever goes up. Whether a given run's host ends up one
+     hex out or four is the campaign's business, but a hex further from home
+     costing no more than the hex before it would make the whole table a lie,
+     and that can be asked without a map. */
+  const ladder = SUPPLY_BANDS.map((b) => b.draw);
+  check("every hex further out costs more than the last",
+    ladder.every((v, i) => i === 0 ? v === 1 : v > ladder[i - 1]),
+    ladder.join(" → "));
 }
 const click = (re) =>
   page.evaluate((r) => {
@@ -1098,11 +1106,37 @@ await click("Put this warband in hand");
 await wait(250);
 check("clicking another warband hands you that one",
   /in hand/.test(await page.evaluate(() => document.querySelector("aside").innerText)));
-await click("Merge .* into this warband");
+/* Every band order — merge here, merge next door, march out alone — is gated on
+   the same three numbers: how many companies the warband in hand is carrying,
+   how many the one beside it is, and the limit both are measured against. When
+   an order is missing it is nearly always one of those, so say what they were
+   rather than only that the button was not there. */
+const bandState = async () => {
+  const b = await page.evaluate(() => window.__ccBands && window.__ccBands());
+  const acts = await page.evaluate(() => [...document.querySelectorAll(".cc-warbar .cc-waracts button")]
+    .map((x) => x.textContent.trim()).join(" | "));
+  return b ? `cap ${b.cap}, ${b.mine.join("  ")}, orders: ${acts || "none"}` : "no hook";
+};
+const coOf = () => page.evaluate(() => {
+  const b = window.__ccBands && window.__ccBands();
+  if (!b) return null;
+  const me = b.mine.find((x) => x.includes(":inhand"));
+  return me ? +me.split("@")[1].split(":")[1] : null;
+});
+/* Ask whether the companies actually came together, not whether the order has
+   gone from the screen. "No merge order left" is also what you see when the
+   order was never offered — an unpressable button, a warband nobody is
+   holding — so this passed on a run where nothing merged at all, and the first
+   honest complaint came two checks later, from the split, about something
+   else entirely. Count the companies instead. */
+const coBefore = await coOf();
+const pressed = await click("Merge .* into this warband");
 await wait(400);
-const oneBand = await page.evaluate(() =>
-  !/Merge .* into this warband/.test(document.querySelector(".cc-warbar")?.innerText || ""));
-check("the two warbands become one", oneBand);
+const coAfter = await coOf();
+check("the two warbands become one",
+  pressed && coBefore !== null && coAfter !== null && coAfter > coBefore,
+  pressed ? `${coBefore} companies, then ${coAfter}${coAfter === coBefore ? ` — nothing moved; ${await bandState()}` : ""}`
+    : `no merge order to press; ${await bandState()}`);
 
 /* A habit can harden at the end of any season, and it is modal — so clear
    anything standing before a run of map gestures, or every one of them lands
@@ -1127,13 +1161,14 @@ await wait(300);
 check("a warband can be renamed",
   /The Thames Wolves/.test(await panelText()));
 
-await openCompany(0);
-await click("March out alone");
+const splat = await openCompany(0);
+const marched = await click("March out alone");
 await wait(350);
 const splitOk = /Merge .* into this warband/.test(
   await panelText());
 check("a company can march out on its own", splitOk,
-  splitOk ? "" : "no second warband appeared to merge back");
+  splitOk ? "" : `no second warband appeared to merge back — company ${splat ? "opened" : "MISSING"}, `
+    + `order ${marched ? "pressed" : "NOT OFFERED"}; ${await bandState()}`);
 
 // Merging two warbands standing on NEIGHBOURING hexes is its own path, and
 // it broke once already: making every click switch which warband is in hand
@@ -1161,7 +1196,7 @@ await wait(250);
 const adjacentOrder = /Merge forces with/.test(
   await page.evaluate(() => document.querySelector("aside").innerText));
 check("two warbands a hex apart can be combined", adjacentOrder,
-  adjacentOrder ? "" : "no merge order offered from the neighbouring hex");
+  adjacentOrder ? "" : `no merge order offered from the neighbouring hex; ${await bandState()}`);
 await click("Merge forces with");
 await wait(400);
 
@@ -1241,29 +1276,46 @@ const blocked = ac === 20 ? "" : await page.evaluate(() => {
 check("the host can march to the lair", ac === 20,
   `stopped at ${ac},${ar}${blocked ? ` — ${blocked}` : ""}`);
 
-/* Supply. Five hexes west of Lunden is past the end of any line the player
-   has at this point, and the panel has to say so plainly — this is the number
-   that decides whether a campaign is a campaign or a slow way of losing an
-   army, so it must never be something you have to work out. */
+/* Supply — the number that decides whether a campaign is a campaign or a slow
+   way of losing an army, so it must never be something you have to work out.
+
+   This used to assert that the host five hexes west of Lunden was off the
+   waggons, which was true of the opening map and not of a run where the realm
+   had taken ground out that way: the border moved, the host was one hex past
+   it instead of three, and three checks failed over a position that was
+   perfectly legal. What has to be true at any distance is that the panel names
+   the band the game actually computed and charges what that band says — so ask
+   the game what it worked out, and hold the screen to it. */
 {
   await page.evaluate((c, r) => window.__ccPick(c, r), ac, ar);
   await wait(300);
   const panel = await panelText();
-  /* Which of the bad bands it lands in depends on how far the host actually
-     got, so the check is that it is named as one of them and not that it is the
-     worst one — the next check is the one that pins the number. */
-  check("a column out in the wild says it is out of supply",
-    /Cut off|Off the waggons|The end of the line/.test(panel),
-    panel.split("\n").find((l) => /rations ×/.test(l)) || "no supply line");
-  check("and says what the rations now cost", /rations ×(2\.4|3\.6|5)/.test(panel),
-    panel.match(/rations ×[\d.]+/)?.[0] || "no multiplier");
+  const sup = await page.evaluate(() => window.__ccSupply && window.__ccSupply());
+  check("a column in the field is told what supply it is in",
+    !!sup && panel.includes(sup.band),
+    sup ? `${sup.d} hexes out: ${panel.split("\n").find((l) => /rations ×/.test(l)) || `no supply line, panel says ${sup.band}`}`
+        : "no supply hook");
+  const shown = panel.match(/rations ×([\d.]+)/)?.[1];
+  check("and says what the rations now cost",
+    !!sup && shown !== undefined && +shown === sup.draw,
+    sup ? `panel ×${shown ?? "silent"}, game ×${sup.draw}` : "no supply hook");
+  /* And the ledger charges it. A season out past the line costs the draw times
+     what the same companies eat standing at home, which is the whole point of
+     the band — so check the bill against the draw rather than against a band
+     this run may not be standing in. */
   const eats = +(panel.match(/eats\s+(\d+)/)?.[1] || 0);
-  const base = await page.evaluate(() => {
-    const a = window.__ccSupply && window.__ccSupply();
-    return a ? a.base : 0;
-  });
-  check("and is actually charged for it", base > 0 && eats >= base * 2,
-    `${base} at home, ${eats} out here`);
+  const due = sup ? Math.round(sup.base * sup.draw) : 0;
+  check("and is actually charged for it",
+    !!sup && sup.base > 0 && Math.abs(eats - due) <= 1,
+    sup ? `${sup.base} at home × ${sup.draw} = ${due}, charged ${eats}` : "no supply hook");
+  /* The teeth of the thing: being out there has to cost more than being home.
+     At nought hexes it cannot, and that is worth saying out loud rather than
+     passing quietly, because it means the march west did not leave the realm. */
+  check("and being out there costs more than standing at home",
+    !!sup && (sup.d > 0 ? eats > sup.base : true),
+    sup ? (sup.d > 0 ? `${sup.base} at home, ${eats} at ${sup.d} hexes out`
+      : `the host is standing on your own ground at ${ac},${ar} — the border moved out to meet it`)
+      : "no supply hook");
 }
 
 await clearScenes();
@@ -1567,8 +1619,16 @@ const people = () => page.evaluate(() => window.__ccWild().people);
     /* Every captain of yours, wherever they are standing. Reading the hall
        alone made this depend on nobody being given a command or a post in the
        same season, which is not a thing the campaign promises. */
+    /* Read the winters out of the record and not out of the whole line. A
+       captain's id is random — `cd160y631` is a real one — and /y(\d+)/ found
+       the y631 in the id a good second before it reached the y6 that is the
+       actual count. The number never moved because it was never the number,
+       and it only bit on a run whose dice happened to put a y in front of some
+       digits, which is what made this look like the game losing a winter.
+       The record is one run of fields, so ask for it whole. */
     [...p2.led, ...p2.hall, ...p2.posts].forEach((x) =>
-      m.set(x.match(/#(\S+?):L/)[1], { y: +x.match(/y(\d+)/)[1], who: x.split("@")[0], at: x.split("@")[1].split("#")[0] }));
+      m.set(x.match(/#(\S+?):L/)[1], { y: +x.match(/:f\d+w\d+s\d+r\d+y(\d+):/)[1],
+        who: x.split("@")[0], at: x.split("@")[1].split("#")[0] }));
     return m;
   };
   const yearsWas = await years();
@@ -1582,10 +1642,23 @@ const people = () => page.evaluate(() => window.__ccWild().people);
      is the rule; everybody still under the banner gains the winter. */
   const both = [...yearsWas.keys()].filter((id) => yearsNow.has(id))
     .filter((id) => !yearsWas.get(id).at.startsWith("post-") && !yearsNow.get(id).at.startsWith("post-"));
+  const stuck = both.filter((id) => yearsNow.get(id).y !== yearsWas.get(id).y + 1);
   check("a winter under your banner goes on a captain's record",
-    both.length > 0 && both.every((id) => yearsNow.get(id).y === yearsWas.get(id).y + 1),
+    both.length > 0 && stuck.length === 0,
     both.map((id) => `${yearsWas.get(id).who} ${yearsWas.get(id).at}→${yearsNow.get(id).at} `
       + `${yearsWas.get(id).y}→${yearsNow.get(id).y}`).join(" | ") || "nobody under the banner either side");
+  /* Who did not gain the winter, written out in full both sides. A record that
+     does not move is either a place the increment does not reach or a captain
+     who was rebuilt from an older copy of themselves, and the two look alike
+     from a count alone. */
+  if (stuck.length) {
+    const raw = await people();
+    console.log(`        ? stuck: ${stuck.map((id) => `#${id} ${yearsWas.get(id).who} `
+      + `${yearsWas.get(id).at}@y${yearsWas.get(id).y} -> ${yearsNow.get(id).at}@y${yearsNow.get(id).y}`).join(" | ")}`);
+    console.log(`        ? hall now: ${raw.hall.join("  ") || "empty"}`);
+    console.log(`        ? led now:  ${raw.led.join("  ") || "none"}`);
+    console.log(`        ? posts:    ${raw.posts.join("  ") || "none"}   due: ${raw.due || "-"}`);
+  }
 
   /* Five fields is five battles this captain stood in, and whether a given run
      has given one of them five by now is the campaign's business, not this
