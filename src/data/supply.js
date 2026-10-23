@@ -37,7 +37,23 @@ export const SUPPLY_BANDS = [
     draw: 5, waste: 0.11, morale: 11 },
 ];
 
-export const bandAt = (d) => SUPPLY_BANDS[Math.max(0, Math.min(SUPPLY_MAX, d))];
+/* A band is looked up by whole hexes, and the distance stopped being a whole
+   number the day the posts arrived: a quartermaster hands back a fraction of a
+   hex of reach, scaled by how much of the post's worth actually arrives at a
+   given loyalty. An index of 2.25 found nothing in the table, and every screen
+   that reads a warband's supply — which is most of them, including the ledger
+   the top bar runs on — threw on the undefined it got back and took the whole
+   game down with it. It only bit when a warband was out past the line AND a
+   quartermaster was in post, which is why it looked like bad luck for months.
+
+   The lookup is total now. Anything that is not a number at all lands in the
+   deepest band, and a part of a hex rounds to the nearest one: more than half
+   a hex of reach is worth a hex, which is the same bargain the share is. */
+export const bandAt = (d) => {
+  const n = Number(d);
+  const i = Number.isFinite(n) ? Math.round(n) : SUPPLY_MAX;
+  return SUPPLY_BANDS[Math.max(0, Math.min(SUPPLY_MAX, i))];
+};
 
 /* Ground that makes a long line worse: nothing grows on it, nothing can be
    bought on it, and hauling anything across it costs twice what the map says. */
